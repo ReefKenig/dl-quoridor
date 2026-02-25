@@ -137,6 +137,7 @@ class MinimalQuoridorStub(QuoridorEnvInterface):
     def step(
         self, state: StubState, action: int
     ) -> Tuple[StubState, float, bool, dict]:
+        state = copy.deepcopy(state)  # never mutate the caller's state
         player = state.current_player
         dr = self.ACTIONS[action]
         state.positions[player] += dr
@@ -152,7 +153,8 @@ class MinimalQuoridorStub(QuoridorEnvInterface):
 
     def state_to_tensor(self, state: StubState) -> np.ndarray:
         """Dummy tensor for stub — not used in Phase 1."""
-        tensor = np.zeros((self.BOARD_SIZE, self.BOARD_SIZE, 10), dtype=np.float32)
+        tensor = np.zeros(
+            (self.BOARD_SIZE, self.BOARD_SIZE, 10), dtype=np.float32)
         for i, pos in enumerate(state.positions):
             tensor[pos, self.BOARD_SIZE // 2, i] = 1.0
         return tensor

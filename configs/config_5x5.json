@@ -1,0 +1,26 @@
+{
+    "board_size": 5,
+    "mcts": {
+        "num_simulations": 400,
+        "c_puct": 1.41,
+        "temperature": 1.0,
+        "dirichlet_alpha": 0.3,
+        "dirichlet_epsilon": 0.25,
+        "max_rollout_depth": 100
+    },
+    "training": {
+        "num_iterations": 50,
+        "games_per_iteration": 100,
+        "batch_size": 64,
+        "training_epochs": 10,
+        "eval_games": 40,
+        "win_threshold": 0.55,
+        "replay_buffer_size": 50000,
+        "learning_rate": 0.001,
+        "weight_decay": 0.0001
+    },
+    "network": {
+        "num_res_blocks": 4,
+        "num_channels": 64
+    }
+}

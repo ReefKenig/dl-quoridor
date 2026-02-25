@@ -29,6 +29,9 @@ wandb/
 *.pth
 *.onnx
 
+# Testing
+.pytest_cache/
+
 # Colab
 *.ipynb_checkpoints/
 

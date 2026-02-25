@@ -181,11 +181,13 @@ def training_loop(env, model, config: TrainingConfig = None):
     )
 
     for iteration in range(config.num_iterations):
-        print(f"\n{'='*50}")
-        print(f"Iteration {iteration + 1}/{config.num_iterations}")
+        logger.info("="*50)
+        logger.info("Iteration %d/%d", iteration + 1, config.num_iterations)
 
         # --- 1. Self-play ---
-        print(f"  Generating {config.games_per_iteration} self-play games...")
+        logger.info(
+            "  Generating %d self-play games...", config.games_per_iteration
+        )
         iteration_samples = []
         wins = {0: 0, 1: 0}
 
@@ -196,19 +198,23 @@ def training_loop(env, model, config: TrainingConfig = None):
                 wins[winner] += 1
 
             if (game_idx + 1) % 20 == 0:
-                print(
-                    f"    Games: {game_idx + 1}/{config.games_per_iteration}")
+                logger.info(
+                    "    Games: %d/%d",
+                    game_idx + 1, config.games_per_iteration,
+                )
 
         buffer.add(iteration_samples)
-        print(
-            f"  Samples collected: {len(iteration_samples)} | Buffer: {len(buffer)}")
+        logger.info(
+            "  Samples collected: %d | Buffer: %d",
+            len(iteration_samples), len(buffer),
+        )
 
         # --- 2. Train ---
         if len(buffer) < config.batch_size:
-            print("  Buffer too small, skipping training.")
+            logger.info("  Buffer too small, skipping training.")
             continue
 
-        print(f"  Training for {config.training_epochs} epochs...")
+        logger.info("  Training for %d epochs...", config.training_epochs)
         for epoch in range(config.training_epochs):
             states, policies, values = buffer.sample_batch(config.batch_size)
             # TODO: loss_p, loss_v = model.train_step(states, policies, values)
@@ -218,4 +224,4 @@ def training_loop(env, model, config: TrainingConfig = None):
         # Pit new model vs previous checkpoint.
         # Accept if win rate > config.win_threshold.
 
-        print(f"  Iteration {iteration + 1} complete.")
+        logger.info("  Iteration %d complete.", iteration + 1)

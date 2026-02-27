@@ -1,0 +1,27 @@
+{
+    "is_poc": false,
+    "board_size": 9,
+    "mcts": {
+        "num_simulations": 800,
+        "c_puct": 1.41,
+        "temperature": 1.0,
+        "dirichlet_alpha": 0.15,
+        "dirichlet_epsilon": 0.25,
+        "max_rollout_depth": 200
+    },
+    "training": {
+        "num_iterations": 100,
+        "games_per_iteration": 200,
+        "batch_size": 128,
+        "training_epochs": 15,
+        "eval_games": 60,
+        "win_threshold": 0.55,
+        "replay_buffer_size": 200000,
+        "learning_rate": 0.001,
+        "weight_decay": 0.0001
+    },
+    "network": {
+        "num_res_blocks": 8,
+        "num_channels": 128
+    }
+}

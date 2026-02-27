@@ -68,9 +68,13 @@ class QuoridorEnvInterface(ABC):
     def state_to_tensor(self, state) -> np.ndarray:
         """
         Convert game state to the observation tensor for the neural network.
-        For 5x5: returns shape (5, 5, 10)
-        For 9x9: returns shape (9, 9, 10)
+
+        Shape: (board_size, board_size, 10) — HWC format.
+            5×5 POC (is_poc=True):  (5, 5, 10)
+            9×9 full (is_poc=False): (9, 9, 10)
+
         All values normalized to [0, 1].
+        See tensor_spec.py for channel breakdown and reference implementation.
         """
         ...
 
@@ -137,6 +141,7 @@ class MinimalQuoridorStub(QuoridorEnvInterface):
     def step(
         self, state: StubState, action: int
     ) -> Tuple[StubState, float, bool, dict]:
+        state = copy.deepcopy(state)  # never mutate the caller's state
         player = state.current_player
         dr = self.ACTIONS[action]
         state.positions[player] += dr
@@ -152,7 +157,8 @@ class MinimalQuoridorStub(QuoridorEnvInterface):
 
     def state_to_tensor(self, state: StubState) -> np.ndarray:
         """Dummy tensor for stub — not used in Phase 1."""
-        tensor = np.zeros((self.BOARD_SIZE, self.BOARD_SIZE, 10), dtype=np.float32)
+        tensor = np.zeros(
+            (self.BOARD_SIZE, self.BOARD_SIZE, 10), dtype=np.float32)
         for i, pos in enumerate(state.positions):
             tensor[pos, self.BOARD_SIZE // 2, i] = 1.0
         return tensor

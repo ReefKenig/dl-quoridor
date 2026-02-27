@@ -191,9 +191,11 @@ def compute_distance_map(
             dist[nr, nc] = current_dist + 1
             queue.append((nr, nc))
 
-    # Normalize: divide by maximum possible BFS distance
-    # Use (2 * board_size) as practical max for cleaner normalization
-    norm_factor = 2 * board_size
+    # Normalize by board_size².  This is large enough to prevent
+    # clipping even on heavily-walled boards (where BFS distances can
+    # far exceed 2*board_size).  Unreachable cells (dist == max_dist)
+    # map to exactly 1.0.
+    norm_factor = board_size * board_size
     normalized = np.clip(dist / norm_factor, 0.0, 1.0)
 
     return normalized
@@ -377,9 +379,9 @@ def validate_tensor_spec():
 
     # Distance maps: no walls, so BFS = Manhattan distance to goal row
     assert tensor[0, 0, 8] == 0.0   # goal row
-    assert np.isclose(tensor[4, 0, 8], 4.0 / 10)  # 4 steps away
+    assert np.isclose(tensor[4, 0, 8], 4.0 / 25)  # 4 steps, norm=5²
     assert tensor[4, 0, 9] == 0.0   # goal row
-    assert np.isclose(tensor[0, 0, 9], 4.0 / 10)
+    assert np.isclose(tensor[0, 0, 9], 4.0 / 25)
 
     print("  Test 1 (initial state): PASS")
 
@@ -404,7 +406,7 @@ def validate_tensor_spec():
     assert np.allclose(tensor[:, :, 6], 0.8)
 
     # Distance map should reflect the wall
-    dist_no_wall = 3.0 / 10  # without wall: 3 steps up
+    dist_no_wall = 3.0 / 25  # without wall: 3 steps up, norm=5²
     dist_with_wall = tensor[3, 1, 8]
     assert dist_with_wall > dist_no_wall, (
         f"Wall should increase distance: {dist_with_wall} <= {dist_no_wall}"

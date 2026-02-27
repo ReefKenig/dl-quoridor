@@ -138,9 +138,16 @@ class CheckpointManager:
         )
         return str(ckpt_dir)
 
-    def load_latest(self) -> Optional[Dict]:
+    def load_latest(
+        self, replay_buffer_max_size: int = 50_000,
+    ) -> Optional[Dict]:
         """
         Load the most recent checkpoint.
+
+        Args:
+            replay_buffer_max_size: max capacity for the loaded replay buffer.
+                Pass the current config value so a resumed buffer respects
+                any size changes between runs.
 
         Returns:
             dict with keys: iteration, model_path, best_model_path,
@@ -155,9 +162,14 @@ class CheckpointManager:
         with open(latest_file, "r") as f:
             latest = json.load(f)
 
-        return self.load_iteration(latest["iteration"])
+        return self.load_iteration(
+            latest["iteration"],
+            replay_buffer_max_size=replay_buffer_max_size,
+        )
 
-    def load_iteration(self, iteration: int) -> Optional[Dict]:
+    def load_iteration(
+        self, iteration: int, replay_buffer_max_size: int = 50_000,
+    ) -> Optional[Dict]:
         """Load a specific iteration checkpoint."""
         ckpt_dir = self.base_dir / f"iter_{iteration:04d}"
         if not ckpt_dir.exists():
@@ -170,7 +182,9 @@ class CheckpointManager:
 
         # Load replay buffer
         buffer_path = ckpt_dir / "replay_buffer.pkl"
-        replay_buffer = self._load_replay_buffer(buffer_path)
+        replay_buffer = self._load_replay_buffer(
+            buffer_path, max_size=replay_buffer_max_size,
+        )
 
         # Model paths (caller loads weights via model.load())
         model_path = str(ckpt_dir / "model.pt")

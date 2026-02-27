@@ -288,4 +288,10 @@ class MCTS:
         total = counts.sum()
         if total > 0:
             return counts / total
-        return np.ones(action_space_size) / action_space_size
+
+        # Fallback: uniform over root's children only (avoids invalid actions)
+        probs = np.zeros(action_space_size, dtype=np.float64)
+        for action in root.children:
+            probs[action] = 1.0
+        fb_total = probs.sum()
+        return probs / fb_total if fb_total > 0 else probs

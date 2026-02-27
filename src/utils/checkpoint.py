@@ -22,9 +22,9 @@ Usage:
     ckpt.save(
         iteration=5,
         model=model,
-        best_model=best_model,
         replay_buffer=buffer,
         metrics=metrics_dict,
+        is_best=True,
     )
 
     # Resume after crash
@@ -244,8 +244,8 @@ class CheckpointManager:
         with open(path, "rb") as f:
             items = pickle.load(f)
 
-        buffer = ReplayBuffer(max_size=max(len(items), max_size))
-        buffer.buffer.extend(items)
+        buffer = ReplayBuffer(max_size=max_size)
+        buffer.buffer.extend(items)  # deque(maxlen) drops oldest if oversized
         return buffer
 
     def _prune_old_checkpoints(self):

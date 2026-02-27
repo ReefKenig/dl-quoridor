@@ -266,7 +266,17 @@ def training_loop(
 
         # --- 2. Train ---
         if len(buffer) < config.batch_size:
-            logger.info("  Buffer too small, skipping training.")
+            logger.info(
+                "  Buffer too small (%d < %d), skipping training.",
+                len(buffer), config.batch_size,
+            )
+            train_logger.log_iteration(
+                iteration=iteration + 1,
+                buffer_size=len(buffer),
+                samples_generated=len(iteration_samples),
+                self_play_duration_s=sp_timer.elapsed_s,
+                total_games_played=config.games_per_iteration,
+            )
             continue
 
         logger.info("  Training for %d epochs...", config.training_epochs)

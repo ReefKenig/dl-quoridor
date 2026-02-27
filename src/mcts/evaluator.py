@@ -144,8 +144,8 @@ def evaluate(
     result = EvalResult()
 
     for game_idx in range(num_games):
-        # Alternate sides: agent_a is player 0 for first half, player 1 for second
-        agent_a_player = 0 if game_idx < num_games // 2 else 1
+        # Alternate sides every game for fair evaluation
+        agent_a_player = game_idx % 2
         agents = {agent_a_player: agent_a, 1 - agent_a_player: agent_b}
 
         state = env.reset()

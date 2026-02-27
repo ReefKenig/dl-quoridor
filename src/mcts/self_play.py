@@ -15,9 +15,10 @@ Wire in once Rom's network and Reef's env are ready.
 from src.mcts.mcts import MCTS, MCTSConfig
 from src.mcts.evaluator import evaluate, mcts_agent, random_agent
 from src.utils.checkpoint import CheckpointManager
+from src.utils.logger import TrainingLogger, Timer
 import logging
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import List, Tuple, Optional
 from collections import deque
 
@@ -166,6 +167,8 @@ def training_loop(
     config: TrainingConfig = None,
     checkpoint_dir: str = "checkpoints",
     resume: bool = True,
+    log_dir: str = "logs",
+    use_wandb: bool = True,
 ):
     """
     Main AlphaZero training loop.
@@ -182,19 +185,30 @@ def training_loop(
         config: training hyperparameters
         checkpoint_dir: directory for training checkpoints
         resume: if True, attempt to resume from the latest checkpoint
+        log_dir: directory for CSV / JSON metrics logs
+        use_wandb: enable wandb remote logging (falls back to CSV if unavailable)
     """
     if config is None:
         config = TrainingConfig()
 
     buffer = ReplayBuffer(max_size=config.replay_buffer_size)
     ckpt = CheckpointManager(base_dir=checkpoint_dir, keep_last_n=3)
+    train_logger = TrainingLogger(
+        project="quoridor-ai",
+        run_name=checkpoint_dir.replace("/", "_").replace("\\", "_"),
+        log_dir=log_dir,
+        use_wandb=use_wandb,
+        config=asdict(config),
+    )
 
     # --- Resume from checkpoint if available ---
     start_iteration = 0
     best_win_rate = 0.0
 
     if resume:
-        state = ckpt.load_latest()
+        state = ckpt.load_latest(
+            replay_buffer_max_size=config.replay_buffer_size,
+        )
         if state is not None:
             start_iteration = state["iteration"]
             model.load(state["model_path"])
@@ -229,19 +243,20 @@ def training_loop(
         iteration_samples = []
         wins = {0: 0, 1: 0}
 
-        for game_idx in range(config.games_per_iteration):
-            samples, winner = play_one_game(
-                env, mcts, max_moves=config.max_game_moves,
-            )
-            iteration_samples.extend(samples)
-            if winner is not None:
-                wins[winner] += 1
-
-            if (game_idx + 1) % 20 == 0:
-                logger.info(
-                    "    Games: %d/%d",
-                    game_idx + 1, config.games_per_iteration,
+        with Timer() as sp_timer:
+            for game_idx in range(config.games_per_iteration):
+                samples, winner = play_one_game(
+                    env, mcts, max_moves=config.max_game_moves,
                 )
+                iteration_samples.extend(samples)
+                if winner is not None:
+                    wins[winner] += 1
+
+                if (game_idx + 1) % 20 == 0:
+                    logger.info(
+                        "    Games: %d/%d",
+                        game_idx + 1, config.games_per_iteration,
+                    )
 
         buffer.add(iteration_samples)
         logger.info(
@@ -256,11 +271,13 @@ def training_loop(
 
         logger.info("  Training for %d epochs...", config.training_epochs)
         total_loss_p, total_loss_v = 0.0, 0.0
-        for epoch in range(config.training_epochs):
-            states, policies, values = buffer.sample_batch(config.batch_size)
-            loss_p, loss_v = model.train_step(states, policies, values)
-            total_loss_p += loss_p
-            total_loss_v += loss_v
+        with Timer() as train_timer:
+            for epoch in range(config.training_epochs):
+                states, policies, values = buffer.sample_batch(
+                    config.batch_size)
+                loss_p, loss_v = model.train_step(states, policies, values)
+                total_loss_p += loss_p
+                total_loss_v += loss_v
 
         avg_lp = total_loss_p / max(config.training_epochs, 1)
         avg_lv = total_loss_v / max(config.training_epochs, 1)
@@ -272,10 +289,11 @@ def training_loop(
         # TODO: upgrade to evaluate vs previous best model once a second
         #       model instance can be provided by the caller.
         candidate = mcts_agent(mcts, temperature=0.1)
-        result = evaluate(
-            env, agent_a=candidate, agent_b=random_agent(),
-            num_games=config.eval_games, verbose=True,
-        )
+        with Timer() as eval_timer:
+            result = evaluate(
+                env, agent_a=candidate, agent_b=random_agent(),
+                num_games=config.eval_games, verbose=True,
+            )
         logger.info("  Eval: %s", result.summary())
 
         win_rate = result.agent_a_win_rate
@@ -296,4 +314,23 @@ def training_loop(
             },
             is_best=is_best,
         )
+
+        # --- 5. Log metrics ---
+        train_logger.log_iteration(
+            iteration=iteration + 1,
+            loss_policy=avg_lp,
+            loss_value=avg_lv,
+            win_rate_vs_random=win_rate,
+            avg_game_length=result.avg_game_length,
+            total_games_played=config.games_per_iteration,
+            self_play_duration_s=sp_timer.elapsed_s,
+            training_duration_s=train_timer.elapsed_s,
+            eval_duration_s=eval_timer.elapsed_s,
+            buffer_size=len(buffer),
+            samples_generated=len(iteration_samples),
+            model_accepted=is_best,
+        )
+
         logger.info("  Iteration %d complete. best=%s", iteration + 1, is_best)
+
+    train_logger.finish()

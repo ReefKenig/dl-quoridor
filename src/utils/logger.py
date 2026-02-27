@@ -208,15 +208,23 @@ class TrainingLogger:
     # ------------------------------------------------------------------
 
     def _write_csv(self, metrics: IterationMetrics):
-        """Append one row to the CSV file."""
+        """Append one row to the CSV file, preserving existing data on resume."""
         data = metrics.to_dict()
-        mode = "a" if self._csv_initialized else "w"
 
-        with open(self.csv_path, mode, newline="") as f:
+        if not self._csv_initialized:
+            # Preserve existing CSV from previous runs (resume-safe)
+            file_exists = (
+                self.csv_path.exists()
+                and self.csv_path.stat().st_size > 0
+            )
+            if not file_exists:
+                with open(self.csv_path, "w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=data.keys())
+                    writer.writeheader()
+            self._csv_initialized = True
+
+        with open(self.csv_path, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=data.keys())
-            if not self._csv_initialized:
-                writer.writeheader()
-                self._csv_initialized = True
             writer.writerow(data)
 
 

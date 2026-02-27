@@ -28,6 +28,14 @@ def main():
         help="Start training from scratch (ignore existing checkpoints)",
     )
     parser.add_argument(
+        "--log-dir", default="logs",
+        help="Directory for CSV / JSON metrics logs",
+    )
+    parser.add_argument(
+        "--no-wandb", action="store_true",
+        help="Disable wandb remote logging",
+    )
+    parser.add_argument(
         "--log-level", default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
@@ -63,6 +71,8 @@ def main():
         config=cfg.training_config(),
         checkpoint_dir=args.checkpoint_dir,
         resume=not args.no_resume,
+        log_dir=args.log_dir,
+        use_wandb=not args.no_wandb,
     )
 
 

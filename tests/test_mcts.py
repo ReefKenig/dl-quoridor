@@ -86,12 +86,12 @@ def test_replay_buffer_overflow():
     assert len(buf) == 50
 
 
-@pytest.mark.skip(reason="Waiting for QuoridorEnv implementation")
+@pytest.mark.slow
 def test_mcts_vs_random_real():
-    """MCTS vs Random on Reef's real environment."""
+    """MCTS vs Random on real QuoridorEnv (5×5 POC)."""
     from src.env.quoridor_env import QuoridorEnv
 
-    env = QuoridorEnv(board_size=5)
+    env = QuoridorEnv(is_poc=True)
     mcts = MCTS(config=MCTSConfig(num_simulations=400))
 
     wins = 0

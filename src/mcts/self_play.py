@@ -170,10 +170,8 @@ def training_loop(env, model, config: TrainingConfig = None):
 
     def nn_evaluate(state):
         tensor = env.state_to_tensor(state)
-        # TODO: uncomment when model is ready
-        # policy, value = model.predict(tensor)
-        # return policy, value
-        raise NotImplementedError("Wire in Rom's model here")
+        policy, value = model.predict(tensor)
+        return policy, value
 
     mcts = MCTS(
         config=MCTSConfig(num_simulations=config.mcts_simulations),
@@ -215,13 +213,30 @@ def training_loop(env, model, config: TrainingConfig = None):
             continue
 
         logger.info("  Training for %d epochs...", config.training_epochs)
+        total_loss_p, total_loss_v = 0.0, 0.0
         for epoch in range(config.training_epochs):
             states, policies, values = buffer.sample_batch(config.batch_size)
-            # TODO: loss_p, loss_v = model.train_step(states, policies, values)
-            pass
+            loss_p, loss_v = model.train_step(states, policies, values)
+            total_loss_p += loss_p
+            total_loss_v += loss_v
 
-        # --- 3. Evaluate (TODO) ---
-        # Pit new model vs previous checkpoint.
-        # Accept if win rate > config.win_threshold.
+        avg_lp = total_loss_p / max(config.training_epochs, 1)
+        avg_lv = total_loss_v / max(config.training_epochs, 1)
+        logger.info(
+            "  Avg losses — policy: %.4f, value: %.4f", avg_lp, avg_lv,
+        )
 
-        logger.info("  Iteration %d complete.", iteration + 1)
+        # --- 3. Evaluate ---
+        # Pit new model vs previous best checkpoint.
+        from src.mcts.evaluator import evaluate, mcts_agent, random_agent
+
+        candidate = mcts_agent(mcts, temperature=0.1)
+        result = evaluate(
+            env, agent_a=candidate, agent_b=random_agent(),
+            num_games=config.eval_games, verbose=True,
+        )
+        logger.info("  Eval: %s", result.summary())
+
+        is_best = result.should_accept(threshold=config.win_threshold)
+        logger.info("  Iteration %d complete. Accepted=%s",
+                    iteration + 1, is_best)

@@ -11,14 +11,17 @@ Usage:
     train_cfg = cfg.training_config()
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from src.mcts.mcts import MCTSConfig
-from src.mcts.self_play import TrainingConfig
+if TYPE_CHECKING:
+    from src.mcts.mcts import MCTSConfig
+    from src.mcts.self_play import TrainingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,8 @@ class AppConfig:
 
     def mcts_config(self) -> MCTSConfig:
         """Create MCTSConfig from the 'mcts' section."""
+        from src.mcts.mcts import MCTSConfig
+
         m = self.raw.get("mcts", {})
         return MCTSConfig(
             num_simulations=m.get("num_simulations", 400),
@@ -44,7 +49,10 @@ class AppConfig:
 
     def training_config(self) -> TrainingConfig:
         """Create TrainingConfig from the 'training' section."""
+        from src.mcts.self_play import TrainingConfig
+
         t = self.raw.get("training", {})
+        m = self.raw.get("mcts", {})
         return TrainingConfig(
             num_iterations=t.get("num_iterations", 50),
             games_per_iteration=t.get("games_per_iteration", 100),
@@ -52,7 +60,9 @@ class AppConfig:
             training_epochs=t.get("training_epochs", 10),
             eval_games=t.get("eval_games", 40),
             win_threshold=t.get("win_threshold", 0.55),
-            mcts_simulations=t.get("mcts_simulations", 400),
+            mcts_simulations=t.get(
+                "mcts_simulations", m.get("num_simulations", 400),
+            ),
             replay_buffer_size=t.get("replay_buffer_size", 50_000),
         )
 

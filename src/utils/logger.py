@@ -110,7 +110,8 @@ class TrainingLogger:
                     project=project,
                     name=run_name,
                     config=config or {},
-                    reinit=True,
+                    resume="allow",
+                    id=run_name,
                 )
                 module_logger.info(
                     "wandb initialized: %s/%s", project, run_name)

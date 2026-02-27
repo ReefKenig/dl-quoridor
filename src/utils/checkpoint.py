@@ -219,18 +219,18 @@ class CheckpointManager:
             pickle.dump(list(buffer.buffer), f,
                         protocol=pickle.HIGHEST_PROTOCOL)
 
-    def _load_replay_buffer(self, path: Path):
+    def _load_replay_buffer(self, path: Path, max_size: int = 50_000):
         """Deserialize replay buffer."""
         from src.mcts.self_play import ReplayBuffer, TrainingSample  # noqa: F811
 
         if not path.exists():
             logger.warning("Replay buffer file not found: %s", path)
-            return ReplayBuffer()
+            return ReplayBuffer(max_size=max_size)
 
         with open(path, "rb") as f:
             items = pickle.load(f)
 
-        buffer = ReplayBuffer(max_size=max(len(items), 50_000))
+        buffer = ReplayBuffer(max_size=max(len(items), max_size))
         buffer.buffer.extend(items)
         return buffer
 

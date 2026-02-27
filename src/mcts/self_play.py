@@ -13,6 +13,8 @@ Wire in once Rom's network and Reef's env are ready.
 """
 
 from src.mcts.mcts import MCTS, MCTSConfig
+from src.mcts.evaluator import evaluate, mcts_agent, random_agent
+from src.utils.checkpoint import CheckpointManager
 import logging
 import numpy as np
 from dataclasses import dataclass
@@ -70,6 +72,7 @@ def play_one_game(
     env,
     mcts: MCTS,
     temperature_schedule: Optional[dict] = None,
+    max_moves: int = 500,
 ) -> Tuple[List[TrainingSample], Optional[int]]:
     """
     Play a single self-play game. Both sides use the same MCTS + model.
@@ -77,8 +80,12 @@ def play_one_game(
     Args:
         env: QuoridorEnvInterface implementation
         mcts: MCTS instance (with or without NN evaluate_fn)
-        temperature_schedule: {move_threshold: temperature}
-            e.g., {15: 1.0, 999: 0.1} → explore first 15 moves, then exploit
+        temperature_schedule: mapping of {move_threshold: temperature}.
+            Keys are checked in ascending order; the first threshold
+            satisfying ``move_count < threshold`` sets the temperature.
+            Example: ``{15: 1.0, 999: 0.1}`` → explore for the first
+            15 moves (temp=1.0), then exploit (temp=0.1) for the rest.
+        max_moves: safety cap to prevent infinite games
 
     Returns:
         samples: list of TrainingSample
@@ -87,14 +94,12 @@ def play_one_game(
     if temperature_schedule is None:
         temperature_schedule = {15: 1.0, 999: 0.1}
 
-    MAX_MOVES = 500  # safety cap — prevent infinite games
-
     state = env.reset()
     trajectory = []  # (state_tensor, mcts_policy, player_who_moved)
     move_count = 0
 
     while True:
-        if move_count >= MAX_MOVES:
+        if move_count >= max_moves:
             winner = None
             break
 
@@ -152,24 +157,59 @@ class TrainingConfig:
     win_threshold: float = 0.55
     mcts_simulations: int = 400
     replay_buffer_size: int = 50_000
+    max_game_moves: int = 500
 
 
-def training_loop(env, model, config: TrainingConfig = None):
+def training_loop(
+    env,
+    model,
+    config: TrainingConfig = None,
+    checkpoint_dir: str = "checkpoints",
+    resume: bool = True,
+):
     """
     Main AlphaZero training loop.
 
-    TODO (wire in when Rom's model is ready):
-        - model.predict(tensor) -> (policy, value)
-        - model.train_step(states, policies, values) -> (loss_p, loss_v)
-        - model.save(path) / model.load(path)
+    Cycle per iteration:
+        1. Self-play → collect (state, mcts_policy, outcome) tuples
+        2. Train network on replay buffer
+        3. Evaluate model vs random baseline
+        4. Checkpoint (saves best model when win-rate improves)
+
+    Args:
+        env: QuoridorEnvInterface implementation
+        model: object with predict / train_step / save / load interface
+        config: training hyperparameters
+        checkpoint_dir: directory for training checkpoints
+        resume: if True, attempt to resume from the latest checkpoint
     """
     if config is None:
         config = TrainingConfig()
 
     buffer = ReplayBuffer(max_size=config.replay_buffer_size)
+    ckpt = CheckpointManager(base_dir=checkpoint_dir, keep_last_n=3)
 
-    def nn_evaluate(state):
-        tensor = env.state_to_tensor(state)
+    # --- Resume from checkpoint if available ---
+    start_iteration = 0
+    best_win_rate = 0.0
+
+    if resume:
+        state = ckpt.load_latest()
+        if state is not None:
+            start_iteration = state["iteration"]
+            model.load(state["model_path"])
+            buffer = state["replay_buffer"]
+            best_win_rate = state.get("metrics", {}).get(
+                "win_rate_vs_random", 0.0,
+            )
+            logger.info(
+                "Resumed from iteration %d (buffer=%d, best_wr=%.1f%%)",
+                start_iteration, len(buffer), best_win_rate * 100,
+            )
+
+    # --- NN evaluation closure for MCTS ---
+    def nn_evaluate(game_state):
+        tensor = env.state_to_tensor(game_state)
         policy, value = model.predict(tensor)
         return policy, value
 
@@ -178,19 +218,21 @@ def training_loop(env, model, config: TrainingConfig = None):
         evaluate_fn=nn_evaluate,
     )
 
-    for iteration in range(config.num_iterations):
-        logger.info("="*50)
+    for iteration in range(start_iteration, config.num_iterations):
+        logger.info("=" * 50)
         logger.info("Iteration %d/%d", iteration + 1, config.num_iterations)
 
         # --- 1. Self-play ---
         logger.info(
-            "  Generating %d self-play games...", config.games_per_iteration
+            "  Generating %d self-play games...", config.games_per_iteration,
         )
         iteration_samples = []
         wins = {0: 0, 1: 0}
 
         for game_idx in range(config.games_per_iteration):
-            samples, winner = play_one_game(env, mcts)
+            samples, winner = play_one_game(
+                env, mcts, max_moves=config.max_game_moves,
+            )
             iteration_samples.extend(samples)
             if winner is not None:
                 wins[winner] += 1
@@ -227,9 +269,8 @@ def training_loop(env, model, config: TrainingConfig = None):
         )
 
         # --- 3. Evaluate ---
-        # Pit new model vs previous best checkpoint.
-        from src.mcts.evaluator import evaluate, mcts_agent, random_agent
-
+        # TODO: upgrade to evaluate vs previous best model once a second
+        #       model instance can be provided by the caller.
         candidate = mcts_agent(mcts, temperature=0.1)
         result = evaluate(
             env, agent_a=candidate, agent_b=random_agent(),
@@ -237,6 +278,22 @@ def training_loop(env, model, config: TrainingConfig = None):
         )
         logger.info("  Eval: %s", result.summary())
 
-        is_best = result.should_accept(threshold=config.win_threshold)
-        logger.info("  Iteration %d complete. Accepted=%s",
-                    iteration + 1, is_best)
+        win_rate = result.agent_a_win_rate
+        is_best = win_rate > best_win_rate
+        if is_best:
+            best_win_rate = win_rate
+            logger.info("  New best win rate: %.1f%%", win_rate * 100)
+
+        # --- 4. Checkpoint ---
+        ckpt.save(
+            iteration=iteration + 1,
+            model=model,
+            replay_buffer=buffer,
+            metrics={
+                "loss_policy": avg_lp,
+                "loss_value": avg_lv,
+                "win_rate_vs_random": win_rate,
+            },
+            is_best=is_best,
+        )
+        logger.info("  Iteration %d complete. best=%s", iteration + 1, is_best)

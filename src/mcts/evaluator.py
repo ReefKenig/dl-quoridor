@@ -28,7 +28,7 @@ import numpy as np
 import time
 import logging
 from dataclasses import dataclass, field
-from typing import Optional, Callable, List
+from typing import Any, Optional, Callable, List
 
 from src.mcts.mcts import MCTS
 
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 # An agent is anything that takes (env, state) and returns an action.
 # This lets us evaluate MCTS vs random, MCTS vs MCTS, MCTS vs minimax, etc.
-AgentFn = Callable  # (env, state) -> int
+AgentFn = Callable[[Any, Any], int]  # (env, state) -> int
 
 
 def mcts_agent(mcts: MCTS, temperature: float = 0.1) -> AgentFn:

@@ -64,6 +64,7 @@ class AppConfig:
                 "mcts_simulations", m.get("num_simulations", 400),
             ),
             replay_buffer_size=t.get("replay_buffer_size", 50_000),
+            max_game_moves=t.get("max_game_moves", 500),
         )
 
     def network_config(self) -> Dict[str, Any]:

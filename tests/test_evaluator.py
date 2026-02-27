@@ -10,7 +10,7 @@ import pytest
 from src.mcts.mcts import MCTS, MCTSConfig
 from src.mcts.evaluator import (
     evaluate, evaluate_against_random,
-    mcts_agent, random_agent, EvalResult,
+    mcts_agent, random_agent, EvalResult, GameRecord,
 )
 from src.env.env_interface import MinimalQuoridorStub
 
@@ -57,8 +57,10 @@ def test_side_alternation():
 
 def test_should_accept():
     """EvalResult.should_accept threshold logic."""
+    dummy = GameRecord(winner=0, num_moves=10,
+                       duration_s=0.1, agent_a_player=0)
     r = EvalResult(agent_a_wins=60, agent_b_wins=40, draws=0)
-    r.games = [None] * 100  # dummy for num_games property
+    r.games = [dummy] * 100
 
     assert r.should_accept(threshold=0.55)
     assert not r.should_accept(threshold=0.65)

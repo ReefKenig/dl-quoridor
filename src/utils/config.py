@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AppConfig:
     """Typed wrapper around the raw JSON config."""
+    is_poc: bool
     board_size: int
     raw: Dict[str, Any]
 
@@ -89,8 +90,11 @@ def load_config(path: str = "configs/config_5x5.json") -> AppConfig:
     with open(config_path, "r") as f:
         raw = json.load(f)
 
-    board_size = raw.get("board_size", 5)
-    logger.info("Loaded config: board_size=%d from %s",
-                board_size, config_path)
+    is_poc = raw.get("is_poc", True)
+    board_size = raw.get("board_size", 5 if is_poc else 9)
+    logger.info(
+        "Loaded config: is_poc=%s, board_size=%d from %s",
+        is_poc, board_size, config_path,
+    )
 
-    return AppConfig(board_size=board_size, raw=raw)
+    return AppConfig(is_poc=is_poc, board_size=board_size, raw=raw)

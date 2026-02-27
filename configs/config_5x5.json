@@ -1,4 +1,5 @@
 {
+    "is_poc": true,
     "board_size": 5,
     "mcts": {
         "num_simulations": 400,

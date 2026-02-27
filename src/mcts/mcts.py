@@ -26,7 +26,7 @@ Usage:
 import math
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional, Callable, Tuple, Dict
+from typing import Optional, Callable, Tuple
 
 
 @dataclass
@@ -62,7 +62,7 @@ class Node:
         self.prior = prior
         self.visit_count: int = 0
         self.value_sum: float = 0.0
-        self.children: Dict[int, "Node"] = {}
+        self.children: dict[int, "Node"] = {}
         self.is_expanded: bool = False
         self.valid_actions: Optional[np.ndarray] = None
 
@@ -146,9 +146,13 @@ class MCTS:
 
             # === 2. EXPAND & EVALUATE ===
             if done:
-                # Terminal: player who just moved won/lost.
-                # From current node's player perspective, they are the one
-                # who DIDN'T just move, so if there's a winner, they lost.
+                # Terminal node reached after env.step().
+                # Convention: env.step() returns reward=+1 for the player
+                # who just MOVED (the parent's action led here). The
+                # current node's perspective is that of the NEXT player
+                # to move — i.e., the opponent of whoever just won.
+                # Therefore: winner exists → current node lost → -1.
+                #            Draw / no winner → 0.
                 winner = info.get("winner", None)
                 value = -1.0 if winner is not None else 0.0
             else:

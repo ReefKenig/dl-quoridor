@@ -68,9 +68,13 @@ class QuoridorEnvInterface(ABC):
     def state_to_tensor(self, state) -> np.ndarray:
         """
         Convert game state to the observation tensor for the neural network.
-        For 5x5: returns shape (5, 5, 10)
-        For 9x9: returns shape (9, 9, 10)
+
+        Shape: (board_size, board_size, 10) — HWC format.
+            5×5 POC (is_poc=True):  (5, 5, 10)
+            9×9 full (is_poc=False): (9, 9, 10)
+
         All values normalized to [0, 1].
+        See tensor_spec.py for channel breakdown and reference implementation.
         """
         ...
 

@@ -1,7 +1,7 @@
 import numpy as np
 import copy
 from collections import deque
-from typing import Set, Tuple, List, Optional
+from typing import Set, Tuple, List
 from dataclasses import dataclass
 
 from src.env.env_interface import QuoridorEnvInterface

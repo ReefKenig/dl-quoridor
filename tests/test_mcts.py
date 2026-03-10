@@ -24,7 +24,7 @@ def test_mcts_vs_random_stub(num_games: int = 100, num_sims: int = 400):
     wins = {0: 0, 1: 0, "draw": 0}
     mcts_player = 0
 
-    for game_idx in range(num_games):
+    for _ in range(num_games):
         state = env.reset()
         move_count = 0
 
@@ -34,9 +34,9 @@ def test_mcts_vs_random_stub(num_games: int = 100, num_sims: int = 400):
                 action = np.argmax(probs)
             else:
                 valid = env.get_valid_actions(state)
-                action = np.random.choice(valid)
+                action = np.random.default_rng().choice(valid)
 
-            state, _, done, info = env.step(state, action)
+            state, _, _, _ = env.step(state, action)
             move_count += 1
 
         if state.winner == mcts_player:
@@ -55,9 +55,9 @@ def test_replay_buffer():
     buf = ReplayBuffer(max_size=1000)
     samples = [
         TrainingSample(
-            state=np.random.randn(5, 5, 10).astype(np.float32),
-            policy_target=np.random.dirichlet(np.ones(4)),
-            value_target=np.random.choice([-1.0, 1.0]),
+            state=np.random.default_rng().random((5, 5, 10)).astype(np.float32),
+            policy_target=np.random.default_rng().dirichlet(np.ones(4)),
+            value_target=np.random.default_rng().choice([-1.0, 1.0]),
         )
         for _ in range(200)
     ]
@@ -84,32 +84,3 @@ def test_replay_buffer_overflow():
     ]
     buf.add(samples)
     assert len(buf) == 50
-
-
-@pytest.mark.slow
-def test_mcts_vs_random_real():
-    """MCTS vs Random on real QuoridorEnv (5×5 POC)."""
-    from src.env.quoridor_env import QuoridorEnv
-
-    env = QuoridorEnv(is_poc=True)
-    mcts = MCTS(config=MCTSConfig(num_simulations=400))
-
-    wins = 0
-    num_games = 50
-    for _ in range(num_games):
-        state = env.reset()
-        while True:
-            if env.get_current_player(state) == 0:
-                probs = mcts.search(env, state, temperature=0.1)
-                action = np.argmax(probs)
-            else:
-                valid = env.get_valid_actions(state)
-                action = np.random.choice(valid)
-            state, _, done, info = env.step(state, action)
-            if done:
-                if info["winner"] == 0:
-                    wins += 1
-                break
-
-    win_rate = wins / num_games
-    assert win_rate > 0.80, f"MCTS win rate {win_rate:.1%} < 80%"

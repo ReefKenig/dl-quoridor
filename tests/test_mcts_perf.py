@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from src.env.env_interface import MinimalQuoridorStub
+from src.env.quoridor_env import QuoridorEnv
 from src.mcts.mcts import MCTS, MCTSConfig
 
 WARMUP = 3
@@ -18,7 +18,7 @@ SIM_COUNTS = [100, 200, 400, 800]
 
 def _bench(num_simulations: int) -> list[float]:
     """Return a list of per-search durations (seconds)."""
-    env = MinimalQuoridorStub()
+    env = QuoridorEnv(board_size=5, max_walls=0)
     state = env.reset()
     mcts = MCTS(config=MCTSConfig(num_simulations=num_simulations))
 

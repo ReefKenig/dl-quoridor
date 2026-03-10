@@ -64,10 +64,34 @@ class QuoridorEnv(QuoridorEnvInterface):
         return state.current_player
     
     def clone_state(self, state: QuoridorState) -> QuoridorState:
-        return copy.deepcopy(state)
+        return QuoridorState(
+            board_size=state.board_size,
+            p0_pos=state.p0_pos,
+            p1_pos=state.p1_pos,
+            h_walls=state.h_walls.copy(),
+            v_walls=state.v_walls.copy(),
+            p0_walls=state.p0_walls,
+            p1_walls=state.p1_walls,
+            current_player=state.current_player,
+            turn_count=state.turn_count,
+            game_over=state.game_over,
+            winner=state.winner
+        )
     
     def step(self, state: QuoridorState, action: int) -> Tuple[QuoridorState, float, bool, dict]:
-        new_state = copy.deepcopy(state)
+        new_state = QuoridorState(
+            board_size=state.board_size,
+            p0_pos=state.p0_pos,
+            p1_pos=state.p1_pos,
+            h_walls=state.h_walls.copy(),
+            v_walls=state.v_walls.copy(),
+            p0_walls=state.p0_walls,
+            p1_walls=state.p1_walls,
+            current_player=state.current_player,
+            turn_count=state.turn_count,
+            game_over=state.game_over,
+            winner=state.winner
+        )
         
         N = self.board_size
         W = N - 1
@@ -88,7 +112,8 @@ class QuoridorEnv(QuoridorEnvInterface):
         new_state.current_player = 1 - new_state.current_player
         new_state.turn_count += 1
         
-        return new_state, reward, done, {}
+        info = {"winner": new_state.winner if new_state.game_over else None}
+        return new_state, reward, done, info
     
     def get_valid_actions(self, state: QuoridorState) -> np.ndarray:
         if state.game_over:
@@ -154,11 +179,23 @@ class QuoridorEnv(QuoridorEnvInterface):
         return moves
     
     def _is_valid_h_wall(self, r: int, c: int, h_walls: Set[Tuple[int, int]], v_walls: Set[Tuple[int, int]]) -> bool:
-        if [(r, c), (r, c - 1), (r, c + 1)] in h_walls or (r, c) in v_walls: return False
+        # horizontal wall occupies (r,c). It may not overlap existing walls or be adjacent to another horizontal wall
+        if (r, c) in v_walls:
+            # cannot place where a vertical wall already exists
+            return False
+        # prevent overlapping or touching another horizontal wall
+        if (r, c) in h_walls or (r, c - 1) in h_walls or (r, c + 1) in h_walls:
+            return False
         return True
     
     def _is_valid_v_wall(self, r: int, c: int, h_walls: Set[Tuple[int, int]], v_walls: Set[Tuple[int, int]]) -> bool:
-        if [(r, c), (r - 1, c), (r + 1, c)] in v_walls or (r, c) in h_walls: return False
+        # vertical wall occupies (r,c). It may not overlap existing walls or be adjacent to another vertical wall
+        if (r, c) in h_walls:
+            # cannot place where a horizontal wall already exists
+            return False
+        # prevent overlapping or touching another vertical wall
+        if (r, c) in v_walls or (r - 1, c) in v_walls or (r + 1, c) in v_walls:
+            return False
         return True
     
     def _has_path(self, start_pos: Tuple[int, int], goal_row: int, h_walls: Set[Tuple[int, int]], v_walls: Set[Tuple[int, int]], board_size: int) -> bool:
@@ -208,8 +245,15 @@ class QuoridorEnv(QuoridorEnvInterface):
         for r in range(W):
             for c in range(W):
                 if self._is_valid_h_wall(r, c, state.h_walls, state.v_walls):
-                    action = pawn_moves + r * W + c
-                    actions.append(action)
+                    # ensure the wall doesn't block either player from reaching their goal
+                    temp_h = set(state.h_walls)
+                    temp_h.add((r, c))
+                    if (
+                        self._has_path(state.p0_pos, N - 1, temp_h, state.v_walls, N)
+                        and self._has_path(state.p1_pos, 0, temp_h, state.v_walls, N)
+                    ):
+                        action = pawn_moves + r * W + c
+                        actions.append(action)
         return actions
     
     def _get_valid_v_wall_actions(self, state: QuoridorState) -> List[int]:
@@ -227,8 +271,14 @@ class QuoridorEnv(QuoridorEnvInterface):
         for r in range(W):
             for c in range(W):
                 if self._is_valid_v_wall(r, c, state.h_walls, state.v_walls):
-                    action = h_walls_offset + r * W + c
-                    actions.append(action)
+                    temp_v = set(state.v_walls)
+                    temp_v.add((r, c))
+                    if (
+                        self._has_path(state.p0_pos, N - 1, state.h_walls, temp_v, N)
+                        and self._has_path(state.p1_pos, 0, state.h_walls, temp_v, N)
+                    ):
+                        action = h_walls_offset + r * W + c
+                        actions.append(action)
         return actions
     
     def _execute_pawn_move(self, state: QuoridorState, action: int, N: int) -> None:
@@ -271,24 +321,24 @@ class QuoridorEnv(QuoridorEnvInterface):
         """Check if game is over and compute reward."""
         p0_row, _ = state.p0_pos
         p1_row, _ = state.p1_pos
-        
-        # Check win conditions
-        if p0_row == 0:
+
+        # Player 0 wins by reaching bottom row, player 1 wins by reaching top row
+        if p0_row == self.board_size - 1:
             state.game_over = True
             state.winner = 0
             return 1.0, True
-        
-        if p1_row == self.board_size - 1:
+
+        if p1_row == 0:
             state.game_over = True
             state.winner = 1
             return -1.0, True
-        
-        # Check turn limit
+
+        # Check turn limit (draw)
         if state.turn_count >= self.max_turns:
             state.game_over = True
             state.winner = -1
             return 0.0, True
-        
+
         return 0.0, False
     
     def _is_within_bounds(self, r: int, c: int, N: int) -> bool:

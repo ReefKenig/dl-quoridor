@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 class ResidualBlock(nn.Module):
-    """Single residual block: Conv → BN → ReLU → Conv → BN + skip."""
+    """Single residual block: Conv → BN → ReLU → Conv → BN + skip"""
 
     def __init__(self, num_channels: int):
         super().__init__()

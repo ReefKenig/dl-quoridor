@@ -29,7 +29,7 @@ def run_integration_test():
 
         policy, value = model.predict(observation)
         
-        print("✅ Model prediction successful!")
+        print("Model prediction successful!")
         print(f"Policy output size: {len(policy)}")
         print(f"Value output: {value:.4f}")
         

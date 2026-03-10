@@ -116,13 +116,13 @@ class QuoridorNetwork(nn.Module):
 
         # Policy head
         p = F.relu(self.policy_bn(self.policy_conv(out)))
-        p = p.view(p.size(0), -1)
+        p = p.reshape(p.size(0), -1)
         p = self.policy_fc(p)
         policy = F.log_softmax(p, dim=1)
 
         # Value head
         v = F.relu(self.value_bn(self.value_conv(out)))
-        v = v.view(v.size(0), -1)
+        v = v.reshape(v.size(0), -1)
         v = F.relu(self.value_fc1(v))
         value = torch.tanh(self.value_fc2(v))
 

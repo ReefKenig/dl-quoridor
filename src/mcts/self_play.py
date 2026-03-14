@@ -159,6 +159,7 @@ class TrainingConfig:
     mcts_simulations: int = 400
     replay_buffer_size: int = 50_000
     max_game_moves: int = 500
+    self_play_checkpoint_freq: int = 10  # save progress every N games during self-play
 
 
 def training_loop(
@@ -255,6 +256,24 @@ def training_loop(
                 if (game_idx + 1) % 20 == 0:
                     logger.info(
                         "    Games: %d/%d",
+                        game_idx + 1, config.games_per_iteration,
+                    )
+
+                # Mid-iteration checkpoint: save progress during self-play
+                freq = config.self_play_checkpoint_freq
+                if freq > 0 and (game_idx + 1) % freq == 0 and (game_idx + 1) < config.games_per_iteration:
+                    # Flush collected samples so far into buffer for saving
+                    buffer.add(iteration_samples)
+                    iteration_samples = []  # reset to avoid double-adding
+                    ckpt.save(
+                        iteration=iteration,
+                        model=model,
+                        replay_buffer=buffer,
+                        metrics={"self_play_game": game_idx + 1},
+                        is_best=False,
+                    )
+                    logger.info(
+                        "    Mid-iteration checkpoint saved (%d/%d games)",
                         game_idx + 1, config.games_per_iteration,
                     )
 

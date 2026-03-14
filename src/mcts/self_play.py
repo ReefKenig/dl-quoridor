@@ -159,7 +159,8 @@ class TrainingConfig:
     mcts_simulations: int = 400
     replay_buffer_size: int = 50_000
     max_game_moves: int = 500
-    self_play_checkpoint_freq: int = 10  # save progress every N games during self-play
+    # save progress every N games during self-play
+    self_play_checkpoint_freq: int = 10
 
 
 def training_loop(
@@ -205,6 +206,7 @@ def training_loop(
     # --- Resume from checkpoint if available ---
     start_iteration = 0
     best_win_rate = 0.0
+    resume_self_play_game = 0  # game index to resume from within an iteration
 
     if resume:
         state = ckpt.load_latest(
@@ -217,6 +219,13 @@ def training_loop(
             best_win_rate = state.get("metrics", {}).get(
                 "win_rate_vs_random", 0.0,
             )
+            # If we crashed mid-iteration, resume from that game index
+            if state.get("self_play_game") is not None:
+                resume_self_play_game = state["self_play_game"]
+                logger.info(
+                    "Resuming mid-iteration from game %d",
+                    resume_self_play_game,
+                )
             logger.info(
                 "Resumed from iteration %d (buffer=%d, best_wr=%.1f%%)",
                 start_iteration, len(buffer), best_win_rate * 100,
@@ -238,14 +247,22 @@ def training_loop(
         logger.info("Iteration %d/%d", iteration + 1, config.num_iterations)
 
         # --- 1. Self-play ---
-        logger.info(
-            "  Generating %d self-play games...", config.games_per_iteration,
-        )
+        start_game = resume_self_play_game if iteration == start_iteration else 0
+        remaining_games = config.games_per_iteration - start_game
+        if start_game > 0:
+            logger.info(
+                "  Resuming self-play from game %d/%d (%d remaining)...",
+                start_game, config.games_per_iteration, remaining_games,
+            )
+        else:
+            logger.info(
+                "  Generating %d self-play games...", config.games_per_iteration,
+            )
         iteration_samples = []
         wins = {0: 0, 1: 0}
 
         with Timer() as sp_timer:
-            for game_idx in range(config.games_per_iteration):
+            for game_idx in range(start_game, config.games_per_iteration):
                 samples, winner = play_one_game(
                     env, mcts, max_moves=config.max_game_moves,
                 )

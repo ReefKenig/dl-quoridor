@@ -16,6 +16,7 @@ TESTS = [
     "tests/test_tensor_spec.py",
     "tests/test_checkpoint.py",
     "tests/test_network.py",
+    "tests/smoke_test.py",
 ]
 
 

@@ -222,12 +222,21 @@ def training_loop(
             # If we crashed mid-iteration, resume from that game index
             if state.get("self_play_game") is not None:
                 resume_self_play_game = state["self_play_game"]
-                logger.info(
-                    "Resuming mid-iteration from game %d",
+                logger.warning(
+                    "MID-ITERATION RESUME: iteration %d, "
+                    "resuming from game %d/%d (skipping %d already-played games)",
+                    start_iteration,
+                    resume_self_play_game,
+                    config.games_per_iteration,
                     resume_self_play_game,
                 )
+            else:
+                logger.info(
+                    "Resuming from completed iteration %d",
+                    start_iteration,
+                )
             logger.info(
-                "Resumed from iteration %d (buffer=%d, best_wr=%.1f%%)",
+                "Checkpoint loaded: iteration=%d, buffer=%d samples, best_wr=%.1f%%",
                 start_iteration, len(buffer), best_win_rate * 100,
             )
 

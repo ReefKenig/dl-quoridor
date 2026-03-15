@@ -315,7 +315,7 @@ class QuoridorEnv(QuoridorEnvInterface):
             return False
         return True
 
-    def is_valid_v_wall(
+    def _is_valid_v_wall(
         self,
         r: int,
         c: int,

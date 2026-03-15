@@ -18,7 +18,9 @@ SIM_COUNTS = [100, 200, 400, 800]
 
 def _bench(num_simulations: int) -> list[float]:
     """Return a list of per-search durations (seconds)."""
-    env = QuoridorEnv(board_size=5, max_walls=0)
+    env = QuoridorEnv(is_poc=True)
+    env.max_walls_per_player = 0
+
     state = env.reset()
     mcts = MCTS(config=MCTSConfig(num_simulations=num_simulations))
 

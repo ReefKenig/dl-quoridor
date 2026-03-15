@@ -4,9 +4,10 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import PPO
-from src.env.quoridor_env import QuoridorEnv
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.env.quoridor_env import QuoridorEnv
 
 class SB3Wrapper(gym.Env):
     def __init__(self, board_size=5):

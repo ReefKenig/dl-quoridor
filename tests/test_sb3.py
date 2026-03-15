@@ -11,7 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 class SB3Wrapper(gym.Env):
     def __init__(self, board_size=5):
         super().__init__()
-        self.env = QuoridorEnv(board_size=board_size)
+        self.env = QuoridorEnv(is_poc=True)
         self.board_size = board_size
         
         self.action_space = spaces.Discrete(self.env.action_space_size)
@@ -29,12 +29,14 @@ class SB3Wrapper(gym.Env):
         return obs, {}
 
     def step(self, action):
+        valid = self.env.get_valid_actions(self.state)
+        if action not in valid:
+            action = np.random.choice(valid)
+            
         next_state, reward, done, info = self.env.step(self.state, action)
         self.state = next_state
         obs = self.env.state_to_tensor(self.state)
-        
-        truncated = False 
-        return obs, float(reward), done, truncated, info
+        return obs, float(reward), done, False, info
 
 def run_sb3_check():
     print("Starting SB3 Compatibility Check")

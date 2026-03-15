@@ -1,15 +1,20 @@
-import sys
 import os
 import numpy as np
 import torch
 from flask import Flask, request, jsonify
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from src.model.network import QuoridorModel
 
 app = Flask(__name__)
 
-model = QuoridorModel(board_size=5, action_space_size=44)
+IS_POC = os.environ.get("IS_POC", "True").lower() == "true"
+BOARD_SIZE = 5 if IS_POC else 9
+ACTION_SIZE = 44 if IS_POC else 112 
+MODEL_PATH = os.environ.get("MODEL_PATH", "checkpoints/best/model.pt")
+
+model = QuoridorModel(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE)
+
+if os.path.exists(MODEL_PATH):
+    model.load(MODEL_PATH)
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -17,6 +22,10 @@ def predict():
         data = request.json
         state_array = np.array(data['state'], dtype=np.float32)
         
+        expected_shape = (BOARD_SIZE, BOARD_SIZE, 10)
+        if state_array.shape != expected_shape:
+            return jsonify({'error': f'Expected {expected_shape}, got {state_array.shape}'}), 400
+            
         policy, value = model.predict(state_array)
         
         return jsonify({
@@ -25,6 +34,3 @@ def predict():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)

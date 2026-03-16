@@ -78,7 +78,6 @@ class GameUI:
 
             if action_type == "pawn":
                 dr, dc = data
-                r, c = current_pos[0] + dr, current_pos[1] + dc
                 nr, nc = current_pos[0] + dr, current_pos[1] + dc
                 x, y = self._get_pixel_coords(nr, nc)
                 hitboxes[action] = pygame.Rect(x, y, self.cell_size, self.cell_size)
@@ -147,7 +146,7 @@ class GameUI:
                     self.screen.blit(highlight, rect.topleft)
 
         # Draw pawns
-        for player_idx, pos, color in [
+        for _, pos, color in [
             (0, state.p0_pos, COLORS["player0"]),
             (1, state.p1_pos, COLORS["player1"]),
         ]:

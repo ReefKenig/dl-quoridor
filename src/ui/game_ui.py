@@ -1,7 +1,7 @@
 import sys
 import pygame
 import numpy as np
-from typing import Optional
+from typing import Optional, Tuple, Any
 
 from src.env.quoridor_env import QuoridorEnv, QuoridorState, ACTION_TO_MOVE
 from src.model.network import QuoridorModel
@@ -26,6 +26,22 @@ COLORS = {
     "hover_move": (100, 255, 100, 100),
     "hover_wall": (255, 255, 255, 150),
 }
+
+
+def decode_action(action: int, board_size: int) -> Tuple[str, Any]:
+    """Helper to centralize action decoding instead of hardcoding offset everywhere."""
+    W = board_size - 1
+    h_offset = 12
+    v_offset = 12 + W**2
+
+    if action < 12:
+        return "pawn", ACTION_TO_MOVE[action]
+    elif action < v_offset:
+        w = action - h_offset
+        return "h_wall", (w // W, w % W)
+    else:
+        w = action - v_offset
+        return "v_wall", (w // W, w % W)
 
 
 class GameUI:
@@ -55,30 +71,27 @@ class GameUI:
     def _get_action_hitboxes(self, state: QuoridorState) -> dict:
         valid_actions = self.env.get_valid_actions(state)
         hitboxes = {}
-
         current_pos = state.p0_pos if state.current_player == 0 else state.p1_pos
-        W = self.board_size - 1
-        h_offset = 12
-        v_offset = 12 + W**2
 
         for action in valid_actions:
-            if action < 12:
-                dr, dc = ACTION_TO_MOVE[action]
+            action_type, data = decode_action(action, self.board_size)
+
+            if action_type == "pawn":
+                dr, dc = data
+                r, c = current_pos[0] + dr, current_pos[1] + dc
                 nr, nc = current_pos[0] + dr, current_pos[1] + dc
                 x, y = self._get_pixel_coords(nr, nc)
                 hitboxes[action] = pygame.Rect(x, y, self.cell_size, self.cell_size)
 
-            elif action < v_offset:
-                w = action - h_offset
-                r, c = w // W, w % W
+            elif action_type == "h_wall":
+                r, c = data
                 x, y = self._get_pixel_coords(r, c)
                 w_width = 2 * self.cell_size + self.groove_size
                 w_height = self.groove_size
                 hitboxes[action] = pygame.Rect(x, y + self.cell_size, w_width, w_height)
 
-            else:
-                w = action - v_offset
-                r, c = w // W, w % W
+            elif action_type == "v_wall":
+                r, c = data
                 x, y = self._get_pixel_coords(r, c)
                 w_width = self.groove_size
                 w_height = 2 * self.cell_size + self.groove_size
@@ -86,7 +99,7 @@ class GameUI:
 
         return hitboxes
 
-    def draw(self, state: QuoridorState):
+    def draw(self, state: QuoridorState, hitboxes: Optional[dict] = None):
         self.screen.fill(COLORS["background"])
 
         # Draw base board background
@@ -120,7 +133,7 @@ class GameUI:
             pygame.draw.rect(self.screen, COLORS["wall"], wall_rect)
 
         # Hover Highlights (Human turn only)
-        if not state.game_over and state.current_player == 0:
+        if hitboxes and not state.game_over and state.current_player == 0:
             mouse_pos = pygame.mouse.get_pos()
             for action, rect in hitboxes.items():
                 if rect.collidepoint(mouse_pos):
@@ -199,22 +212,29 @@ class GameUI:
                 # Human Turn (P0)
                 if state.current_player == 0 and not state.game_over:
                     if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                        mouse_pos = event.pos
                         for action, rect in hitboxes.items():
-                            if rect.collidepoint(mouse_pos):
-                                state, reward, done, info = self.env.step(state, action)
+                            if rect.collidepoint(event.pos):
+                                state, _, _, _ = self.env.step(state, action)
                                 break
 
-        self.draw(state, hitboxes)
+            # Draw the current state before AI thinks
+            self.draw(state, hitboxes)
 
-        # AI Turn (P1)
-        if state.current_player == 1 and not state.game_over:
-            # Temperature 0.0 means AI plays greedily (best move)
-            action_probs = mcts.search(self.env, state, temperature=0.0)
-            best_action = int(np.argmax(action_probs))
-            state, reward, done, info = self.env.step(state, best_action)
+            # AI Turn (P1)
+            if state.current_player == 1 and not state.game_over:
+                # Provide visual feedback while MCTS blocks the thread
+                thinking_text = self.font.render(
+                    "AI is thinking...", True, COLORS["player1"]
+                )
+                self.screen.blit(thinking_text, (MARGIN, WINDOW_SIZE - 40))
+                pygame.display.flip()
 
-        self.clock.tick(FPS)
+                # Temperature 0.0 means AI plays greedily (best move)
+                action_probs = mcts.search(self.env, state, temperature=0.0)
+                best_action = int(np.argmax(action_probs))
+                state, _, _, _ = self.env.step(state, best_action)
+
+            self.clock.tick(FPS)
 
         pygame.quit()
         sys.exit()

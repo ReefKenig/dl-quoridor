@@ -12,8 +12,8 @@
     "training": {
         "num_iterations": 50,
         "games_per_iteration": 100,
-        "batch_size": 64,
-        "training_epochs": 10,
+        "batch_size": 256,
+        "training_epochs": 50,
         "eval_games": 40,
         "win_threshold": 0.55,
         "replay_buffer_size": 50000,

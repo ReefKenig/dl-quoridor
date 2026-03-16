@@ -18,7 +18,8 @@
         "win_threshold": 0.55,
         "replay_buffer_size": 200000,
         "learning_rate": 0.001,
-        "weight_decay": 0.0001
+        "weight_decay": 0.0001,
+        "max_game_moves": 200
     },
     "network": {
         "num_res_blocks": 8,

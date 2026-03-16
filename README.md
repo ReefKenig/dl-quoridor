@@ -37,8 +37,6 @@ pip install -r requirements.txt
 
 ## Run MCTS Validation
 
-> **Note:** MCTS logic lives in `feature/mcts-engine`. Stubs only on `dev`.
-
 ```bash
 python -m tests.test_mcts
 ```

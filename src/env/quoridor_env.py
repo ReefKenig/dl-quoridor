@@ -56,11 +56,12 @@ Owner: Reef
 
 
 class QuoridorEnv(QuoridorEnvInterface):
-    def __init__(self, is_poc: bool = True, max_turns: int = 150):
+    def __init__(self, is_poc: bool = True, max_turns: int = 150, debug: bool = False):
         self.is_poc = is_poc
         self.board_size = 5 if is_poc else 9
         self.max_walls_per_player = 5 if is_poc else 10
         self.max_turns = max_turns
+        self.debug = debug
 
     @property
     def action_space_size(self) -> int:
@@ -110,6 +111,10 @@ class QuoridorEnv(QuoridorEnvInterface):
     def step(
         self, state: QuoridorState, action: int
     ) -> Tuple[QuoridorState, float, bool, dict]:
+        if self.debug:
+            valid = self.get_valid_actions(state)
+            assert action in valid, f"Invalid action {action}. Valid: {valid}"
+
         new_state = self.clone_state(state)
 
         W = self.board_size - 1
@@ -120,9 +125,11 @@ class QuoridorEnv(QuoridorEnvInterface):
         if action < 12:
             dr, dc = ACTION_TO_MOVE[action]
             if new_state.current_player == 0:
-                new_state.p0_pos = (new_state.p0_pos[0] + dr, new_state.p0_pos[1] + dc)
+                new_state.p0_pos = (
+                    new_state.p0_pos[0] + dr, new_state.p0_pos[1] + dc)
             else:
-                new_state.p1_pos = (new_state.p1_pos[0] + dr, new_state.p1_pos[1] + dc)
+                new_state.p1_pos = (
+                    new_state.p1_pos[0] + dr, new_state.p1_pos[1] + dc)
 
         # 2. Horizontal walls
         elif action < v_offset:

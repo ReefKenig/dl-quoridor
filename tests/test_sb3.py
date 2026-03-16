@@ -39,23 +39,13 @@ class SB3Wrapper(gym.Env):
         return self._get_obs(), float(reward), done, False, info
 
 
-def run_sb3_check():
-    print("Starting SB3 Compatibility Check")
+def test_sb3_ppo_cnn():
+    """Verify SB3 PPO + CnnPolicy can init and run on the QuoridorEnv wrapper."""
+    env = SB3Wrapper(board_size=5)
 
-    try:
-        env = SB3Wrapper(board_size=5)
-
-        model = PPO("CnnPolicy", env, verbose=1)
-        print("SB3 Model initialized successfully")
-
-        print("Running 100 timesteps")
-        model.learn(total_timesteps=100)
-
-        print("SB3 check finished successfully")
-
-    except Exception as e:
-        print(f"SB3 Check failed: {e}")
+    model = PPO("CnnPolicy", env, verbose=1)
+    model.learn(total_timesteps=100)
 
 
 if __name__ == "__main__":
-    run_sb3_check()
+    test_sb3_ppo_cnn()

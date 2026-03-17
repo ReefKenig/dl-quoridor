@@ -3,10 +3,11 @@ import pygame
 import numpy as np
 from typing import Optional, Tuple, Any
 
-from src.env.quoridor_env import QuoridorEnv, QuoridorState, ACTION_TO_MOVE
+from src.env.quoridor_env import QuoridorEnv, QuoridorState, decode_action
 from src.model.network import QuoridorModel
 from src.mcts.mcts import MCTS, MCTSConfig
 from src.utils.checkpoint import CheckpointManager
+from src.utils.config import load_config
 
 # Constants
 FPS = 30
@@ -28,22 +29,6 @@ COLORS = {
 }
 
 
-def decode_action(action: int, board_size: int) -> Tuple[str, Any]:
-    """Helper to centralize action decoding instead of hardcoding offset everywhere."""
-    W = board_size - 1
-    h_offset = 12
-    v_offset = 12 + W**2
-
-    if action < 12:
-        return "pawn", ACTION_TO_MOVE[action]
-    elif action < v_offset:
-        w = action - h_offset
-        return "h_wall", (w // W, w % W)
-    else:
-        w = action - v_offset
-        return "v_wall", (w // W, w % W)
-
-
 class GameUI:
     def __init__(self, env: QuoridorEnv):
         self.env = env
@@ -51,7 +36,8 @@ class GameUI:
 
         pygame.init()
         self.screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE))
-        pygame.display.set_caption(f"Quoridor AI({self.board_size}x{self.board_size})")
+        pygame.display.set_caption(
+            f"Quoridor AI({self.board_size}x{self.board_size})")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont(None, 36)
 
@@ -80,21 +66,24 @@ class GameUI:
                 dr, dc = data
                 nr, nc = current_pos[0] + dr, current_pos[1] + dc
                 x, y = self._get_pixel_coords(nr, nc)
-                hitboxes[action] = pygame.Rect(x, y, self.cell_size, self.cell_size)
+                hitboxes[action] = pygame.Rect(
+                    x, y, self.cell_size, self.cell_size)
 
             elif action_type == "h_wall":
                 r, c = data
                 x, y = self._get_pixel_coords(r, c)
                 w_width = 2 * self.cell_size + self.groove_size
                 w_height = self.groove_size
-                hitboxes[action] = pygame.Rect(x, y + self.cell_size, w_width, w_height)
+                hitboxes[action] = pygame.Rect(
+                    x, y + self.cell_size, w_width, w_height)
 
             elif action_type == "v_wall":
                 r, c = data
                 x, y = self._get_pixel_coords(r, c)
                 w_width = self.groove_size
                 w_height = 2 * self.cell_size + self.groove_size
-                hitboxes[action] = pygame.Rect(x + self.cell_size, y, w_width, w_height)
+                hitboxes[action] = pygame.Rect(
+                    x + self.cell_size, y, w_width, w_height)
 
         return hitboxes
 
@@ -102,7 +91,8 @@ class GameUI:
         self.screen.fill(COLORS["background"])
 
         # Draw base board background
-        board_rect = pygame.Rect(MARGIN, MARGIN, self.playable_size, self.playable_size)
+        board_rect = pygame.Rect(
+            MARGIN, MARGIN, self.playable_size, self.playable_size)
         pygame.draw.rect(self.screen, COLORS["groove"], board_rect)
         pygame.draw.rect(self.screen, COLORS["board"], board_rect, 5)
 
@@ -172,8 +162,10 @@ class GameUI:
         )
 
         self.screen.blit(p0_text, (MARGIN, 10))
-        self.screen.blit(p1_text, (WINDOW_SIZE - MARGIN - p1_text.get_width(), 10))
-        self.screen.blit(turn_text, (WINDOW_SIZE // 2 - turn_text.get_width() // 2, 10))
+        self.screen.blit(
+            p1_text, (WINDOW_SIZE - MARGIN - p1_text.get_width(), 10))
+        self.screen.blit(turn_text, (WINDOW_SIZE // 2 -
+                         turn_text.get_width() // 2, 10))
 
         if state.game_over:
             win_text = (
@@ -186,7 +178,8 @@ class GameUI:
             )
             go_surf = self.font.render(win_text, True, color)
             self.screen.blit(
-                go_surf, (WINDOW_SIZE // 2 - go_surf.get_width() // 2, WINDOW_SIZE - 40)
+                go_surf, (WINDOW_SIZE // 2 - go_surf.get_width() //
+                          2, WINDOW_SIZE - 40)
             )
 
         pygame.display.flip()
@@ -239,16 +232,20 @@ class GameUI:
         sys.exit()
 
 
-def load_ai_and_run():
-    print("Loading environment...")
-    env = QuoridorEnv(is_poc=True)
+def load_ai_and_run(config_path: str = "configs/config_5x5.json"):
+    print("Loading config...")
+    cfg = load_config(config_path)
 
+    print("Loading environment...")
+    env = QuoridorEnv(is_poc=cfg.is_poc)
+
+    net_cfg = cfg.network_config()
     print("Loading model and checkpoints...")
     model = QuoridorModel(
-        board_size=env.board_size,
+        board_size=cfg.board_size,
         action_space_size=env.action_space_size,
-        num_channels=64,
-        num_res_blocks=4,
+        num_channels=net_cfg.get("num_channels", 64),
+        num_res_blocks=net_cfg.get("num_res_blocks", 4),
     )
 
     ckpt = CheckpointManager(base_dir="checkpoints")
@@ -264,8 +261,8 @@ def load_ai_and_run():
         tensor = env.state_to_tensor(state)
         return model.predict(tensor)
 
-    # 400 simulations per move based on config_5x5.json
-    mcts = MCTS(config=MCTSConfig(num_simulations=400), evaluate_fn=nn_evaluate)
+    mcts_cfg = cfg.mcts_config()
+    mcts = MCTS(config=mcts_cfg, evaluate_fn=nn_evaluate)
 
     print("Starting GUI...")
     gui = GameUI(env)

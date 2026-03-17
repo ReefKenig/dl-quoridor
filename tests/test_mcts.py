@@ -14,6 +14,7 @@ import pytest
 from src.mcts.mcts import MCTS, MCTSConfig
 from src.mcts.self_play import ReplayBuffer, TrainingSample
 from src.env.env_interface import MinimalQuoridorStub
+from src.env.quoridor_env import QuoridorEnv
 
 
 def test_mcts_vs_random_stub(num_games: int = 100, num_sims: int = 400):
@@ -84,3 +85,34 @@ def test_replay_buffer_overflow():
     ]
     buf.add(samples)
     assert len(buf) == 50
+
+
+@pytest.mark.slow
+def test_mcts_vs_random_real_env(num_games: int = 20, num_sims: int = 200):
+    """MCTS (random rollouts) vs random agent on real 5x5 QuoridorEnv."""
+    env = QuoridorEnv(is_poc=True)
+    mcts = MCTS(config=MCTSConfig(num_simulations=num_sims))
+
+    wins = 0
+    mcts_player = 0
+
+    for _ in range(num_games):
+        state = env.reset()
+        move_count = 0
+
+        while not state.game_over and move_count < 200:
+            if state.current_player == mcts_player:
+                probs = mcts.search(env, state, temperature=0.1)
+                action = np.argmax(probs)
+            else:
+                valid = env.get_valid_actions(state)
+                action = np.random.default_rng().choice(valid)
+
+            state, _, _, _ = env.step(state, action)
+            move_count += 1
+
+        if state.winner == mcts_player:
+            wins += 1
+
+    win_rate = wins / num_games
+    assert win_rate > 0.50, f"MCTS win rate on real env {win_rate:.1%} < 50%"

@@ -5,8 +5,8 @@ Defines the EXACT interface that MCTS expects from the game environment.
 Reef: implement QuoridorEnvInterface in quoridor_env.py.
 Iris: code against this interface.
 
-Also includes MinimalQuoridorStub for testing MCTS in isolation
-before the real engine is ready.
+Also includes MinimalQuoridorStub for unit-testing MCTS search logic
+in isolation (fast, deterministic, no wall mechanics).
 """
 
 from abc import ABC, abstractmethod
@@ -80,8 +80,8 @@ class QuoridorEnvInterface(ABC):
 
 
 # =========================================================================
-#  STUB ENVIRONMENT — for testing MCTS before real engine exists
-#  Delete once Reef's QuoridorEnv is ready.
+#  STUB ENVIRONMENT — lightweight pawn-race for unit-testing MCTS logic.
+#  Keep for CI/CD validation (fast, no walls, deterministic).
 # =========================================================================
 
 @dataclass

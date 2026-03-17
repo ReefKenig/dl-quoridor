@@ -32,6 +32,12 @@ from typing import Any, Optional, Callable, List
 
 from src.mcts.mcts import MCTS
 
+__all__ = [
+    "evaluate", "evaluate_against_random",
+    "mcts_agent", "random_agent",
+    "EvalResult", "GameRecord", "AgentFn",
+]
+
 logger = logging.getLogger(__name__)
 
 

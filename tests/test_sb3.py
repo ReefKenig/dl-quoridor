@@ -9,13 +9,13 @@ from src.env.quoridor_env import QuoridorEnv
 class SB3Wrapper(gym.Env):
     def __init__(self, board_size=5):
         super().__init__()
-        self.env = QuoridorEnv(is_poc=True)
-        self.board_size = board_size
+        self.env = QuoridorEnv(is_poc=(board_size <= 5))
+        self.board_size = self.env.board_size
 
         self.action_space = spaces.Discrete(self.env.action_space_size)
         self.observation_space = spaces.Box(
             low=0, high=1,
-            shape=(10, board_size, board_size),  # CHW for CnnPolicy
+            shape=(10, self.board_size, self.board_size),  # CHW for CnnPolicy
             dtype=np.float32
         )
         self.state = None

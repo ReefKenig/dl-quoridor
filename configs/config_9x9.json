@@ -19,7 +19,9 @@
         "replay_buffer_size": 200000,
         "learning_rate": 0.001,
         "weight_decay": 0.0001,
-        "max_game_moves": 200
+        "max_game_moves": 200,
+        "eval_random_games": 20,
+        "self_play_checkpoint_freq": 10
     },
     "network": {
         "num_res_blocks": 8,

@@ -1,14 +1,14 @@
 import os
 import numpy as np
-import torch
 from flask import Flask, request, jsonify
 from src.model.network import QuoridorModel
+from src.env.quoridor_env import compute_action_space_size
 
 app = Flask(__name__)
 
 IS_POC = os.environ.get("IS_POC", "True").lower() == "true"
 BOARD_SIZE = 5 if IS_POC else 9
-ACTION_SIZE = 44 if IS_POC else 140
+ACTION_SIZE = compute_action_space_size(BOARD_SIZE)
 MODEL_PATH = os.environ.get("MODEL_PATH", "checkpoints/best/model.pt")
 
 model = QuoridorModel(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE)

@@ -30,6 +30,28 @@ MOVE_MAP = {
 ACTION_TO_MOVE = {v: k for k, v in MOVE_MAP.items()}
 
 
+def decode_action(action: int, board_size: int) -> Tuple[str, any]:
+    """Decode an integer action into its type and data.
+
+    Returns:
+        ("pawn", (dr, dc))    for movement actions
+        ("h_wall", (r, c))    for horizontal wall placement
+        ("v_wall", (r, c))    for vertical wall placement
+    """
+    W = board_size - 1
+    h_offset = 12
+    v_offset = 12 + W ** 2
+
+    if action < 12:
+        return "pawn", ACTION_TO_MOVE[action]
+    elif action < v_offset:
+        w = action - h_offset
+        return "h_wall", (w // W, w % W)
+    else:
+        w = action - v_offset
+        return "v_wall", (w // W, w % W)
+
+
 @dataclass
 class QuoridorState:
     board_size: int

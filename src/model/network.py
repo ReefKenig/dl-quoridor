@@ -259,7 +259,11 @@ class QuoridorModel:
         logger.info("Model saved to %s", path)
 
     def load(self, path: str):
-        """Load model weights and optimizer state."""
+        """Load model weights and optimizer state.
+
+        WARNING: weights_only=False is required to load optimizer state
+        but permits arbitrary code execution. Only load trusted checkpoints.
+        """
         checkpoint = torch.load(
             path, map_location=self.device, weights_only=False)
         self.network.load_state_dict(checkpoint["network_state"])

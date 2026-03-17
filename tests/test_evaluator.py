@@ -13,6 +13,7 @@ from src.mcts.evaluator import (
     mcts_agent, random_agent, EvalResult, GameRecord,
 )
 from src.env.env_interface import MinimalQuoridorStub
+from src.env.quoridor_env import QuoridorEnv
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -64,3 +65,16 @@ def test_should_accept():
 
     assert r.should_accept(threshold=0.55)
     assert not r.should_accept(threshold=0.65)
+
+
+@pytest.mark.slow
+def test_mcts_vs_random_real_env():
+    """MCTS agent should beat random on real 5x5 QuoridorEnv."""
+    env = QuoridorEnv(is_poc=True)
+    mcts = MCTS(config=MCTSConfig(num_simulations=200))
+    agent_a = mcts_agent(mcts, temperature=0.1)
+
+    result = evaluate_against_random(env, agent_a, num_games=20)
+    assert result.agent_a_win_rate > 0.50, (
+        f"Win rate on real env {result.agent_a_win_rate:.1%} < 50%"
+    )

@@ -6,17 +6,19 @@ Owner: Iris
 Drives the AlphaZero training cycle:
     1. Self-play → generate (state, mcts_policy, outcome) tuples
     2. Train network on collected data
-    3. Evaluate new model vs previous best
-    4. Repeat
-
-Wire in once Rom's network and Reef's env are ready.
+    3. Evaluate new model vs current best (accept/reject gate)
+    4. Evaluate vs random (absolute strength tracking)
+    5. Checkpoint & log
+    6. Repeat
 """
 
 from src.mcts.mcts import MCTS, MCTSConfig
 from src.mcts.evaluator import evaluate, mcts_agent, random_agent
 from src.utils.checkpoint import CheckpointManager
 from src.utils.logger import TrainingLogger, Timer
+import copy
 import logging
+import os
 import numpy as np
 from dataclasses import dataclass, asdict
 from typing import List, Tuple, Optional
@@ -155,10 +157,13 @@ class TrainingConfig:
     batch_size: int = 64
     training_epochs: int = 10
     eval_games: int = 40
+    eval_random_games: int = 20     # quick eval vs random for absolute strength
     win_threshold: float = 0.55
     mcts_simulations: int = 400
     replay_buffer_size: int = 50_000
     max_game_moves: int = 500
+    # save progress every N games during self-play (0 = disabled)
+    self_play_checkpoint_freq: int = 10
 
 
 def training_loop(
@@ -176,12 +181,14 @@ def training_loop(
     Cycle per iteration:
         1. Self-play → collect (state, mcts_policy, outcome) tuples
         2. Train network on replay buffer
-        3. Evaluate model vs random baseline
-        4. Checkpoint (saves best model when win-rate improves)
+        3. Evaluate new model vs current best (accept/reject gate)
+        4. Quick eval vs random (absolute strength tracking)
+        5. Checkpoint (saves best model when accepted)
+        6. Log metrics
 
     Args:
         env: QuoridorEnvInterface implementation
-        model: object with predict / train_step / save / load interface
+        model: object with predict / train_step / save / load / copy_weights_from
         config: training hyperparameters
         checkpoint_dir: directory for training checkpoints
         resume: if True, attempt to resume from the latest checkpoint
@@ -203,22 +210,37 @@ def training_loop(
 
     # --- Resume from checkpoint if available ---
     start_iteration = 0
-    best_win_rate = 0.0
+    resume_self_play_game = 0
+    loaded_state = None
 
     if resume:
-        state = ckpt.load_latest(
+        loaded_state = ckpt.load_latest(
             replay_buffer_max_size=config.replay_buffer_size,
         )
-        if state is not None:
-            start_iteration = state["iteration"]
-            model.load(state["model_path"])
-            buffer = state["replay_buffer"]
-            best_win_rate = state.get("metrics", {}).get(
-                "win_rate_vs_random", 0.0,
-            )
+        if loaded_state is not None:
+            start_iteration = loaded_state["iteration"]
+            model.load(loaded_state["model_path"])
+            buffer = loaded_state["replay_buffer"]
+            # Mid-iteration resume
+            mid_game = loaded_state.get("metrics", {}).get("self_play_game")
+            if mid_game is not None:
+                resume_self_play_game = mid_game
+                logger.warning(
+                    "MID-ITERATION RESUME: iteration %d, "
+                    "resuming from game %d/%d (skipping %d already-played games)",
+                    start_iteration,
+                    resume_self_play_game,
+                    config.games_per_iteration,
+                    resume_self_play_game,
+                )
+            else:
+                logger.info(
+                    "Resuming from completed iteration %d",
+                    start_iteration,
+                )
             logger.info(
-                "Resumed from iteration %d (buffer=%d, best_wr=%.1f%%)",
-                start_iteration, len(buffer), best_win_rate * 100,
+                "Checkpoint loaded: iteration=%d, buffer=%d samples",
+                start_iteration, len(buffer),
             )
 
     # --- NN evaluation closure for MCTS ---
@@ -232,19 +254,46 @@ def training_loop(
         evaluate_fn=nn_evaluate,
     )
 
+    # --- Best model for AlphaZero accept/reject gate ---
+    best_model = copy.deepcopy(model)
+
+    if resume and loaded_state is not None:
+        best_model_path = loaded_state.get("best_model_path", "")
+        if best_model_path and os.path.exists(best_model_path):
+            best_model.load(best_model_path)
+            logger.info("Loaded best model from %s", best_model_path)
+
+    def best_nn_evaluate(game_state):
+        tensor = env.state_to_tensor(game_state)
+        return best_model.predict(tensor)
+
+    best_mcts = MCTS(
+        config=MCTSConfig(num_simulations=config.mcts_simulations),
+        evaluate_fn=best_nn_evaluate,
+    )
+
     for iteration in range(start_iteration, config.num_iterations):
         logger.info("=" * 50)
         logger.info("Iteration %d/%d", iteration + 1, config.num_iterations)
 
         # --- 1. Self-play ---
-        logger.info(
-            "  Generating %d self-play games...", config.games_per_iteration,
-        )
+        start_game = resume_self_play_game if iteration == start_iteration else 0
+        remaining_games = config.games_per_iteration - start_game
+        if start_game > 0:
+            logger.info(
+                "  Resuming self-play from game %d/%d (%d remaining)...",
+                start_game, config.games_per_iteration, remaining_games,
+            )
+        else:
+            logger.info(
+                "  Generating %d self-play games...", config.games_per_iteration,
+            )
         iteration_samples = []
+        iteration_sample_count = 0
         wins = {0: 0, 1: 0}
 
         with Timer() as sp_timer:
-            for game_idx in range(config.games_per_iteration):
+            for game_idx in range(start_game, config.games_per_iteration):
                 samples, winner = play_one_game(
                     env, mcts, max_moves=config.max_game_moves,
                 )
@@ -258,10 +307,29 @@ def training_loop(
                         game_idx + 1, config.games_per_iteration,
                     )
 
+                # Mid-iteration checkpoint
+                freq = config.self_play_checkpoint_freq
+                if freq > 0 and (game_idx + 1) % freq == 0 and (game_idx + 1) < config.games_per_iteration:
+                    buffer.add(iteration_samples)
+                    iteration_sample_count += len(iteration_samples)
+                    iteration_samples = []
+                    ckpt.save(
+                        iteration=iteration,
+                        model=model,
+                        replay_buffer=buffer,
+                        metrics={"self_play_game": game_idx + 1},
+                        is_best=False,
+                    )
+                    logger.info(
+                        "    Mid-iteration checkpoint saved (%d/%d games)",
+                        game_idx + 1, config.games_per_iteration,
+                    )
+
         buffer.add(iteration_samples)
+        iteration_sample_count += len(iteration_samples)
         logger.info(
             "  Samples collected: %d | Buffer: %d",
-            len(iteration_samples), len(buffer),
+            iteration_sample_count, len(buffer),
         )
 
         # --- 2. Train ---
@@ -273,7 +341,7 @@ def training_loop(
             train_logger.log_iteration(
                 iteration=iteration + 1,
                 buffer_size=len(buffer),
-                samples_generated=len(iteration_samples),
+                samples_generated=iteration_sample_count,
                 self_play_duration_s=sp_timer.elapsed_s,
                 total_games_played=config.games_per_iteration,
             )
@@ -295,24 +363,49 @@ def training_loop(
             "  Avg losses — policy: %.4f, value: %.4f", avg_lp, avg_lv,
         )
 
-        # --- 3. Evaluate ---
-        # TODO: upgrade to evaluate vs previous best model once a second
-        #       model instance can be provided by the caller.
+        # --- 3. Evaluate new model vs current best (accept/reject) ---
         candidate = mcts_agent(mcts, temperature=0.1)
-        with Timer() as eval_timer:
-            result = evaluate(
-                env, agent_a=candidate, agent_b=random_agent(),
+        champion = mcts_agent(best_mcts, temperature=0.1)
+        with Timer() as eval_best_timer:
+            result_vs_best = evaluate(
+                env, agent_a=candidate, agent_b=champion,
                 num_games=config.eval_games, verbose=True,
             )
-        logger.info("  Eval: %s", result.summary())
+        logger.info("  Eval vs best: %s", result_vs_best.summary())
 
-        win_rate = result.agent_a_win_rate
-        is_best = win_rate > best_win_rate
+        win_rate_vs_best = result_vs_best.agent_a_win_rate
+        is_best = result_vs_best.should_accept(threshold=config.win_threshold)
         if is_best:
-            best_win_rate = win_rate
-            logger.info("  New best win rate: %.1f%%", win_rate * 100)
+            best_model.copy_weights_from(model)
+            logger.info(
+                "  Model ACCEPTED (%.1f%% > %.0f%% threshold)",
+                win_rate_vs_best * 100, config.win_threshold * 100,
+            )
+        else:
+            logger.info(
+                "  Model REJECTED (%.1f%% <= %.0f%% threshold)",
+                win_rate_vs_best * 100, config.win_threshold * 100,
+            )
 
-        # --- 4. Checkpoint ---
+        # --- 4. Quick eval vs random (absolute strength) ---
+        win_rate_vs_random = 0.0
+        avg_game_length = result_vs_best.avg_game_length
+        eval_random_duration = 0.0
+
+        if config.eval_random_games > 0:
+            with Timer() as eval_random_timer:
+                result_vs_random = evaluate(
+                    env, agent_a=candidate, agent_b=random_agent(),
+                    num_games=config.eval_random_games, verbose=False,
+                )
+            win_rate_vs_random = result_vs_random.agent_a_win_rate
+            avg_game_length = result_vs_random.avg_game_length
+            eval_random_duration = eval_random_timer.elapsed_s
+            logger.info(
+                "  Eval vs random: %s", result_vs_random.summary(),
+            )
+
+        # --- 5. Checkpoint ---
         ckpt.save(
             iteration=iteration + 1,
             model=model,
@@ -320,27 +413,30 @@ def training_loop(
             metrics={
                 "loss_policy": avg_lp,
                 "loss_value": avg_lv,
-                "win_rate_vs_random": win_rate,
+                "win_rate_vs_best": win_rate_vs_best,
+                "win_rate_vs_random": win_rate_vs_random,
             },
             is_best=is_best,
         )
 
-        # --- 5. Log metrics ---
+        # --- 6. Log metrics ---
         train_logger.log_iteration(
             iteration=iteration + 1,
             loss_policy=avg_lp,
             loss_value=avg_lv,
-            win_rate_vs_random=win_rate,
-            avg_game_length=result.avg_game_length,
+            win_rate_vs_best=win_rate_vs_best,
+            win_rate_vs_random=win_rate_vs_random,
+            avg_game_length=avg_game_length,
             total_games_played=config.games_per_iteration,
             self_play_duration_s=sp_timer.elapsed_s,
             training_duration_s=train_timer.elapsed_s,
-            eval_duration_s=eval_timer.elapsed_s,
+            eval_duration_s=eval_best_timer.elapsed_s + eval_random_duration,
             buffer_size=len(buffer),
-            samples_generated=len(iteration_samples),
+            samples_generated=iteration_sample_count,
             model_accepted=is_best,
         )
 
-        logger.info("  Iteration %d complete. best=%s", iteration + 1, is_best)
+        logger.info("  Iteration %d complete. accepted=%s",
+                    iteration + 1, is_best)
 
     train_logger.finish()

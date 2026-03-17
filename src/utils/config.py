@@ -65,6 +65,8 @@ class AppConfig:
             ),
             replay_buffer_size=t.get("replay_buffer_size", 50_000),
             max_game_moves=t.get("max_game_moves", 500),
+            eval_random_games=t.get("eval_random_games", 20),
+            self_play_checkpoint_freq=t.get("self_play_checkpoint_freq", 10),
         )
 
     def network_config(self) -> Dict[str, Any]:

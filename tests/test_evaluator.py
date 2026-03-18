@@ -23,33 +23,34 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 @pytest.mark.slow
 def test_mcts_vs_random():
-    """MCTS agent should beat random agent on real environment."""
+    """MCTS agent should beat random agent with >80% win rate."""
     env = QuoridorEnv(is_poc=True)
-    mcts = MCTS(config=MCTSConfig(num_simulations=100))
+    mcts = MCTS(config=MCTSConfig(num_simulations=400))
     agent_a = mcts_agent(mcts, temperature=0.1)
 
-    result = evaluate_against_random(env, agent_a, num_games=10, verbose=False)
-    assert result.agent_a_win_rate > 0.60, f"Win rate {result.agent_a_win_rate:.1%}"
+    result = evaluate_against_random(env, agent_a, num_games=50, verbose=False)
+    assert result.agent_a_win_rate > 0.80, f"Win rate {result.agent_a_win_rate:.1%}"
 
 
 @pytest.mark.slow
 def test_strong_vs_weak_mcts():
     """More simulations should beat fewer simulations."""
     env = QuoridorEnv(is_poc=True)
-    strong = mcts_agent(MCTS(config=MCTSConfig(num_simulations=200)), temperature=0.1)
-    weak = mcts_agent(MCTS(config=MCTSConfig(num_simulations=10)), temperature=0.1)
+    strong = mcts_agent(MCTS(config=MCTSConfig(num_simulations=400)), temperature=0.1)
+    weak = mcts_agent(MCTS(config=MCTSConfig(num_simulations=50)), temperature=0.1)
 
-    result = evaluate(env, agent_a=strong, agent_b=weak, num_games=10, verbose=False)
+    result = evaluate(env, agent_a=strong, agent_b=weak, num_games=40, verbose=False)
     assert result.agent_a_win_rate >= result.agent_b_win_rate
 
 
+@pytest.mark.slow
 def test_side_alternation():
     """Agent A should play as both player 0 and player 1."""
     env = QuoridorEnv(is_poc=True)
-    agent = mcts_agent(MCTS(config=MCTSConfig(num_simulations=10)), temperature=0.1)
+    agent = mcts_agent(MCTS(config=MCTSConfig(num_simulations=100)), temperature=0.1)
 
     result = evaluate(
-        env, agent_a=agent, agent_b=random_agent(), num_games=4, verbose=False
+        env, agent_a=agent, agent_b=random_agent(), num_games=20, verbose=False
     )
     sides = {g.agent_a_player for g in result.games}
     assert 0 in sides and 1 in sides
@@ -63,3 +64,16 @@ def test_should_accept():
 
     assert r.should_accept(threshold=0.55)
     assert not r.should_accept(threshold=0.65)
+
+
+@pytest.mark.slow
+def test_mcts_vs_random_real_env():
+    """MCTS agent should beat random on real 5x5 QuoridorEnv."""
+    env = QuoridorEnv(is_poc=True)
+    mcts = MCTS(config=MCTSConfig(num_simulations=200))
+    agent_a = mcts_agent(mcts, temperature=0.1)
+
+    result = evaluate_against_random(env, agent_a, num_games=20, verbose=False)
+    assert (
+        result.agent_a_win_rate > 0.50
+    ), f"Win rate on real env {result.agent_a_win_rate:.1%} < 50%"

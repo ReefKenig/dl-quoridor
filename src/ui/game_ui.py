@@ -3,7 +3,7 @@ import argparse
 import requests
 import pygame
 import numpy as np
-from typing import Optional
+from typing import Optional, Tuple, Any
 
 from src.env.quoridor_env import QuoridorEnv, QuoridorState, decode_action
 from src.model.network import QuoridorModel
@@ -226,7 +226,9 @@ class GameUI:
 
 
 def load_ai_and_run(
-    config_path: str = "configs/config_5x5.json", use_remote: bool = False
+    config_path: str = "configs/config_5x5.json",
+    use_remote: bool = False,
+    server_url: str = "http://127.0.0.1:5000/predict",
 ):
     print("Loading config...")
     cfg = load_config(config_path)
@@ -235,20 +237,29 @@ def load_ai_and_run(
     env = QuoridorEnv(is_poc=cfg.is_poc)
 
     if use_remote:
-        print("Using REMOTE inference via Flask server...")
-        SERVER_URL = "http://127.0.0.1:5000/predict"
+        print(f"Using REMOTE inference via Flask server at {server_url}...")
+        import requests  # Lazy importto avoid hard dependency
+
+        consecutive_errors = 0
 
         def nn_evaluate(state):
             tensor = env.state_to_tensor(state)
             payload = {"state": tensor.tolist()}
             try:
-                response = requests.post(SERVER_URL, json=payload, timeout=5)
+                response = requests.post(server_url, json=payload, timeout=5)
                 response.raise_for_status()
                 data = response.json()
+                consecutive_errors[0] = 0  # Reset on success
                 return np.array(data["policy"]), float(data["value"])
             except requests.RequestException as e:
+                consecutive_errors[0] += 1
                 print(f"Error communicating with server: {e}")
-                # Fallback to random uniform on failure
+                if consecutive_errors[0] >= 3:
+                    print(
+                        "FATAL: Server failed 3 consecutive times. Exiting to avoid brain-dead AI."
+                    )
+                    sys.exit(1)
+                # Fallback to random uniform on temporary failure
                 return np.ones(env.action_space_size) / env.action_space_size, 0.0
 
     else:
@@ -256,7 +267,7 @@ def load_ai_and_run(
         net_cfg = cfg.network_config()
         model = QuoridorModel(
             board_size=cfg.board_size,
-            action_space_size=env.action_space_size,
+            action_action_space_size=env.action_space_size,
             num_channels=net_cfg.get("num_channels", 64),
             num_res_blocks=net_cfg.get("num_res_blocks", 4),
         )
@@ -295,6 +306,14 @@ if __name__ == "__main__":
         action="store_true",
         help="Use Flask server for inference instead of loading PyTorch locally",
     )
+    parser.add_argument(
+        "--server-url",
+        type=str,
+        default="http://127.0.0.1:5000/predict",
+        help="Flask server URL if using --remote",
+    )
     args = parser.parse_args()
 
-    load_ai_and_run(config_path=args.config, use_remote=args.remote)
+    load_ai_and_run(
+        config_path=args.config, use_remote=args.remote, server_url=args.server_url
+    )

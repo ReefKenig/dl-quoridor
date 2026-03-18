@@ -1,9 +1,8 @@
 import sys
 import argparse
-import requests
 import pygame
 import numpy as np
-from typing import Optional, Tuple, Any
+from typing import Optional
 
 from src.env.quoridor_env import QuoridorEnv, QuoridorState, decode_action
 from src.model.network import QuoridorModel
@@ -238,9 +237,9 @@ def load_ai_and_run(
 
     if use_remote:
         print(f"Using REMOTE inference via Flask server at {server_url}...")
-        import requests  # Lazy importto avoid hard dependency
+        import requests  # Lazy import to avoid hard dependency for local users
 
-        consecutive_errors = 0
+        consecutive_errors = [0]
 
         def nn_evaluate(state):
             tensor = env.state_to_tensor(state)
@@ -267,7 +266,7 @@ def load_ai_and_run(
         net_cfg = cfg.network_config()
         model = QuoridorModel(
             board_size=cfg.board_size,
-            action_action_space_size=env.action_space_size,
+            action_space_size=env.action_space_size,
             num_channels=net_cfg.get("num_channels", 64),
             num_res_blocks=net_cfg.get("num_res_blocks", 4),
         )

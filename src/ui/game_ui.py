@@ -123,14 +123,14 @@ class GameUI:
             pygame.draw.rect(self.screen, COLORS["wall"], wall_rect)
 
         # Deterministic Proximity Hover Highlights (Human turn only)
-        if selected_hover_action is not None:
+        if selected_hover_action is not None and selected_hover_action in hitboxes:
             rect = hitboxes[selected_hover_action]
             highlight = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-            # Use color based on action type
+
+            # Use decode_action instead of magic number < 12
+            action_type, _ = decode_action(selected_hover_action, self.board_size)
             color = (
-                COLORS["hover_move"]
-                if selected_hover_action < 12
-                else COLORS["hover_wall"]
+                COLORS["hover_move"] if action_type == "pawn" else COLORS["hover_wall"]
             )
             highlight.fill(color)
             self.screen.blit(highlight, rect.topleft)
@@ -197,10 +197,8 @@ class GameUI:
                 mouse_pos = pygame.mouse.get_pos()
                 min_dist_sq = float("inf")
 
-                # Iterate through all colliding hitboxes and find the one who's center is closest to the mouse
                 for action, rect in hitboxes.items():
                     if rect.collidepoint(mouse_pos):
-                        # Calculate Euclidean distance squared from mouse to center of hitbox
                         dx = mouse_pos[0] - rect.centerx
                         dy = mouse_pos[1] - rect.centery
                         dist_sq = dx * dx + dy * dy
@@ -209,20 +207,23 @@ class GameUI:
                             min_dist_sq = dist_sq
                             selected_hover_action = action
 
-            # Keep PyGame responsive during AI's turn
+            # Event Loop
+            action_taken = False
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
 
                 # Human Turn (P0)
-                if is_human_turn:
+                if is_human_turn and not action_taken:
                     if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                        # Use the pre-selected proximity based action for the click
-                        if selected_hover_action is not None:
+                        if (
+                            selected_hover_action is not None
+                            and selected_hover_action in hitboxes
+                        ):
                             state, _, _, _ = self.env.step(state, selected_hover_action)
-                            break
+                            action_taken = True
 
-            # Draw the current state before AI thinks
+            # Draw the current state
             self.draw(state, hitboxes, selected_hover_action)
 
             # AI Turn (P1)

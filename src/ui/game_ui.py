@@ -84,7 +84,12 @@ class GameUI:
 
         return hitboxes
 
-    def draw(self, state: QuoridorState, hitboxes: Optional[dict] = None):
+    def draw(
+        self,
+        state: QuoridorState,
+        hitboxes: Optional[dict] = None,
+        selected_hover_action: Optional[int] = None,
+    ):
         self.screen.fill(COLORS["background"])
 
         # Draw base board background
@@ -117,19 +122,18 @@ class GameUI:
             wall_rect = pygame.Rect(x + self.cell_size, y, w_width, w_height)
             pygame.draw.rect(self.screen, COLORS["wall"], wall_rect)
 
-        # Hover Highlights (Human turn only)
-        if hitboxes and not state.game_over and state.current_player == 0:
-            mouse_pos = pygame.mouse.get_pos()
-            for action, rect in hitboxes.items():
-                if rect.collidepoint(mouse_pos):
-                    highlight = pygame.Surface(
-                        (rect.width, rect.height), pygame.SRCALPHA
-                    )
-                    color = (
-                        COLORS["hover_move"] if action < 12 else COLORS["hover_wall"]
-                    )
-                    highlight.fill(color)
-                    self.screen.blit(highlight, rect.topleft)
+        # Deterministic Proximity Hover Highlights (Human turn only)
+        if selected_hover_action is not None:
+            rect = hitboxes[selected_hover_action]
+            highlight = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            # Use color based on action type
+            color = (
+                COLORS["hover_move"]
+                if selected_hover_action < 12
+                else COLORS["hover_wall"]
+            )
+            highlight.fill(color)
+            self.screen.blit(highlight, rect.topleft)
 
         # Draw pawns
         for _, pos, color in [
@@ -183,11 +187,27 @@ class GameUI:
         running = True
 
         while running:
-            hitboxes = (
-                self._get_action_hitboxes(state)
-                if not state.game_over and state.current_player == 0
-                else {}
-            )
+            # Recompute hitboxes only for human turn and if game is not over
+            is_human_turn = not state.game_over and state.current_player == 0
+            hitboxes = self._get_action_hitboxes(state) if is_human_turn else {}
+
+            # Deterministic Proximity Detection
+            selected_hover_action = None
+            if is_human_turn:
+                mouse_pos = pygame.mouse.get_pos()
+                min_dist_sq = float("inf")
+
+                # Iterate through all colliding hitboxes and find the one who's center is closest to the mouse
+                for action, rect in hitboxes.items():
+                    if rect.collidepoint(mouse_pos):
+                        # Calculate Euclidean distance squared from mouse to center of hitbox
+                        dx = mouse_pos[0] - rect.centerx
+                        dy = mouse_pos[1] - rect.centery
+                        dist_sq = dx * dx + dy * dy
+
+                        if dist_sq < min_dist_sq:
+                            min_dist_sq = dist_sq
+                            selected_hover_action = action
 
             # Keep PyGame responsive during AI's turn
             for event in pygame.event.get():
@@ -195,15 +215,15 @@ class GameUI:
                     running = False
 
                 # Human Turn (P0)
-                if state.current_player == 0 and not state.game_over:
+                if is_human_turn:
                     if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                        for action, rect in hitboxes.items():
-                            if rect.collidepoint(event.pos):
-                                state, _, _, _ = self.env.step(state, action)
-                                break
+                        # Use the pre-selected proximity based action for the click
+                        if selected_hover_action is not None:
+                            state, _, _, _ = self.env.step(state, selected_hover_action)
+                            break
 
             # Draw the current state before AI thinks
-            self.draw(state, hitboxes)
+            self.draw(state, hitboxes, selected_hover_action)
 
             # AI Turn (P1)
             if state.current_player == 1 and not state.game_over:

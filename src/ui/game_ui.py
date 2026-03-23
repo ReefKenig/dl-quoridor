@@ -306,13 +306,13 @@ def load_ai_and_run(
         )
 
         ckpt = CheckpointManager(base_dir="checkpoints")
-        latest_state = ckpt.load_latest()
+        best_path = ckpt.get_best_model_path()
 
-        if latest_state:
-            model.load(latest_state["model_path"])
-            print(f"Loaded AI from iteration {latest_state['iteration']}!")
+        if best_path:
+            model.load(best_path)
+            print(f"Loaded best AI model from {best_path}")
         else:
-            print("WARNING: No checkpoints found! AI will play completely randomly.")
+            print("WARNING: No best model found! AI will play completely randomly.")
 
         def nn_evaluate(state):
             tensor = env.state_to_tensor(state)

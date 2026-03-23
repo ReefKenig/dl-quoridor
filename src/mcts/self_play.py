@@ -32,7 +32,54 @@ class TrainingSample:
     """Single training example for the neural network."""
     state: np.ndarray           # observation tensor (e.g., 5x5x10)
     policy_target: np.ndarray   # MCTS visit count distribution
-    value_target: float         # +1 or -1 from this player's perspective
+    value_target: float         # discounted value from this player's perspective
+
+
+def _augment_sample(
+    sample: TrainingSample, board_size: int, action_space_size: int,
+) -> TrainingSample:
+    """Mirror a training sample along the vertical axis (left-right flip).
+
+    The 5×5 (and 9×9) board is symmetric about the vertical centre line.
+    Flipping doubles the effective training data for free.
+    """
+    # Flip the state tensor: reverse columns (axis 1)
+    flipped_state = sample.state[:, ::-1, :].copy()
+
+    # Flip the policy: mirror pawn move actions and wall columns
+    flipped_policy = np.zeros_like(sample.policy_target)
+    W = board_size - 1
+    h_offset = 12
+    v_offset = 12 + W ** 2
+
+    # Pawn move mirror map (left <-> right, diagonals swap)
+    mirror_map = {
+        0: 0, 1: 1, 2: 3, 3: 2,       # UP, DOWN, LEFT<->RIGHT
+        4: 4, 5: 5, 6: 7, 7: 6,       # JUMP_UP, JUMP_DOWN, JUMP_LEFT<->JUMP_RIGHT
+        8: 9, 9: 8, 10: 11, 11: 10,   # diagonals flip
+    }
+
+    for action in range(action_space_size):
+        if action < 12:
+            flipped_policy[mirror_map[action]] = sample.policy_target[action]
+        elif action < v_offset:
+            # Horizontal wall: flip column index
+            w = action - h_offset
+            r, c = w // W, w % W
+            flipped_c = W - 1 - c
+            flipped_policy[h_offset + r * W + flipped_c] = sample.policy_target[action]
+        else:
+            # Vertical wall: flip column index
+            w = action - v_offset
+            r, c = w // W, w % W
+            flipped_c = W - 1 - c
+            flipped_policy[v_offset + r * W + flipped_c] = sample.policy_target[action]
+
+    return TrainingSample(
+        state=flipped_state,
+        policy_target=flipped_policy,
+        value_target=sample.value_target,
+    )
 
 
 class ReplayBuffer:
@@ -95,7 +142,7 @@ def play_one_game(
         winner: 0 or 1 or None (draw)
     """
     if temperature_schedule is None:
-        temperature_schedule = {15: 1.0, 999: 0.1}
+        temperature_schedule = {20: 1.0, 999: 0.3}
 
     state = env.reset()
     trajectory = []  # (state_tensor, mcts_policy, player_who_moved)
@@ -130,21 +177,37 @@ def play_one_game(
             winner = info.get("winner")
             break
 
-    # Assign value targets based on game outcome
+    # Assign value targets with temporal discount
+    # Positions near the end of the game get stronger signal (closer to ±1),
+    # while early positions get weaker signal.  This helps the value head
+    # learn a gradient of position quality instead of flat binary labels.
     samples = []
-    for state_tensor, policy, player in trajectory:
+    num_moves = len(trajectory)
+    discount = 0.97
+
+    for idx, (state_tensor, policy, player) in enumerate(trajectory):
         if winner is None:
             value = 0.0
-        elif player == winner:
-            value = 1.0
         else:
-            value = -1.0
+            moves_from_end = num_moves - idx
+            discounted = discount ** moves_from_end
+            if player == winner:
+                value = discounted
+            else:
+                value = -discounted
 
         samples.append(TrainingSample(
             state=state_tensor,
             policy_target=policy,
             value_target=value,
         ))
+
+    # Augment with left-right mirror (doubles effective training data)
+    augmented = [
+        _augment_sample(s, env.board_size, env.action_space_size)
+        for s in samples
+    ]
+    samples.extend(augmented)
 
     return samples, winner
 

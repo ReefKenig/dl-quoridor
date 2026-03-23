@@ -53,7 +53,8 @@ def main():
     from src.model.network import QuoridorModel
     from src.mcts.self_play import training_loop
 
-    env = QuoridorEnv(is_poc=cfg.is_poc)
+    env = QuoridorEnv(is_poc=cfg.is_poc,
+                      max_walls_per_player=cfg.max_walls_per_player)
     net_cfg = cfg.network_config()
 
     model = QuoridorModel(

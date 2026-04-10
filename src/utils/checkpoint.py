@@ -112,6 +112,7 @@ class CheckpointManager:
             "buffer_size": len(replay_buffer),
             "metrics": metrics or {},
             "is_best": is_best,
+            "self_play_game": (metrics or {}).get("self_play_game"),
         }
         with open(ckpt_dir / "meta.json", "w") as f:
             json.dump(meta, f, indent=2)
@@ -199,6 +200,7 @@ class CheckpointManager:
             "best_model_path": best_model_path,
             "replay_buffer": replay_buffer,
             "metrics": meta.get("metrics", {}),
+            "self_play_game": meta.get("self_play_game"),
         }
 
         logger.info(

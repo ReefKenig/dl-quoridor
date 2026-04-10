@@ -2,8 +2,6 @@
 Environment Interface Contract
 ===============================
 Defines the EXACT interface that MCTS expects from the game environment.
-Reef: implement QuoridorEnvInterface in quoridor_env.py.
-Iris: code against this interface.
 """
 
 from abc import ABC, abstractmethod
@@ -12,14 +10,6 @@ import numpy as np
 
 
 class QuoridorEnvInterface(ABC):
-    """
-    Contract between Game Engine (Reef) and MCTS/Training (Iris).
-
-    Reef: implement every method below in quoridor_env.py.
-    Iris: import this interface, code against it.
-    Integration = Reef's class passes the test suite.
-    """
-
     @property
     @abstractmethod
     def action_space_size(self) -> int:

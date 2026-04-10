@@ -1,5 +1,4 @@
 import numpy as np
-import copy
 from collections import deque
 from typing import Set, Tuple, List, Optional
 from dataclasses import dataclass
@@ -40,7 +39,7 @@ def decode_action(action: int, board_size: int) -> Tuple[str, any]:
     """
     W = board_size - 1
     h_offset = 12
-    v_offset = 12 + W ** 2
+    v_offset = 12 + W**2
 
     if action < 12:
         return "pawn", ACTION_TO_MOVE[action]
@@ -147,11 +146,9 @@ class QuoridorEnv(QuoridorEnvInterface):
         if action < 12:
             dr, dc = ACTION_TO_MOVE[action]
             if new_state.current_player == 0:
-                new_state.p0_pos = (
-                    new_state.p0_pos[0] + dr, new_state.p0_pos[1] + dc)
+                new_state.p0_pos = (new_state.p0_pos[0] + dr, new_state.p0_pos[1] + dc)
             else:
-                new_state.p1_pos = (
-                    new_state.p1_pos[0] + dr, new_state.p1_pos[1] + dc)
+                new_state.p1_pos = (new_state.p1_pos[0] + dr, new_state.p1_pos[1] + dc)
 
         # 2. Horizontal walls
         elif action < v_offset:

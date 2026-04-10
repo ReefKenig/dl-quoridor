@@ -1,8 +1,6 @@
 """
 Board State Tensor Specification
 ==================================
-Owner: Iris (spec) + Reef (implementation in quoridor_env.py)
-
 This file defines the EXACT tensor layout and provides a reference
 implementation for computing each channel. Reef must produce identical
 output from his QuoridorEnv.state_to_tensor().
@@ -21,27 +19,19 @@ Ch 4: Player 1 horizontal walls — binary, 1.0 where P1 placed horizontal walls
 Ch 5: Player 1 vertical walls   — binary, 1.0 where P1 placed vertical walls
 Ch 6: Player 0 walls remaining  — uniform plane, value = remaining / max_walls
 Ch 7: Player 1 walls remaining  — uniform plane, value = remaining / max_walls
-Ch 8: Player 0 distance map     — BFS distance from each cell to P0's goal row,
-                                   normalized by max possible distance
-Ch 9: Player 1 distance map     — BFS distance from each cell to P1's goal row,
-                                   normalized by max possible distance
+Ch 8: Player 0 distance map     — BFS distance from each cell to P0's goal row, normalized by max possible distance
+Ch 9: Player 1 distance map     — BFS distance from each cell to P1's goal row, normalized by max possible distance
 
 Design Rationale
 -----------------
 - Channels 0-1: Spatial pawn positions, directly usable by convolutions.
-- Channels 2-5: Wall ownership separated per player. The network can learn
-  which walls belong to whom (important for strategy).
-- Channels 6-7: Scalar resource info broadcast to every cell. This tells the
-  network how many walls each player can still place.
-- Channels 8-9: Pathfinding heuristic. Distance maps encode BFS shortest
-  path information considering current wall layout. This is the most
-  computationally expensive channel to compute but gives the network
-  crucial strategic signal about board connectivity.
+- Channels 2-5: Wall ownership separated per player. The network can learn which walls belong to whom (important for strategy).
+- Channels 6-7: Scalar resource info broadcast to every cell. This tells the network how many walls each player can still place.
+- Channels 8-9: Pathfinding heuristic. Distance maps encode BFS shortest path information considering current wall layout. This is the most computationally expensive channel to compute but gives the network crucial strategic signal about board connectivity.
 
 Wall Encoding Detail
 --------------------
-Walls span 2 cells. A horizontal wall at intersection (r, c) blocks
-movement between:
+Walls span 2 cells. A horizontal wall at intersection (r, c) blocks movement between:
     (r, c)↔(r+1, c)  and  (r, c+1)↔(r+1, c+1)
 
 A vertical wall at intersection (r, c) blocks movement between:
@@ -59,18 +49,12 @@ from collections import deque
 from typing import List, Tuple, Set
 
 
-# =========================================================================
-#  Reference implementation — Reef should produce identical output
-# =========================================================================
-
 # Wall grid size = board_size - 1
 # Walls are indexed by their top-left intersection coordinate (r, c)
 # where r ∈ [0, board_size-2] and c ∈ [0, board_size-2]
 
 
-def compute_pawn_channel(
-    board_size: int, pawn_row: int, pawn_col: int
-) -> np.ndarray:
+def compute_pawn_channel(board_size: int, pawn_row: int, pawn_col: int) -> np.ndarray:
     """
     Channel 0 or 1: binary pawn position.
 
@@ -202,8 +186,10 @@ def compute_distance_map(
 
 
 def _is_blocked(
-    r: int, c: int,
-    nr: int, nc: int,
+    r: int,
+    c: int,
+    nr: int,
+    nc: int,
     h_walls: Set[Tuple[int, int]],
     v_walls: Set[Tuple[int, int]],
     board_size: int,
@@ -304,11 +290,9 @@ def build_tensor(
     tensor[:, :, 1] = compute_pawn_channel(board_size, *p1_pos)
 
     # Ch 2-5: Wall placements per player per orientation
-    tensor[:, :, 2] = compute_wall_channel(
-        board_size, p0_h_walls, "horizontal")
+    tensor[:, :, 2] = compute_wall_channel(board_size, p0_h_walls, "horizontal")
     tensor[:, :, 3] = compute_wall_channel(board_size, p0_v_walls, "vertical")
-    tensor[:, :, 4] = compute_wall_channel(
-        board_size, p1_h_walls, "horizontal")
+    tensor[:, :, 4] = compute_wall_channel(board_size, p1_h_walls, "horizontal")
     tensor[:, :, 5] = compute_wall_channel(board_size, p1_v_walls, "vertical")
 
     # Ch 6-7: Walls remaining (normalized, broadcast)
@@ -328,8 +312,10 @@ def build_tensor(
         board_size, goal_row=0, h_walls=all_h_walls, v_walls=all_v_walls
     )
     tensor[:, :, 9] = compute_distance_map(
-        board_size, goal_row=board_size - 1,
-        h_walls=all_h_walls, v_walls=all_v_walls,
+        board_size,
+        goal_row=board_size - 1,
+        h_walls=all_h_walls,
+        v_walls=all_v_walls,
     )
 
     return tensor
@@ -338,6 +324,7 @@ def build_tensor(
 # =========================================================================
 #  Validation
 # =========================================================================
+
 
 def validate_tensor_spec():
     """
@@ -349,8 +336,10 @@ def validate_tensor_spec():
         board_size=5,
         p0_pos=(4, 2),
         p1_pos=(0, 2),
-        p0_h_walls=[], p0_v_walls=[],
-        p1_h_walls=[], p1_v_walls=[],
+        p0_h_walls=[],
+        p0_v_walls=[],
+        p1_h_walls=[],
+        p1_v_walls=[],
         p0_walls_remaining=5,
         p1_walls_remaining=5,
         max_walls=5,
@@ -378,9 +367,9 @@ def validate_tensor_spec():
     assert np.allclose(tensor[:, :, 7], 1.0)
 
     # Distance maps: no walls, so BFS = Manhattan distance to goal row
-    assert tensor[0, 0, 8] == 0.0   # goal row
+    assert tensor[0, 0, 8] == 0.0  # goal row
     assert np.isclose(tensor[4, 0, 8], 4.0 / 25)  # 4 steps, norm=5²
-    assert tensor[4, 0, 9] == 0.0   # goal row
+    assert tensor[4, 0, 9] == 0.0  # goal row
     assert np.isclose(tensor[0, 0, 9], 4.0 / 25)
 
     print("  Test 1 (initial state): PASS")
@@ -390,8 +379,10 @@ def validate_tensor_spec():
         board_size=5,
         p0_pos=(4, 2),
         p1_pos=(0, 2),
-        p0_h_walls=[(2, 1)], p0_v_walls=[],
-        p1_h_walls=[], p1_v_walls=[],
+        p0_h_walls=[(2, 1)],
+        p0_v_walls=[],
+        p1_h_walls=[],
+        p1_v_walls=[],
         p0_walls_remaining=4,
         p1_walls_remaining=5,
         max_walls=5,
@@ -408,9 +399,9 @@ def validate_tensor_spec():
     # Distance map should reflect the wall
     dist_no_wall = 3.0 / 25  # without wall: 3 steps up, norm=5²
     dist_with_wall = tensor[3, 1, 8]
-    assert dist_with_wall > dist_no_wall, (
-        f"Wall should increase distance: {dist_with_wall} <= {dist_no_wall}"
-    )
+    assert (
+        dist_with_wall > dist_no_wall
+    ), f"Wall should increase distance: {dist_with_wall} <= {dist_no_wall}"
 
     print("  Test 2 (with walls): PASS")
 
@@ -425,8 +416,10 @@ def validate_tensor_spec():
         board_size=5,
         p0_pos=(4, 2),
         p1_pos=(0, 2),
-        p0_h_walls=[], p0_v_walls=[],
-        p1_h_walls=[], p1_v_walls=[],
+        p0_h_walls=[],
+        p0_v_walls=[],
+        p1_h_walls=[],
+        p1_v_walls=[],
         p0_walls_remaining=5,
         p1_walls_remaining=5,
         max_walls=5,
@@ -434,8 +427,7 @@ def validate_tensor_spec():
     # P0 distance map should be vertical mirror of P1 distance map
     p0_dist = tensor_sym[:, :, 8]
     p1_dist = tensor_sym[:, :, 9]
-    assert np.allclose(
-        p0_dist, p1_dist[::-1, :]), "Distance maps not symmetric"
+    assert np.allclose(p0_dist, p1_dist[::-1, :]), "Distance maps not symmetric"
 
     print("  Test 4 (symmetry): PASS")
 

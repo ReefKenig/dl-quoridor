@@ -1,8 +1,6 @@
 """
 Self-Play Training Pipeline
 ============================
-Owner: Iris
-
 Drives the AlphaZero training cycle:
     1. Self-play → generate (state, mcts_policy, outcome) tuples
     2. Train network on collected data
@@ -30,9 +28,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TrainingSample:
     """Single training example for the neural network."""
-    state: np.ndarray           # observation tensor (e.g., 5x5x10)
-    policy_target: np.ndarray   # MCTS visit count distribution
-    value_target: float         # +1 or -1 from this player's perspective
+
+    state: np.ndarray  # observation tensor (e.g., 5x5x10)
+    policy_target: np.ndarray  # MCTS visit count distribution
+    value_target: float  # +1 or -1 from this player's perspective
 
 
 class ReplayBuffer:
@@ -54,11 +53,10 @@ class ReplayBuffer:
         if actual_size < batch_size:
             logger.warning(
                 "Requested batch_size=%d but buffer only has %d samples",
-                batch_size, len(self.buffer),
+                batch_size,
+                len(self.buffer),
             )
-        indices = np.random.choice(
-            len(self.buffer), size=actual_size, replace=False
-        )
+        indices = np.random.choice(len(self.buffer), size=actual_size, replace=False)
         batch = [self.buffer[i] for i in indices]
 
         states = np.array([s.state for s in batch], dtype=np.float32)
@@ -140,11 +138,13 @@ def play_one_game(
         else:
             value = -1.0
 
-        samples.append(TrainingSample(
-            state=state_tensor,
-            policy_target=policy,
-            value_target=value,
-        ))
+        samples.append(
+            TrainingSample(
+                state=state_tensor,
+                policy_target=policy,
+                value_target=value,
+            )
+        )
 
     return samples, winner
 
@@ -152,12 +152,13 @@ def play_one_game(
 @dataclass
 class TrainingConfig:
     """Full AlphaZero training loop configuration."""
+
     num_iterations: int = 50
     games_per_iteration: int = 100
     batch_size: int = 64
     training_epochs: int = 10
     eval_games: int = 40
-    eval_random_games: int = 20     # quick eval vs random for absolute strength
+    eval_random_games: int = 20  # quick eval vs random for absolute strength
     win_threshold: float = 0.55
     mcts_simulations: int = 400
     replay_buffer_size: int = 50_000
@@ -240,7 +241,8 @@ def training_loop(
                 )
             logger.info(
                 "Checkpoint loaded: iteration=%d, buffer=%d samples",
-                start_iteration, len(buffer),
+                start_iteration,
+                len(buffer),
             )
 
     # --- NN evaluation closure for MCTS ---
@@ -282,11 +284,14 @@ def training_loop(
         if start_game > 0:
             logger.info(
                 "  Resuming self-play from game %d/%d (%d remaining)...",
-                start_game, config.games_per_iteration, remaining_games,
+                start_game,
+                config.games_per_iteration,
+                remaining_games,
             )
         else:
             logger.info(
-                "  Generating %d self-play games...", config.games_per_iteration,
+                "  Generating %d self-play games...",
+                config.games_per_iteration,
             )
         iteration_samples = []
         iteration_sample_count = 0
@@ -295,7 +300,9 @@ def training_loop(
         with Timer() as sp_timer:
             for game_idx in range(start_game, config.games_per_iteration):
                 samples, winner = play_one_game(
-                    env, mcts, max_moves=config.max_game_moves,
+                    env,
+                    mcts,
+                    max_moves=config.max_game_moves,
                 )
                 iteration_samples.extend(samples)
                 if winner is not None:
@@ -304,12 +311,17 @@ def training_loop(
                 if (game_idx + 1) % 20 == 0:
                     logger.info(
                         "    Games: %d/%d",
-                        game_idx + 1, config.games_per_iteration,
+                        game_idx + 1,
+                        config.games_per_iteration,
                     )
 
                 # Mid-iteration checkpoint
                 freq = config.self_play_checkpoint_freq
-                if freq > 0 and (game_idx + 1) % freq == 0 and (game_idx + 1) < config.games_per_iteration:
+                if (
+                    freq > 0
+                    and (game_idx + 1) % freq == 0
+                    and (game_idx + 1) < config.games_per_iteration
+                ):
                     buffer.add(iteration_samples)
                     iteration_sample_count += len(iteration_samples)
                     iteration_samples = []
@@ -322,21 +334,24 @@ def training_loop(
                     )
                     logger.info(
                         "    Mid-iteration checkpoint saved (%d/%d games)",
-                        game_idx + 1, config.games_per_iteration,
+                        game_idx + 1,
+                        config.games_per_iteration,
                     )
 
         buffer.add(iteration_samples)
         iteration_sample_count += len(iteration_samples)
         logger.info(
             "  Samples collected: %d | Buffer: %d",
-            iteration_sample_count, len(buffer),
+            iteration_sample_count,
+            len(buffer),
         )
 
         # --- 2. Train ---
         if len(buffer) < config.batch_size:
             logger.info(
                 "  Buffer too small (%d < %d), skipping training.",
-                len(buffer), config.batch_size,
+                len(buffer),
+                config.batch_size,
             )
             train_logger.log_iteration(
                 iteration=iteration + 1,
@@ -351,8 +366,7 @@ def training_loop(
         total_loss_p, total_loss_v = 0.0, 0.0
         with Timer() as train_timer:
             for epoch in range(config.training_epochs):
-                states, policies, values = buffer.sample_batch(
-                    config.batch_size)
+                states, policies, values = buffer.sample_batch(config.batch_size)
                 loss_p, loss_v = model.train_step(states, policies, values)
                 total_loss_p += loss_p
                 total_loss_v += loss_v
@@ -360,7 +374,9 @@ def training_loop(
         avg_lp = total_loss_p / max(config.training_epochs, 1)
         avg_lv = total_loss_v / max(config.training_epochs, 1)
         logger.info(
-            "  Avg losses — policy: %.4f, value: %.4f", avg_lp, avg_lv,
+            "  Avg losses — policy: %.4f, value: %.4f",
+            avg_lp,
+            avg_lv,
         )
 
         # --- 3. Evaluate new model vs current best (accept/reject) ---
@@ -368,8 +384,11 @@ def training_loop(
         champion = mcts_agent(best_mcts, temperature=0.1)
         with Timer() as eval_best_timer:
             result_vs_best = evaluate(
-                env, agent_a=candidate, agent_b=champion,
-                num_games=config.eval_games, verbose=True,
+                env,
+                agent_a=candidate,
+                agent_b=champion,
+                num_games=config.eval_games,
+                verbose=True,
             )
         logger.info("  Eval vs best: %s", result_vs_best.summary())
 
@@ -379,12 +398,14 @@ def training_loop(
             best_model.copy_weights_from(model)
             logger.info(
                 "  Model ACCEPTED (%.1f%% > %.0f%% threshold)",
-                win_rate_vs_best * 100, config.win_threshold * 100,
+                win_rate_vs_best * 100,
+                config.win_threshold * 100,
             )
         else:
             logger.info(
                 "  Model REJECTED (%.1f%% <= %.0f%% threshold)",
-                win_rate_vs_best * 100, config.win_threshold * 100,
+                win_rate_vs_best * 100,
+                config.win_threshold * 100,
             )
 
         # --- 4. Quick eval vs random (absolute strength) ---
@@ -395,14 +416,18 @@ def training_loop(
         if config.eval_random_games > 0:
             with Timer() as eval_random_timer:
                 result_vs_random = evaluate(
-                    env, agent_a=candidate, agent_b=random_agent(),
-                    num_games=config.eval_random_games, verbose=False,
+                    env,
+                    agent_a=candidate,
+                    agent_b=random_agent(),
+                    num_games=config.eval_random_games,
+                    verbose=False,
                 )
             win_rate_vs_random = result_vs_random.agent_a_win_rate
             avg_game_length = result_vs_random.avg_game_length
             eval_random_duration = eval_random_timer.elapsed_s
             logger.info(
-                "  Eval vs random: %s", result_vs_random.summary(),
+                "  Eval vs random: %s",
+                result_vs_random.summary(),
             )
 
         # --- 5. Checkpoint ---
@@ -436,7 +461,6 @@ def training_loop(
             model_accepted=is_best,
         )
 
-        logger.info("  Iteration %d complete. accepted=%s",
-                    iteration + 1, is_best)
+        logger.info("  Iteration %d complete. accepted=%s", iteration + 1, is_best)
 
     train_logger.finish()

@@ -17,25 +17,27 @@ if os.path.exists(MODEL_PATH):
     model.load(MODEL_PATH)
 
 
-@app.route('/predict', methods=['POST'])
+@app.route("/predict", methods=["POST"])
 def predict():
     try:
         data = request.json
-        state_array = np.array(data['state'], dtype=np.float32)
+        state_array = np.array(data["state"], dtype=np.float32)
 
         expected_shape = (BOARD_SIZE, BOARD_SIZE, 10)
         if state_array.shape != expected_shape:
-            return jsonify({'error': f'Expected {expected_shape}, got {state_array.shape}'}), 400
+            return (
+                jsonify(
+                    {"error": f"Expected {expected_shape}, got {state_array.shape}"}
+                ),
+                400,
+            )
 
         policy, value = model.predict(state_array)
 
-        return jsonify({
-            'policy': policy.tolist(),
-            'value': float(value)
-        })
+        return jsonify({"policy": policy.tolist(), "value": float(value)})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({"error": str(e)}), 400
 
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)

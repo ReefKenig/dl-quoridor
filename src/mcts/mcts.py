@@ -1,8 +1,6 @@
 """
 Monte Carlo Tree Search (AlphaZero-style)
 ==========================================
-Owner: Iris
-
 Phase 1: Random rollout evaluation (no neural network).
 Phase 2: Swap in NN via the `evaluate_fn` parameter.
 
@@ -34,6 +32,7 @@ __all__ = ["MCTS", "MCTSConfig", "Node", "EvaluateFn"]
 @dataclass
 class MCTSConfig:
     """All MCTS hyperparameters in one place."""
+
     num_simulations: int = 400
     c_puct: float = 1.41
     temperature: float = 1.0
@@ -46,8 +45,14 @@ class Node:
     """A single node in the MCTS tree."""
 
     __slots__ = [
-        "state", "parent", "action", "prior",
-        "visit_count", "value_sum", "children", "is_expanded",
+        "state",
+        "parent",
+        "action",
+        "prior",
+        "visit_count",
+        "value_sum",
+        "children",
+        "is_expanded",
         "valid_actions",
     ]
 
@@ -140,9 +145,7 @@ class MCTS:
             # === 1. SELECT ===
             while node.is_expanded and node.children:
                 node = self._select_child(node)
-                scratch_state, reward, done, info = env.step(
-                    scratch_state, node.action
-                )
+                scratch_state, reward, done, info = env.step(scratch_state, node.action)
                 if done:
                     break
 
@@ -264,14 +267,12 @@ class MCTS:
         if not root.children:
             return
         actions = list(root.children.keys())
-        noise = np.random.dirichlet(
-            [self.config.dirichlet_alpha] * len(actions)
-        )
+        noise = np.random.dirichlet([self.config.dirichlet_alpha] * len(actions))
         eps = self.config.dirichlet_epsilon
         for i, action in enumerate(actions):
-            root.children[action].prior = (
-                (1 - eps) * root.children[action].prior + eps * noise[i]
-            )
+            root.children[action].prior = (1 - eps) * root.children[
+                action
+            ].prior + eps * noise[i]
 
     def _action_probabilities(
         self, root: Node, action_space_size: int, temperature: float

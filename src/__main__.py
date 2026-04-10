@@ -16,27 +16,33 @@ from src.utils.config import load_config
 def main():
     parser = argparse.ArgumentParser(description="AlphaZero Quoridor training")
     parser.add_argument(
-        "--config", default="configs/config_5x5.json",
+        "--config",
+        default="configs/config_5x5.json",
         help="Path to JSON config file",
     )
     parser.add_argument(
-        "--checkpoint-dir", default="checkpoints",
+        "--checkpoint-dir",
+        default="checkpoints",
         help="Directory for training checkpoints",
     )
     parser.add_argument(
-        "--no-resume", action="store_true",
+        "--no-resume",
+        action="store_true",
         help="Start training from scratch (ignore existing checkpoints)",
     )
     parser.add_argument(
-        "--log-dir", default="logs",
+        "--log-dir",
+        default="logs",
         help="Directory for CSV / JSON metrics logs",
     )
     parser.add_argument(
-        "--no-wandb", action="store_true",
+        "--no-wandb",
+        action="store_true",
         help="Disable wandb remote logging",
     )
     parser.add_argument(
-        "--log-level", default="INFO",
+        "--log-level",
+        default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
     args = parser.parse_args()

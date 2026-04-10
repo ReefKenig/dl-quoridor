@@ -17,7 +17,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict
 
 if TYPE_CHECKING:
     from src.mcts.mcts import MCTSConfig
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AppConfig:
     """Typed wrapper around the raw JSON config."""
+
     is_poc: bool
     board_size: int
     raw: Dict[str, Any]
@@ -61,7 +62,8 @@ class AppConfig:
             eval_games=t.get("eval_games", 40),
             win_threshold=t.get("win_threshold", 0.55),
             mcts_simulations=t.get(
-                "mcts_simulations", m.get("num_simulations", 400),
+                "mcts_simulations",
+                m.get("num_simulations", 400),
             ),
             replay_buffer_size=t.get("replay_buffer_size", 50_000),
             max_game_moves=t.get("max_game_moves", 500),
@@ -107,7 +109,9 @@ def load_config(path: str = "configs/config_5x5.json") -> AppConfig:
     board_size = raw.get("board_size", 5 if is_poc else 9)
     logger.info(
         "Loaded config: is_poc=%s, board_size=%d from %s",
-        is_poc, board_size, config_path,
+        is_poc,
+        board_size,
+        config_path,
     )
 
     return AppConfig(is_poc=is_poc, board_size=board_size, raw=raw)

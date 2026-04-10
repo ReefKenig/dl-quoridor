@@ -1,8 +1,6 @@
 """
 Training Logger
 ================
-Owner: Iris
-
 Centralized metrics logging for the training loop.
 Wraps wandb for remote tracking + local CSV fallback.
 
@@ -49,6 +47,7 @@ module_logger = logging.getLogger(__name__)
 @dataclass
 class IterationMetrics:
     """All metrics recorded for a single training iteration."""
+
     iteration: int
     timestamp: float = 0.0
 
@@ -106,6 +105,7 @@ class TrainingLogger:
         if use_wandb:
             try:
                 import wandb
+
                 self.wandb_run = wandb.init(
                     project=project,
                     name=run_name,
@@ -113,11 +113,9 @@ class TrainingLogger:
                     resume="allow",
                     id=run_name,
                 )
-                module_logger.info(
-                    "wandb initialized: %s/%s", project, run_name)
+                module_logger.info("wandb initialized: %s/%s", project, run_name)
             except Exception as e:
-                module_logger.warning(
-                    "wandb init failed (%s), using CSV only", e)
+                module_logger.warning("wandb init failed (%s), using CSV only", e)
                 self.wandb_run = None
 
         # CSV file
@@ -146,6 +144,7 @@ class TrainingLogger:
         if self.wandb_run is not None:
             try:
                 import wandb
+
                 wandb.log(metrics.to_dict(), step=metrics.iteration)
             except Exception as e:
                 module_logger.warning("wandb log failed: %s", e)
@@ -173,6 +172,7 @@ class TrainingLogger:
         if self.wandb_run is not None:
             try:
                 import wandb
+
                 wandb.log(data, step=step)
             except Exception:
                 pass
@@ -184,19 +184,23 @@ class TrainingLogger:
         with open(json_path, "w") as f:
             json.dump(
                 [m.to_dict() for m in self.history],
-                f, indent=2,
+                f,
+                indent=2,
             )
 
         if self.wandb_run is not None:
             try:
                 import wandb
+
                 wandb.finish()
             except Exception:
                 pass
 
         module_logger.info(
             "Training log saved: %d iterations, csv=%s, json=%s",
-            len(self.history), self.csv_path, json_path,
+            len(self.history),
+            self.csv_path,
+            json_path,
         )
 
     def get_history(self) -> List[Dict[str, Any]]:
@@ -213,10 +217,7 @@ class TrainingLogger:
 
         if not self._csv_initialized:
             # Preserve existing CSV from previous runs (resume-safe)
-            file_exists = (
-                self.csv_path.exists()
-                and self.csv_path.stat().st_size > 0
-            )
+            file_exists = self.csv_path.exists() and self.csv_path.stat().st_size > 0
             if not file_exists:
                 with open(self.csv_path, "w", newline="") as f:
                     writer = csv.DictWriter(f, fieldnames=data.keys())

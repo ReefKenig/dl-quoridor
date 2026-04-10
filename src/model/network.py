@@ -1,8 +1,6 @@
 """
 Dual-Headed Neural Network (Policy + Value)
 =============================================
-Owner: Rom
-
 AlphaZero-style CNN/ResNet:
     Input:  (batch, board_h, board_w, 10) — 10-channel board tensor
     Output: policy (batch, action_space_size) — move probabilities
@@ -37,11 +35,9 @@ class ResidualBlock(nn.Module):
 
     def __init__(self, num_channels: int):
         super().__init__()
-        self.conv1 = nn.Conv2d(num_channels, num_channels,
-                               3, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(num_channels, num_channels, 3, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(num_channels)
-        self.conv2 = nn.Conv2d(num_channels, num_channels,
-                               3, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(num_channels, num_channels, 3, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(num_channels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -77,8 +73,7 @@ class QuoridorNetwork(nn.Module):
         self.action_space_size = action_space_size
 
         # Initial convolution: (10, H, W) -> (num_channels, H, W)
-        self.conv_input = nn.Conv2d(
-            in_channels, num_channels, 3, padding=1, bias=False)
+        self.conv_input = nn.Conv2d(in_channels, num_channels, 3, padding=1, bias=False)
         self.bn_input = nn.BatchNorm2d(num_channels)
 
         # Residual tower
@@ -89,8 +84,7 @@ class QuoridorNetwork(nn.Module):
         # Policy head: Conv 1x1 → BN → ReLU → Flatten → FC
         self.policy_conv = nn.Conv2d(num_channels, 2, 1, bias=False)
         self.policy_bn = nn.BatchNorm2d(2)
-        self.policy_fc = nn.Linear(
-            2 * board_size * board_size, action_space_size)
+        self.policy_fc = nn.Linear(2 * board_size * board_size, action_space_size)
 
         # Value head: Conv 1x1 → BN → ReLU → Flatten → FC → ReLU → FC → tanh
         self.value_conv = nn.Conv2d(num_channels, 1, 1, bias=False)
@@ -148,8 +142,7 @@ class QuoridorModel:
         device: str = "auto",
     ):
         if device == "auto":
-            self.device = torch.device(
-                "cuda" if torch.cuda.is_available() else "cpu")
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
 
@@ -223,11 +216,9 @@ class QuoridorModel:
         self.network.train()
 
         # Convert to tensors, HWC -> NCHW
-        x = torch.from_numpy(states).float().permute(
-            0, 3, 1, 2).to(self.device)
+        x = torch.from_numpy(states).float().permute(0, 3, 1, 2).to(self.device)
         pi = torch.from_numpy(target_policies).float().to(self.device)
-        z = torch.from_numpy(target_values).float(
-        ).unsqueeze(1).to(self.device)
+        z = torch.from_numpy(target_values).float().unsqueeze(1).to(self.device)
 
         # Forward
         log_policy, value = self.network(x)
@@ -264,8 +255,7 @@ class QuoridorModel:
         WARNING: weights_only=False is required to load optimizer state
         but permits arbitrary code execution. Only load trusted checkpoints.
         """
-        checkpoint = torch.load(
-            path, map_location=self.device, weights_only=False)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.network.load_state_dict(checkpoint["network_state"])
         if "optimizer_state" in checkpoint:
             self.optimizer.load_state_dict(checkpoint["optimizer_state"])

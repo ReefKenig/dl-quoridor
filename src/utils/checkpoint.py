@@ -1,8 +1,6 @@
 """
 Checkpoint Manager
 ===================
-Owner: Iris
-
 Saves and restores full training state so you can resume after
 Colab disconnects, crashes, or session timeouts.
 
@@ -37,7 +35,6 @@ Usage:
 """
 
 import json
-import os
 import pickle
 import shutil
 import logging
@@ -134,12 +131,15 @@ class CheckpointManager:
 
         logger.info(
             "Checkpoint saved: iter=%d, buffer=%d, path=%s",
-            iteration, len(replay_buffer), ckpt_dir,
+            iteration,
+            len(replay_buffer),
+            ckpt_dir,
         )
         return str(ckpt_dir)
 
     def load_latest(
-        self, replay_buffer_max_size: int = 50_000,
+        self,
+        replay_buffer_max_size: int = 50_000,
     ) -> Optional[Dict]:
         """
         Load the most recent checkpoint.
@@ -168,7 +168,9 @@ class CheckpointManager:
         )
 
     def load_iteration(
-        self, iteration: int, replay_buffer_max_size: int = 50_000,
+        self,
+        iteration: int,
+        replay_buffer_max_size: int = 50_000,
     ) -> Optional[Dict]:
         """Load a specific iteration checkpoint."""
         ckpt_dir = self.base_dir / f"iter_{iteration:04d}"
@@ -183,7 +185,8 @@ class CheckpointManager:
         # Load replay buffer
         buffer_path = ckpt_dir / "replay_buffer.pkl"
         replay_buffer = self._load_replay_buffer(
-            buffer_path, max_size=replay_buffer_max_size,
+            buffer_path,
+            max_size=replay_buffer_max_size,
         )
 
         # Model paths (caller loads weights via model.load())
@@ -230,8 +233,7 @@ class CheckpointManager:
     def _save_replay_buffer(self, buffer, path: Path):
         """Serialize replay buffer. Uses pickle — buffer contains numpy arrays."""
         with open(path, "wb") as f:
-            pickle.dump(list(buffer.buffer), f,
-                        protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(list(buffer.buffer), f, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _load_replay_buffer(self, path: Path, max_size: int = 50_000):
         """Deserialize replay buffer."""

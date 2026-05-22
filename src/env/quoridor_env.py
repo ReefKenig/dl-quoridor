@@ -80,7 +80,7 @@ class QuoridorEnv(QuoridorEnvInterface):
     def __init__(self, is_poc: bool = True, max_turns: int = 150, debug: bool = False):
         self.is_poc = is_poc
         self.board_size = 5 if is_poc else 9
-        self.max_walls_per_player = 5 if is_poc else 10
+        self.max_walls_per_player = 3 if is_poc else 10
         self.max_turns = max_turns
         self.debug = debug
 

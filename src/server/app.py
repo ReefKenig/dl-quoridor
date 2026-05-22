@@ -15,6 +15,10 @@ model = QuoridorModel(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE)
 
 if os.path.exists(MODEL_PATH):
     model.load(MODEL_PATH)
+    print(f"✅ SERVER: Successfully loaded trained AI from {MODEL_PATH}")
+else:
+    print(f"❌ WARNING: Could not find model at {MODEL_PATH}!")
+    print("❌ SERVER IS RUNNING A RANDOM, UNTRAINED AI.")
 
 
 @app.route("/predict", methods=["POST"])

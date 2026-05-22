@@ -37,7 +37,8 @@ class GameUI:
 
         pygame.init()
         self.screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE))
-        pygame.display.set_caption(f"Quoridor AI({self.board_size}x{self.board_size})")
+        pygame.display.set_caption(
+            f"Quoridor AI({self.board_size}x{self.board_size})")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont(None, 36)
 
@@ -66,21 +67,24 @@ class GameUI:
                 dr, dc = data
                 nr, nc = current_pos[0] + dr, current_pos[1] + dc
                 x, y = self._get_pixel_coords(nr, nc)
-                hitboxes[action] = pygame.Rect(x, y, self.cell_size, self.cell_size)
+                hitboxes[action] = pygame.Rect(
+                    x, y, self.cell_size, self.cell_size)
 
             elif action_type == "h_wall":
                 r, c = data
                 x, y = self._get_pixel_coords(r, c)
                 w_width = 2 * self.cell_size + self.groove_size
                 w_height = self.groove_size
-                hitboxes[action] = pygame.Rect(x, y + self.cell_size, w_width, w_height)
+                hitboxes[action] = pygame.Rect(
+                    x, y + self.cell_size, w_width, w_height)
 
             elif action_type == "v_wall":
                 r, c = data
                 x, y = self._get_pixel_coords(r, c)
                 w_width = self.groove_size
                 w_height = 2 * self.cell_size + self.groove_size
-                hitboxes[action] = pygame.Rect(x + self.cell_size, y, w_width, w_height)
+                hitboxes[action] = pygame.Rect(
+                    x + self.cell_size, y, w_width, w_height)
 
         return hitboxes
 
@@ -93,7 +97,8 @@ class GameUI:
         self.screen.fill(COLORS["background"])
 
         # Draw base board background
-        board_rect = pygame.Rect(MARGIN, MARGIN, self.playable_size, self.playable_size)
+        board_rect = pygame.Rect(
+            MARGIN, MARGIN, self.playable_size, self.playable_size)
         pygame.draw.rect(self.screen, COLORS["groove"], board_rect)
         pygame.draw.rect(self.screen, COLORS["board"], board_rect, 5)
 
@@ -125,10 +130,12 @@ class GameUI:
         # Deterministic Proximity Hover Highlights (Human turn only)
         if selected_hover_action is not None and selected_hover_action in hitboxes:
             rect = hitboxes[selected_hover_action]
-            highlight = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            highlight = pygame.Surface(
+                (rect.width, rect.height), pygame.SRCALPHA)
 
             # Use decode_action instead of magic number < 12
-            action_type, _ = decode_action(selected_hover_action, self.board_size)
+            action_type, _ = decode_action(
+                selected_hover_action, self.board_size)
             color = (
                 COLORS["hover_move"] if action_type == "pawn" else COLORS["hover_wall"]
             )
@@ -162,8 +169,10 @@ class GameUI:
         )
 
         self.screen.blit(p0_text, (MARGIN, 10))
-        self.screen.blit(p1_text, (WINDOW_SIZE - MARGIN - p1_text.get_width(), 10))
-        self.screen.blit(turn_text, (WINDOW_SIZE // 2 - turn_text.get_width() // 2, 10))
+        self.screen.blit(
+            p1_text, (WINDOW_SIZE - MARGIN - p1_text.get_width(), 10))
+        self.screen.blit(turn_text, (WINDOW_SIZE // 2 -
+                         turn_text.get_width() // 2, 10))
 
         if state.game_over:
             win_text = (
@@ -176,7 +185,8 @@ class GameUI:
             )
             go_surf = self.font.render(win_text, True, color)
             self.screen.blit(
-                go_surf, (WINDOW_SIZE // 2 - go_surf.get_width() // 2, WINDOW_SIZE - 40)
+                go_surf, (WINDOW_SIZE // 2 - go_surf.get_width() //
+                          2, WINDOW_SIZE - 40)
             )
 
         pygame.display.flip()
@@ -189,7 +199,8 @@ class GameUI:
         while running:
             # Recompute hitboxes only for human turn and if game is not over
             is_human_turn = not state.game_over and state.current_player == 0
-            hitboxes = self._get_action_hitboxes(state) if is_human_turn else {}
+            hitboxes = self._get_action_hitboxes(
+                state) if is_human_turn else {}
 
             # Deterministic Proximity Detection
             selected_hover_action = None
@@ -220,7 +231,8 @@ class GameUI:
                             selected_hover_action is not None
                             and selected_hover_action in hitboxes
                         ):
-                            state, _, _, _ = self.env.step(state, selected_hover_action)
+                            state, _, _, _ = self.env.step(
+                                state, selected_hover_action)
                             action_taken = True
 
             # Draw the current state
@@ -254,7 +266,8 @@ def load_ai_and_run(
     cfg = load_config(config_path)
 
     print("Loading environment...")
-    env = QuoridorEnv(is_poc=cfg.is_poc)
+    env = QuoridorEnv(is_poc=cfg.is_poc,
+                      max_walls_per_player=cfg.max_walls_per_player)
 
     if use_remote:
         print(f"Using REMOTE inference via Flask server at {server_url}...")
@@ -293,13 +306,13 @@ def load_ai_and_run(
         )
 
         ckpt = CheckpointManager(base_dir="checkpoints")
-        latest_state = ckpt.load_latest()
+        best_path = ckpt.get_best_model_path()
 
-        if latest_state:
-            model.load(latest_state["model_path"])
-            print(f"Loaded AI from iteration {latest_state['iteration']}!")
+        if best_path:
+            model.load(best_path)
+            print(f"Loaded best AI model from {best_path}")
         else:
-            print("WARNING: No checkpoints found! AI will play completely randomly.")
+            print("WARNING: No best model found! AI will play completely randomly.")
 
         def nn_evaluate(state):
             tensor = env.state_to_tensor(state)

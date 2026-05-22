@@ -1,6 +1,7 @@
 {
     "is_poc": true,
     "board_size": 5,
+    "max_walls_per_player": 3,
     "mcts": {
         "num_simulations": 400,
         "c_puct": 1.41,
@@ -10,11 +11,11 @@
         "max_rollout_depth": 100
     },
     "training": {
-        "num_iterations": 50,
+        "num_iterations": 15,
         "games_per_iteration": 100,
         "batch_size": 256,
-        "training_epochs": 50,
-        "eval_games": 40,
+        "training_epochs": 100,
+        "eval_games": 20,
         "win_threshold": 0.55,
         "replay_buffer_size": 50000,
         "learning_rate": 0.001,

@@ -1,8 +1,11 @@
 import os
+import torch
 import numpy as np
 from flask import Flask, request, jsonify
 from src.model.network import QuoridorModel
 from src.env.quoridor_env import compute_action_space_size
+
+torch.set_num_threads(1)
 
 app = Flask(__name__)
 

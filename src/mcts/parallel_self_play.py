@@ -115,7 +115,8 @@ if __name__ == "__main__":
     processes = []
     for i in range(NUM_WORKERS):
         p = mp.Process(
-            target=game_worker, args=(i, request_queue, response_dicts[i], 10, cfg)
+            target=game_worker,
+            args=(i, request_queue, response_dicts[i], 10, cfg, results_queue),
         )
         p.start()
         processes.append(p)

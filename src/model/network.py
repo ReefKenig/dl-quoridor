@@ -140,6 +140,7 @@ class QuoridorModel:
         lr: float = 0.001,
         weight_decay: float = 1e-4,
         device: str = "auto",
+        in_channels: int = 11,
     ):
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -148,6 +149,7 @@ class QuoridorModel:
 
         self.network = QuoridorNetwork(
             board_size=board_size,
+            in_channels=in_channels,
             num_channels=num_channels,
             num_res_blocks=num_res_blocks,
             action_space_size=action_space_size,

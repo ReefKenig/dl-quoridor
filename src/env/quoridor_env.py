@@ -1,8 +1,8 @@
-import numpy as np
-import copy
 from collections import deque
-from typing import Set, Tuple, List, Optional
 from dataclasses import dataclass
+from typing import List, Optional, Set, Tuple
+
+import numpy as np
 
 from src.env.env_interface import QuoridorEnvInterface
 from src.env.tensor_spec import build_tensor
@@ -208,18 +208,26 @@ class QuoridorEnv(QuoridorEnvInterface):
         return np.array(valid_actions, dtype=np.int64)
 
     def state_to_tensor(self, state: QuoridorState) -> np.ndarray:
-        return build_tensor(
+        base_tensor = build_tensor(
             board_size=state.board_size,
             p0_pos=state.p0_pos,
             p1_pos=state.p1_pos,
             p0_h_walls=list(state.p0_h_walls),
-            p0_v_walls=list(state.p0_v_walls),
             p1_h_walls=list(state.p1_h_walls),
+            p0_v_walls=list(state.p0_v_walls),
             p1_v_walls=list(state.p1_v_walls),
             p0_walls_remaining=state.p0_walls,
             p1_walls_remaining=state.p1_walls,
             max_walls=state.max_walls,
         )
+
+        turn_channel = np.full(
+            (state.board_size, state.board_size, 1),
+            fill_value=state.current_player,
+            dtype=np.float32,
+        )
+
+        return np.concatenate([base_tensor, turn_channel], axis=-1)
 
     # ==============================================================
     # Helper Methods

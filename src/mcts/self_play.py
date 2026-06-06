@@ -10,17 +10,19 @@ Drives the AlphaZero training cycle:
     6. Repeat
 """
 
-from src.mcts.mcts import MCTS, MCTSConfig
-from src.mcts.evaluator import evaluate, mcts_agent, random_agent
-from src.utils.checkpoint import CheckpointManager
-from src.utils.logger import TrainingLogger, Timer
 import copy
 import logging
 import os
-import numpy as np
-from dataclasses import dataclass, asdict
-from typing import List, Tuple, Optional
 from collections import deque
+from dataclasses import asdict, dataclass
+from typing import List, Optional, Tuple
+
+import numpy as np
+
+from src.mcts.evaluator import evaluate, mcts_agent, random_agent
+from src.mcts.mcts import MCTS, MCTSConfig
+from src.utils.checkpoint import CheckpointManager
+from src.utils.logger import Timer, TrainingLogger
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +30,16 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TrainingSample:
     """Single training example for the neural network."""
-    state: np.ndarray           # observation tensor (e.g., 5x5x10)
-    policy_target: np.ndarray   # MCTS visit count distribution
-    value_target: float         # discounted value from this player's perspective
+
+    state: np.ndarray  # observation tensor (e.g., 5x5x10)
+    policy_target: np.ndarray  # MCTS visit count distribution
+    value_target: float  # discounted value from this player's perspective
 
 
 def _augment_sample(
-    sample: TrainingSample, board_size: int, action_space_size: int,
+    sample: TrainingSample,
+    board_size: int,
+    action_space_size: int,
 ) -> TrainingSample:
     """Mirror a training sample along the vertical axis (left-right flip).
 
@@ -48,13 +53,22 @@ def _augment_sample(
     flipped_policy = np.zeros_like(sample.policy_target)
     W = board_size - 1
     h_offset = 12
-    v_offset = 12 + W ** 2
+    v_offset = 12 + W**2
 
     # Pawn move mirror map (left <-> right, diagonals swap)
     mirror_map = {
-        0: 0, 1: 1, 2: 3, 3: 2,       # UP, DOWN, LEFT<->RIGHT
-        4: 4, 5: 5, 6: 7, 7: 6,       # JUMP_UP, JUMP_DOWN, JUMP_LEFT<->JUMP_RIGHT
-        8: 9, 9: 8, 10: 11, 11: 10,   # diagonals flip
+        0: 0,
+        1: 1,
+        2: 3,
+        3: 2,  # UP, DOWN, LEFT<->RIGHT
+        4: 4,
+        5: 5,
+        6: 7,
+        7: 6,  # JUMP_UP, JUMP_DOWN, JUMP_LEFT<->JUMP_RIGHT
+        8: 9,
+        9: 8,
+        10: 11,
+        11: 10,  # diagonals flip
     }
 
     for action in range(action_space_size):
@@ -187,7 +201,7 @@ def play_one_game(
             value = 0.0
         else:
             moves_from_end = num_moves - idx
-            discounted = discount ** moves_from_end
+            discounted = discount**moves_from_end
             if player == winner:
                 value = discounted
             else:
@@ -203,8 +217,7 @@ def play_one_game(
 
     # Augment with left-right mirror (doubles effective training data)
     augmented = [
-        _augment_sample(s, env.board_size, env.action_space_size)
-        for s in samples
+        _augment_sample(s, env.board_size, env.action_space_size) for s in samples
     ]
     samples.extend(augmented)
 
@@ -426,15 +439,21 @@ def training_loop(
 
         logger.info("  Training for %d epochs...", config.training_epochs)
         total_loss_p, total_loss_v = 0.0, 0.0
+
+        # Calculate how many batchesmake up onefull pass of the current buffer
+        steps_per_epoch = max(1, len(buffer) // config.batch_size)
+        total_steps = steps_per_epoch * config.training_epochs
+
         with Timer() as train_timer:
-            for epoch in range(config.training_epochs):
+            for step in range(total_steps):
                 states, policies, values = buffer.sample_batch(config.batch_size)
                 loss_p, loss_v = model.train_step(states, policies, values)
                 total_loss_p += loss_p
                 total_loss_v += loss_v
 
-        avg_lp = total_loss_p / max(config.training_epochs, 1)
-        avg_lv = total_loss_v / max(config.training_epochs, 1)
+        # Average the loss over the total number of gradient steps
+        avg_lp = total_loss_p / max(total_steps, 1)
+        avg_lv = total_loss_v / max(total_steps, 1)
         logger.info(
             "  Avg losses — policy: %.4f, value: %.4f",
             avg_lp,

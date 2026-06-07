@@ -77,7 +77,7 @@ def game_worker(
             )
             state = next_state
 
-        gamma = getattr(config, "reward_decay", 0.97)
+        gamma = getattr(config, "reward_decay", 0.995)
 
         final_reward = -1.0 if state.winner is None else 1.0
 

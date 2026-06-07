@@ -36,7 +36,7 @@ class MCTSConfig:
     num_simulations: int = 400
     c_puct: float = 1.41
     temperature: float = 1.0
-    dirichlet_alpha: float = 0.3
+    dirichlet_alpha: float = 1.2
     dirichlet_epsilon: float = 0.25
     max_rollout_depth: int = 100
 

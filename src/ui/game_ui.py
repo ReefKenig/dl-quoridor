@@ -1,12 +1,13 @@
-import sys
 import argparse
-import pygame
-import numpy as np
+import sys
 from typing import Optional
 
+import numpy as np
+import pygame
+
 from src.env.quoridor_env import QuoridorEnv, QuoridorState, decode_action
-from src.model.network import QuoridorModel
 from src.mcts.mcts import MCTS
+from src.model.network import QuoridorModel
 from src.utils.checkpoint import CheckpointManager
 from src.utils.config import load_config
 
@@ -156,7 +157,7 @@ class GameUI:
             f"P1 Walls: {state.p1_walls}", True, COLORS["player1"]
         )
         turn_text = self.font.render(
-            f"Turn: {'P0' if state.current_player == 0 else 'P1'}",
+            f"Turn: {'P1' if state.current_player == 0 else 'P2'}",
             True,
             COLORS["text"],
         )
@@ -167,7 +168,7 @@ class GameUI:
 
         if state.game_over:
             win_text = (
-                "DRAW!" if state.winner is None else f"PLAYER {state.winner} WINS!"
+                "DRAW!" if state.winner is None else f"PLAYER {state.winner + 1} WINS!"
             )
             color = (
                 COLORS["text"]
@@ -290,6 +291,7 @@ def load_ai_and_run(
             action_space_size=env.action_space_size,
             num_channels=net_cfg.get("num_channels", 64),
             num_res_blocks=net_cfg.get("num_res_blocks", 4),
+            in_channels=11,
         )
 
         ckpt = CheckpointManager(base_dir="checkpoints")

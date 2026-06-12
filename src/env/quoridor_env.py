@@ -80,14 +80,18 @@ Owner: Reef
 class QuoridorEnv(QuoridorEnvInterface):
     def __init__(
         self,
-        is_poc: bool = True,
+        board_size: int = 5,
         max_turns: int = 150,
         debug: bool = False,
         max_walls_per_player: Optional[int] = None,
     ):
-        self.is_poc = is_poc
-        self.board_size = 5 if is_poc else 9
-        self.max_walls_per_player = 3 if is_poc else 10
+        self.board_size = board_size
+
+        if max_walls_per_player is not None:
+            self.max_walls_per_player = max_walls_per_player
+        else:
+            self.max_walls_per_player = 3 if board_size == 5 else 10
+
         self.max_turns = max_turns
         self.debug = debug
 

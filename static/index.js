@@ -19,7 +19,7 @@ let gameState = {
 
 // --- NAVIGATION FUNCTIONS ---
 
-function startGame() {
+async function startGame() {
   // Read settings from the menu
   currentGridSize = parseInt(document.getElementById("board-size").value);
   const difficulty = document.getElementById("difficulty").value;
@@ -27,6 +27,32 @@ function startGame() {
   // Hide menu, show game
   mainMenu.classList.add("hidden");
   gameScreen.classList.remove("hidden");
+
+  statusText.innerText = "Connecting to server...";
+
+  // Ask Python for the official starting positions
+  try {
+    const response = await fetch(
+      `/api/${currentGridSize}x${currentGridSize}/reset`,
+      { method: "POST" },
+    );
+
+    const data = await response.json();
+
+    // Overwrite the local JS state with the true Python state
+    gameState = {
+      player1: data.player1,
+      player2: data.player2,
+      walls: data.walls,
+    };
+
+    // Draw the board with the official coordinates
+    statusText.innerText = `Game Started! Your turn.`;
+    drawBoard();
+  } catch (error) {
+    console.log("Failed to start game:", error);
+    statusText.innerText = "Server connection lost.";
+  }
 
   // Initialize the board
   statusText.innerText = `Game Started! (${currentGridSize}x${currentGridSize}) - ${difficulty}`;

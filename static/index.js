@@ -12,8 +12,8 @@ let isPlayerTurn = true; // Prevents clicking while waiting for AI
 
 // Track position
 let gameState = {
-  player1: { row: 4, col: 2 },
-  player2: { row: 0, col: 2 },
+  player1: {},
+  player2: {},
   walls: [], // Wall coordinates will be stored here
 };
 
@@ -45,13 +45,10 @@ async function startGame() {
       player2: data.player2,
       walls: data.walls,
     };
-
-    // Draw the board with the official coordinates
-    statusText.innerText = `Game Started! Your turn.`;
-    drawBoard();
   } catch (error) {
     console.log("Failed to start game:", error);
     statusText.innerText = "Server connection lost.";
+    return;
   }
 
   // Initialize the board
@@ -98,7 +95,7 @@ function drawBoard() {
   // TODO: Add wall drawing logic
 }
 
-function drawBoard(row, col, color) {
+function drawPawn(row, col, color) {
   const centerX = col * cellSize + cellSize / 2;
   const centerY = row * cellSize + cellSize / 2;
   const radius = cellSize / 2 - 15;

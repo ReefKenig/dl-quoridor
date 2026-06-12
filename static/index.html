@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quoridor AI</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="main-menu" class="container">
+      <h1>Quoridor AI</h1>
+
+      <div>
+        <label for="difficulty">Select Difficulty:</label><br />
+        <select id="difficulty">
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="board-size">Board Size:</label><br />
+        <select id="board-size">
+          <option value="5">5x5</option>
+          <option value="9">9x9</option>
+        </select>
+      </div>
+
+      <button onclick="startGame()">Start Game</button>
+    </div>
+
+    <div id="game-screen" class="container hidden">
+      <h2 id="game-status">Player 1's turn</h2>
+
+      <canvas id="game-board" width="500" height="500"></canvas>
+      <br />
+
+      <button onclick="quitToMenu()">Quit to Menu</button>
+    </div>
+
+    <script src="./index.js"></script>
+  </body>
+</html>

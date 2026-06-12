@@ -1,14 +1,13 @@
 import os
 
+import numpy as np
 import torch
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from src.env.quoridor_env import QuoridorEnv, compute_action_space_size
+from src.env.quoridor_env import MOVE_MAP, QuoridorEnv, compute_action_space_size
+from src.mcts.mcts import MCTS, MCTSConfig
 from src.model.network import QuoridorModel
-
-# TODO: Import your MCTS and Evaluator here
-# from src.mcts.mcts import MCTS, MCTSConfig
 
 torch.set_num_threads(1)
 
@@ -33,7 +32,16 @@ if os.path.exists(MODEL_PATH):
 else:
     print(f"❌ WARNING: Could not find model at {MODEL_PATH}!")
 
-# TODO: Initialize MCTS agent here using the loaded model
+
+def evaluate_fn(state):
+    """Wraps the PyTorch model for the MCTS."""
+    tensor = env.state_to_tensor(state)
+    return model.predict(tensor)
+
+
+# Initialize MCTS
+mcts_config = MCTSConfig(num_simulations=200)
+mcts_agent = MCTS(config=mcts_config, evaluate_fn=evaluate_fn)
 
 # --- WEB ROUTES ---
 
@@ -76,25 +84,29 @@ def process_move():
         data = request.json
         target = data.get("target")
 
-        # Translate human click to an env action integer (0-43)
-        # TODO: Write a helper function that takes target["row"] & target["col"] and figures out which action ID that corresponds to.
-        human_action = 0
+        # Translate human click(0-43)
+        curr_r, curr_c = env.state[1]
+        dr = target["row"] - curr_r
+        dc = target["col"] - curr_c
+
+        human_action = MOVE_MAP.get((dr, dc))
+        if human_action is None:
+            return jsonify({"error": "Invalid move distance."}), 400
 
         # Apply human move
         next_state, reward, done, _ = env.step(human_action)
-
         if done:
             return jsonify({"status": "game_over", "winner": "human"})
 
         # Apply AI move (MCTS)
-        # ai_action = mcts_agent.get_action(next_state)
-        ai_action = 1  # Placeholder
+        # Search the tree, get the action probabilities, and pick the best one
+        action_probs = mcts_agent.search(next_state)
+        ai_action = int(np.argmax(action_probs))
         next_state, reward, done, _ = env.step(ai_action)
 
-        # Extract the new board positions from next_state
-        # TODO: Read the new coordinates from env to send to JavaScript
-        new_p1_pos = {"row": 3, "col": 2}  # Placholder
-        new_p2_pos = {"row": 1, "col": 2}  # Placholder
+        # Extract new positions
+        new_p1_pos = {"row": int(next_state[1][0]), "col": int(next_state[1][1])}
+        new_p2_pos = {"row": int(next_state[2][0]), "col": int(next_state[2][1])}
 
         return jsonify(
             {

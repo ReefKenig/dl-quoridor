@@ -72,19 +72,31 @@ def process_move():
             return jsonify({"error": "Game state not found"})
 
         data = request.json
+        action_type = data.get("type", "pawn")
         target = data.get("target")
 
-        curr_r, curr_c = current_game_state.p0_pos
-        dr = target["row"] - curr_r
-        dc = target["col"] - curr_c
+        human_action = None
 
-        human_action = MOVE_MAP.get((dr, dc))
+        if action_type == "pawn":
+            curr_r, curr_c = current_game_state.p0_pos
+            dr = target["row"] - curr_r
+            dc = target["col"] - curr_c
+            human_action = MOVE_MAP.get((dr, dc))
+
+        elif action_type == "h_wall":
+            W = env.board_size - 1
+            human_action = 12 + (target["row"] * W) + target["col"]
+
+        elif action_type == "v_wall":
+            W = env.board_size - 1
+            human_action = 12 + (W**2) + (target["row"] * W) + target["col"]
+
         if human_action is None:
             return jsonify({"error": "Invalid move distance."}), 400
 
         valid_actions = env.get_valid_actions(current_game_state)
         if human_action not in valid_actions:
-            return jsonify({"error": "Move blocked by a wall or boundary."}), 400
+            return jsonify({"error": "Illegal move or wall placement blocked."}), 400
 
         current_game_state, reward, done, _ = env.step(current_game_state, human_action)
         if done:
@@ -104,6 +116,7 @@ def process_move():
             {
                 "status": "game_over" if done else "ongoing",
                 "newState": _extract_positions(current_game_state),
+                "winner": "ai" if done else None,
             }
         )
 
@@ -113,10 +126,14 @@ def process_move():
 
 def _extract_positions(state):
     """Helper function to cleanly package the coordinates for JavaScript"""
+    h_walls = [{"row": r, "col": c} for r, c in state.p0_h_walls | state.p1_h_walls]
+    v_walls = [{"row": r, "col": c} for r, c in state.p0_v_walls | state.p1_v_walls]
+
     return {
         "player1": {"row": int(state.p0_pos[0]), "col": int(state.p0_pos[1])},
         "player2": {"row": int(state.p1_pos[0]), "col": int(state.p1_pos[1])},
-        "walls": [],
+        "h_walls": h_walls,
+        "v_walls": v_walls,
     }
 
 

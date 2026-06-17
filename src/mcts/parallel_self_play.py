@@ -2,7 +2,6 @@ import multiprocessing as mp
 import os
 import sys
 import threading
-import traceback
 
 import numpy as np
 import torch
@@ -14,8 +13,6 @@ def inference_worker(model, request_queue, response_queues, batch_size=64):
     Exits when it receives a "STOP" sentinel.
     """
     model.eval()
-    print("[INF_THREAD] Inference worker started, waiting for requests...", flush=True)
-    batches_processed = 0
 
     while True:
         batch_requests = []
@@ -24,8 +21,6 @@ def inference_worker(model, request_queue, response_queues, batch_size=64):
             try:
                 req = request_queue.get(timeout=0.1)
                 if req == "STOP":
-                    print(
-                        f"[INF_THREAD] Got STOP after {batches_processed} batches", flush=True)
                     return
                 batch_requests.append(req)
             except Exception:
@@ -46,38 +41,21 @@ def inference_worker(model, request_queue, response_queues, batch_size=64):
             response_queues[w_id].put(
                 (policies[i].cpu().numpy(), values[i].item()))
 
-        batches_processed += 1
-        if batches_processed == 1:
-            print(
-                f"[INF_THREAD] First batch processed ({len(batch_requests)} requests)", flush=True)
-        elif batches_processed % 100 == 0:
-            print(
-                f"[INF_THREAD] {batches_processed} batches processed", flush=True)
-
 
 def game_worker(
     worker_id, request_queue, response_queue, num_games, config_dict, results_queue, project_dir
 ):
     """
     Plays Quoridor games using MCTS, pausing to ask the GPU for predictions.
-    Runs in a spawned process — imports are resolved here.
+    Runs in a spawned process.
     """
     try:
-        print(
-            f"[WORKER {worker_id}] Starting, project_dir={project_dir}", flush=True)
-
-        # Ensure src is importable in spawned processes
         os.chdir(project_dir)
         if project_dir not in sys.path:
             sys.path.insert(0, project_dir)
 
-        print(f"[WORKER {worker_id}] sys.path set, importing...", flush=True)
-
         from src.env.quoridor_env import QuoridorEnv
         from src.mcts.mcts import MCTS, MCTSConfig
-
-        print(
-            f"[WORKER {worker_id}] Imports OK, starting {num_games} games", flush=True)
 
         board_size = config_dict["board_size"]
         max_walls = config_dict["max_walls_per_player"]
@@ -134,13 +112,10 @@ def game_worker(
 
                 worker_history.append((tensor, probs, discounted_reward))
 
-        print(
-            f"[WORKER {worker_id}] Done, generated {len(worker_history)} samples", flush=True)
         results_queue.put(worker_history)
     except Exception as e:
         print(f"[WORKER {worker_id}] CRASHED: {e}", flush=True)
-        traceback.print_exc()
-        results_queue.put([])  # empty so join doesn't hang
+        results_queue.put([])
 
 
 def generate_parallel_self_play_data(
@@ -156,34 +131,24 @@ def generate_parallel_self_play_data(
     Returns:
         list of tuples: (state_hwc, policy_probs, discounted_value)
     """
-    # Ensure spawned children can find `src` package via PYTHONPATH
     project_dir = os.getcwd()
     existing = os.environ.get("PYTHONPATH", "")
     if project_dir not in existing:
         os.environ["PYTHONPATH"] = project_dir + \
             (":" + existing if existing else "")
 
-    print(f"[PARALLEL] project_dir={project_dir}", flush=True)
-    print(
-        f"[PARALLEL] PYTHONPATH={os.environ.get('PYTHONPATH', '')}", flush=True)
-
     ctx = mp.get_context("spawn")
 
     request_queue = ctx.Queue()
     results_queue = ctx.Queue()
-
-    # Per-worker response queues (no Manager needed)
     response_queues = {i: ctx.Queue() for i in range(num_workers)}
 
-    # Serialize config to a plain dict so it pickles cleanly across spawn
     config_dict = {
         "board_size": config.board_size,
         "max_walls_per_player": config.max_walls_per_player,
         "reward_decay": config.reward_decay,
         "mcts": config.raw.get("mcts", {}),
     }
-
-    print(f"[PARALLEL] Spawning {num_workers} workers...", flush=True)
 
     processes = []
     for i in range(num_workers):
@@ -202,25 +167,17 @@ def generate_parallel_self_play_data(
         p.start()
         processes.append(p)
 
-    print(
-        f"[PARALLEL] All {num_workers} workers started, launching inference thread...", flush=True)
-
     inference_thread = threading.Thread(
         target=inference_worker,
         args=(model, request_queue, response_queues, batch_size),
     )
     inference_thread.start()
 
-    print("[PARALLEL] Waiting for workers to finish...", flush=True)
-
-    for i, p in enumerate(processes):
+    for p in processes:
         p.join()
-        print(
-            f"[PARALLEL] Worker {i} joined (exit code: {p.exitcode})", flush=True)
 
     request_queue.put("STOP")
     inference_thread.join()
-    print("[PARALLEL] Inference thread joined", flush=True)
 
     global_training_buffer = []
     while not results_queue.empty():

@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import threading
 
 import numpy as np
 import torch
@@ -104,12 +105,19 @@ def game_worker(
     return worker_history
 
 
-if __name__ == "__main__":
-    mp.set_start_method("spawn")
+def generate_parallel_self_play_data(
+    model,
+    config,
+    num_workers: int = 8,
+    games_per_worker: int = 5,
+    batch_size: int = 64,
+):
+    """
+    Generate self-play training data using CPU game workers + batched GPU inference.
 
-    cfg = load_config("configs/config_5x5.json")
-    NUM_WORKERS = 32
-
+    Returns:
+        list of tuples: (state_hwc, policy_probs, discounted_value)
+    """
     request_queue = mp.Queue()
     results_queue = mp.Queue()
     manager = mp.Manager()
@@ -117,8 +125,51 @@ if __name__ == "__main__":
     response_dicts = {
         i: manager.dict({"policy": None, "value": None,
                         "event": manager.Event()})
-        for i in range(NUM_WORKERS)
+        for i in range(num_workers)
     }
+
+    processes = []
+    for i in range(num_workers):
+        p = mp.Process(
+            target=game_worker,
+            args=(
+                i,
+                request_queue,
+                response_dicts[i],
+                games_per_worker,
+                config,
+                results_queue,
+            ),
+        )
+        p.start()
+        processes.append(p)
+
+    inference_thread = threading.Thread(
+        target=inference_worker,
+        args=(model, request_queue, response_dicts, batch_size),
+    )
+    inference_thread.start()
+
+    for p in processes:
+        p.join()
+
+    request_queue.put("STOP")
+    inference_thread.join()
+
+    global_training_buffer = []
+    while not results_queue.empty():
+        worker_data = results_queue.get()
+        global_training_buffer.extend(worker_data)
+
+    return global_training_buffer
+
+
+if __name__ == "__main__":
+    mp.set_start_method("spawn")
+
+    cfg = load_config("configs/config_5x5.json")
+    NUM_WORKERS = 32
+    GAMES_PER_WORKER = 10
 
     # Load model (device handled internally by QuoridorModel)
     model = QuoridorModel(
@@ -128,36 +179,13 @@ if __name__ == "__main__":
         device="cuda",
     )
 
-    # Start CPU workers
-    processes = []
-    for i in range(NUM_WORKERS):
-        p = mp.Process(
-            target=game_worker,
-            args=(i, request_queue, response_dicts[i], 10, cfg, results_queue),
-        )
-        p.start()
-        processes.append(p)
-
-    # Run inference on the main process (serves GPU requests until STOP)
-    import threading
-
-    inference_thread = threading.Thread(
-        target=inference_worker, args=(model, request_queue, response_dicts)
+    global_training_buffer = generate_parallel_self_play_data(
+        model=model,
+        config=cfg,
+        num_workers=NUM_WORKERS,
+        games_per_worker=GAMES_PER_WORKER,
+        batch_size=64,
     )
-    inference_thread.start()
-
-    # Wait for all game workers to finish
-    for p in processes:
-        p.join()
-
-    # Signal inference worker to stop
-    request_queue.put("STOP")
-    inference_thread.join()
-
-    global_training_buffer = []
-    while not results_queue.empty():
-        worker_data = results_queue.get()
-        global_training_buffer.extend(worker_data)
 
     print(
         f"Parallel Self-Play Complete! Generated {len(global_training_buffer)} states."

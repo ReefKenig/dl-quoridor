@@ -169,6 +169,8 @@ def generate_parallel_self_play_data(
         p.start()
         processes.append(p)
 
+    print(f"[PARALLEL] {num_workers} workers spawned, inference thread starting...", flush=True)
+
     inference_thread = threading.Thread(
         target=inference_worker,
         args=(model, request_queue, response_queues, batch_size),

@@ -263,6 +263,27 @@ class QuoridorModel:
             self.optimizer.load_state_dict(checkpoint["optimizer_state"])
         logger.info("Model loaded from %s", path)
 
+    def predict_batch(self, batch_tensor: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Batched inference for parallel self-play. No gradient computation.
+
+        Args:
+            batch_tensor: (batch, C, H, W) float tensor already on the correct device
+
+        Returns:
+            policies: (batch, action_space_size) tensor of probabilities
+            values:   (batch, 1) tensor of scalars in [-1, 1]
+        """
+        self.network.eval()
+        with torch.no_grad():
+            log_policy, value = self.network(batch_tensor)
+            policies = torch.exp(log_policy)
+        return policies, value
+
+    def eval(self):
+        """Set network to eval mode (for compatibility with inference_worker)."""
+        self.network.eval()
+
     def copy_weights_from(self, other: "QuoridorModel"):
         """Copy network weights from another model (for best-model tracking)."""
         self.network.load_state_dict(other.network.state_dict())

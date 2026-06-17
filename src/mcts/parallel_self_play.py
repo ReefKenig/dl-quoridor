@@ -13,6 +13,7 @@ def inference_worker(model, request_queue, response_queues, batch_size=64):
     Exits when it receives a "STOP" sentinel.
     """
     model.eval()
+    batches_done = 0
 
     while True:
         batch_requests = []
@@ -40,6 +41,10 @@ def inference_worker(model, request_queue, response_queues, batch_size=64):
         for i, w_id in enumerate(worker_ids):
             response_queues[w_id].put(
                 (policies[i].cpu().numpy(), values[i].item()))
+
+        batches_done += 1
+        if batches_done % 500 == 0:
+            print(f"  [GPU] {batches_done} batches processed...", flush=True)
 
 
 def game_worker(

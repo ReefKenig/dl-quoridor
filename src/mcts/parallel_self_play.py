@@ -90,7 +90,7 @@ def game_worker(
 
         worker_history = []
 
-        for _ in range(num_games):
+        for game_idx in range(num_games):
             state = env.reset()
             game_history = []
 
@@ -107,6 +107,7 @@ def game_worker(
 
             final_reward = -1.0 if state.winner is None else 1.0
 
+            game_samples = []
             for i, (tensor, probs, player) in enumerate(game_history):
                 perspective_reward = (
                     final_reward if player == state.winner else -final_reward
@@ -115,14 +116,19 @@ def game_worker(
                 steps_to_end = len(game_history) - 1 - i
                 discounted_reward = perspective_reward * (gamma**steps_to_end)
 
-                worker_history.append((tensor, probs, discounted_reward))
+                game_samples.append((tensor, probs, discounted_reward))
 
-        results_queue.put(worker_history)
+            # Send each game's samples immediately so main process can track progress
+            results_queue.put(("game", worker_id, game_samples))
+            worker_history.extend(game_samples)
+
+        # Signal this worker is done
+        results_queue.put(("done", worker_id, len(worker_history)))
     except Exception as e:
         import traceback
         print(
             f"[WORKER {worker_id}] CRASHED: {e}\n{traceback.format_exc()}", flush=True)
-        results_queue.put([])
+        results_queue.put(("done", worker_id, 0))
 
 
 def generate_parallel_self_play_data(
@@ -131,13 +137,19 @@ def generate_parallel_self_play_data(
     num_workers: int = 8,
     games_per_worker: int = 5,
     batch_size: int = 64,
+    on_games_complete=None,
 ):
     """
     Generate self-play training data using CPU game workers + batched GPU inference.
 
+    Args:
+        on_games_complete: optional callback(games_done, total_games, new_samples)
+            called after each game finishes. Can be used for mid-iteration checkpoints.
+
     Returns:
         list of tuples: (state_hwc, policy_probs, discounted_value)
     """
+    total_games = num_workers * games_per_worker
     project_dir = os.getcwd()
     existing = os.environ.get("PYTHONPATH", "")
     if project_dir not in existing:
@@ -174,7 +186,8 @@ def generate_parallel_self_play_data(
         p.start()
         processes.append(p)
 
-    print(f"[PARALLEL] {num_workers} workers spawned, inference thread starting...", flush=True)
+    print(
+        f"[PARALLEL] {num_workers} workers spawned, inference thread starting...", flush=True)
 
     inference_thread = threading.Thread(
         target=inference_worker,
@@ -182,16 +195,28 @@ def generate_parallel_self_play_data(
     )
     inference_thread.start()
 
+    # Collect results as games finish (instead of waiting for all workers)
+    global_training_buffer = []
+    games_done = 0
+    workers_done = 0
+
+    while workers_done < num_workers:
+        msg = results_queue.get()
+        if msg[0] == "game":
+            _, worker_id, game_samples = msg
+            global_training_buffer.extend(game_samples)
+            games_done += 1
+            if on_games_complete:
+                on_games_complete(games_done, total_games, game_samples)
+        elif msg[0] == "done":
+            workers_done += 1
+
+    # Clean up
     for p in processes:
         p.join()
 
     request_queue.put("STOP")
     inference_thread.join()
-
-    global_training_buffer = []
-    while not results_queue.empty():
-        worker_data = results_queue.get()
-        global_training_buffer.extend(worker_data)
 
     if not global_training_buffer:
         print(

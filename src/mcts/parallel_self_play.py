@@ -2,6 +2,7 @@ import multiprocessing as mp
 import os
 import sys
 import threading
+import traceback
 
 import numpy as np
 import torch
@@ -13,14 +14,18 @@ def inference_worker(model, request_queue, response_queues, batch_size=64):
     Exits when it receives a "STOP" sentinel.
     """
     model.eval()
+    print("[INF_THREAD] Inference worker started, waiting for requests...", flush=True)
+    batches_processed = 0
 
     while True:
         batch_requests = []
 
         while len(batch_requests) < batch_size:
             try:
-                req = request_queue.get(timeout=0.01)
+                req = request_queue.get(timeout=0.1)
                 if req == "STOP":
+                    print(
+                        f"[INF_THREAD] Got STOP after {batches_processed} batches", flush=True)
                     return
                 batch_requests.append(req)
             except Exception:
@@ -41,6 +46,14 @@ def inference_worker(model, request_queue, response_queues, batch_size=64):
             response_queues[w_id].put(
                 (policies[i].cpu().numpy(), values[i].item()))
 
+        batches_processed += 1
+        if batches_processed == 1:
+            print(
+                f"[INF_THREAD] First batch processed ({len(batch_requests)} requests)", flush=True)
+        elif batches_processed % 100 == 0:
+            print(
+                f"[INF_THREAD] {batches_processed} batches processed", flush=True)
+
 
 def game_worker(
     worker_id, request_queue, response_queue, num_games, config_dict, results_queue, project_dir
@@ -49,70 +62,85 @@ def game_worker(
     Plays Quoridor games using MCTS, pausing to ask the GPU for predictions.
     Runs in a spawned process — imports are resolved here.
     """
-    # Ensure src is importable in spawned processes
-    os.chdir(project_dir)
-    if project_dir not in sys.path:
-        sys.path.insert(0, project_dir)
+    try:
+        print(
+            f"[WORKER {worker_id}] Starting, project_dir={project_dir}", flush=True)
 
-    from src.env.quoridor_env import QuoridorEnv
-    from src.mcts.mcts import MCTS, MCTSConfig
+        # Ensure src is importable in spawned processes
+        os.chdir(project_dir)
+        if project_dir not in sys.path:
+            sys.path.insert(0, project_dir)
 
-    board_size = config_dict["board_size"]
-    max_walls = config_dict["max_walls_per_player"]
-    mcts_cfg = config_dict["mcts"]
-    gamma = config_dict["reward_decay"]
+        print(f"[WORKER {worker_id}] sys.path set, importing...", flush=True)
 
-    def batched_evaluate(state):
-        tensor = torch.from_numpy(
-            env.state_to_tensor(state)).float().permute(2, 0, 1)
-        request_queue.put((worker_id, tensor))
-        policy, value = response_queue.get()
-        return policy, value
+        from src.env.quoridor_env import QuoridorEnv
+        from src.mcts.mcts import MCTS, MCTSConfig
 
-    env = QuoridorEnv(board_size=board_size, max_walls_per_player=max_walls)
-    mcts = MCTS(
-        config=MCTSConfig(
-            num_simulations=mcts_cfg.get("num_simulations", 150),
-            c_puct=mcts_cfg.get("c_puct", 1.41),
-            temperature=mcts_cfg.get("temperature", 1.0),
-            dirichlet_alpha=mcts_cfg.get("dirichlet_alpha", 0.3),
-            dirichlet_epsilon=mcts_cfg.get("dirichlet_epsilon", 0.25),
-            max_rollout_depth=mcts_cfg.get("max_rollout_depth", 100),
-        ),
-        evaluate_fn=batched_evaluate,
-    )
+        print(
+            f"[WORKER {worker_id}] Imports OK, starting {num_games} games", flush=True)
 
-    worker_history = []
+        board_size = config_dict["board_size"]
+        max_walls = config_dict["max_walls_per_player"]
+        mcts_cfg = config_dict["mcts"]
+        gamma = config_dict["reward_decay"]
 
-    for _ in range(num_games):
-        state = env.reset()
-        game_history = []
+        def batched_evaluate(state):
+            tensor = torch.from_numpy(
+                env.state_to_tensor(state)).float().permute(2, 0, 1)
+            request_queue.put((worker_id, tensor))
+            policy, value = response_queue.get()
+            return policy, value
 
-        while not state.game_over:
-            action_probs = mcts.search(env, state, temperature=1.0)
+        env = QuoridorEnv(board_size=board_size,
+                          max_walls_per_player=max_walls)
+        mcts = MCTS(
+            config=MCTSConfig(
+                num_simulations=mcts_cfg.get("num_simulations", 150),
+                c_puct=mcts_cfg.get("c_puct", 1.41),
+                temperature=mcts_cfg.get("temperature", 1.0),
+                dirichlet_alpha=mcts_cfg.get("dirichlet_alpha", 0.3),
+                dirichlet_epsilon=mcts_cfg.get("dirichlet_epsilon", 0.25),
+                max_rollout_depth=mcts_cfg.get("max_rollout_depth", 100),
+            ),
+            evaluate_fn=batched_evaluate,
+        )
 
-            action = np.random.choice(len(action_probs), p=action_probs)
-            next_state, reward, done, _ = env.step(state, action)
+        worker_history = []
 
-            # state_to_tensor returns (H, W, C) numpy — matches train_step's expected input
-            game_history.append(
-                (env.state_to_tensor(state), action_probs, state.current_player)
-            )
-            state = next_state
+        for _ in range(num_games):
+            state = env.reset()
+            game_history = []
 
-        final_reward = -1.0 if state.winner is None else 1.0
+            while not state.game_over:
+                action_probs = mcts.search(env, state, temperature=1.0)
 
-        for i, (tensor, probs, player) in enumerate(game_history):
-            perspective_reward = (
-                final_reward if player == state.winner else -final_reward
-            )
+                action = np.random.choice(len(action_probs), p=action_probs)
+                next_state, reward, done, _ = env.step(state, action)
 
-            steps_to_end = len(game_history) - 1 - i
-            discounted_reward = perspective_reward * (gamma**steps_to_end)
+                game_history.append(
+                    (env.state_to_tensor(state), action_probs, state.current_player)
+                )
+                state = next_state
 
-            worker_history.append((tensor, probs, discounted_reward))
+            final_reward = -1.0 if state.winner is None else 1.0
 
-    results_queue.put(worker_history)
+            for i, (tensor, probs, player) in enumerate(game_history):
+                perspective_reward = (
+                    final_reward if player == state.winner else -final_reward
+                )
+
+                steps_to_end = len(game_history) - 1 - i
+                discounted_reward = perspective_reward * (gamma**steps_to_end)
+
+                worker_history.append((tensor, probs, discounted_reward))
+
+        print(
+            f"[WORKER {worker_id}] Done, generated {len(worker_history)} samples", flush=True)
+        results_queue.put(worker_history)
+    except Exception as e:
+        print(f"[WORKER {worker_id}] CRASHED: {e}", flush=True)
+        traceback.print_exc()
+        results_queue.put([])  # empty so join doesn't hang
 
 
 def generate_parallel_self_play_data(
@@ -128,6 +156,17 @@ def generate_parallel_self_play_data(
     Returns:
         list of tuples: (state_hwc, policy_probs, discounted_value)
     """
+    # Ensure spawned children can find `src` package via PYTHONPATH
+    project_dir = os.getcwd()
+    existing = os.environ.get("PYTHONPATH", "")
+    if project_dir not in existing:
+        os.environ["PYTHONPATH"] = project_dir + \
+            (":" + existing if existing else "")
+
+    print(f"[PARALLEL] project_dir={project_dir}", flush=True)
+    print(
+        f"[PARALLEL] PYTHONPATH={os.environ.get('PYTHONPATH', '')}", flush=True)
+
     ctx = mp.get_context("spawn")
 
     request_queue = ctx.Queue()
@@ -144,8 +183,7 @@ def generate_parallel_self_play_data(
         "mcts": config.raw.get("mcts", {}),
     }
 
-    # Pass the current working directory so spawned processes can find src
-    project_dir = os.getcwd()
+    print(f"[PARALLEL] Spawning {num_workers} workers...", flush=True)
 
     processes = []
     for i in range(num_workers):
@@ -164,17 +202,25 @@ def generate_parallel_self_play_data(
         p.start()
         processes.append(p)
 
+    print(
+        f"[PARALLEL] All {num_workers} workers started, launching inference thread...", flush=True)
+
     inference_thread = threading.Thread(
         target=inference_worker,
         args=(model, request_queue, response_queues, batch_size),
     )
     inference_thread.start()
 
-    for p in processes:
+    print("[PARALLEL] Waiting for workers to finish...", flush=True)
+
+    for i, p in enumerate(processes):
         p.join()
+        print(
+            f"[PARALLEL] Worker {i} joined (exit code: {p.exitcode})", flush=True)
 
     request_queue.put("STOP")
     inference_thread.join()
+    print("[PARALLEL] Inference thread joined", flush=True)
 
     global_training_buffer = []
     while not results_queue.empty():

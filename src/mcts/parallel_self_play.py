@@ -12,6 +12,7 @@ from src.utils.config import load_config
 def inference_worker(model, request_queue, response_dicts, batch_size=64):
     """
     Batches requests from MCTS workers and processes them on the GPU.
+    Exits when it receives a "STOP" sentinel.
     """
     model.eval()
 
@@ -33,7 +34,7 @@ def inference_worker(model, request_queue, response_dicts, batch_size=64):
         worker_ids = [req[0] for req in batch_requests]
         tensors = [req[1] for req in batch_requests]
 
-        batch_tensor = torch.stack(tensors).to("cuda")
+        batch_tensor = torch.stack(tensors).to(model.device)
 
         with torch.no_grad():
             policies, values = model.predict_batch(batch_tensor)
@@ -51,13 +52,19 @@ def game_worker(
     Plays Quoridor games using MCTS, pausing to ask the GPU for predictions.
     """
 
-    def batched_evaluate(state_tensor):
+    def batched_evaluate(state):
+        # Convert state to tensor (HWC) then to CHW torch tensor for GPU batching
+        tensor = torch.from_numpy(
+            env.state_to_tensor(state)).float().permute(2, 0, 1)
         response_dict["event"].clear()
-        request_queue.put((worker_id, state_tensor))
+        request_queue.put((worker_id, tensor))
         response_dict["event"].wait()
         return response_dict["policy"], response_dict["value"]
 
-    env = QuoridorEnv(board_size=config.board_size)
+    env = QuoridorEnv(
+        board_size=config.board_size,
+        max_walls_per_player=config.max_walls_per_player,
+    )
     mcts = MCTS(config=config.mcts_config(), evaluate_fn=batched_evaluate)
 
     worker_history = []
@@ -72,12 +79,13 @@ def game_worker(
             action = np.random.choice(len(action_probs), p=action_probs)
             next_state, reward, done, _ = env.step(state, action)
 
+            # state_to_tensor returns (H, W, C) numpy — matches train_step's expected input
             game_history.append(
                 (env.state_to_tensor(state), action_probs, state.current_player)
             )
             state = next_state
 
-        gamma = getattr(config, "reward_decay", 0.995)
+        gamma = config.reward_decay
 
         final_reward = -1.0 if state.winner is None else 1.0
 
@@ -107,9 +115,18 @@ if __name__ == "__main__":
     manager = mp.Manager()
 
     response_dicts = {
-        i: manager.dict({"policy": None, "value": None, "event": manager.Event()})
+        i: manager.dict({"policy": None, "value": None,
+                        "event": manager.Event()})
         for i in range(NUM_WORKERS)
     }
+
+    # Load model (device handled internally by QuoridorModel)
+    model = QuoridorModel(
+        board_size=cfg.board_size,
+        action_space_size=44,
+        in_channels=11,
+        device="cuda",
+    )
 
     # Start CPU workers
     processes = []
@@ -121,12 +138,21 @@ if __name__ == "__main__":
         p.start()
         processes.append(p)
 
-    # Start the GPU worker
-    model = QuoridorModel(board_size=cfg.board_size, action_space_size=44).to("cuda")
-    inference_worker(model, request_queue, response_dicts)
+    # Run inference on the main process (serves GPU requests until STOP)
+    import threading
 
+    inference_thread = threading.Thread(
+        target=inference_worker, args=(model, request_queue, response_dicts)
+    )
+    inference_thread.start()
+
+    # Wait for all game workers to finish
     for p in processes:
         p.join()
+
+    # Signal inference worker to stop
+    request_queue.put("STOP")
+    inference_thread.join()
 
     global_training_buffer = []
     while not results_queue.empty():

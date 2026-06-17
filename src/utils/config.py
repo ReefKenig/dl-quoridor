@@ -76,6 +76,10 @@ class AppConfig:
         return self.raw.get("network", {})
 
     @property
+    def reward_decay(self) -> float:
+        return self.raw.get("training", {}).get("reward_decay", 0.97)
+
+    @property
     def max_walls_per_player(self) -> Optional[int]:
         return self.raw.get("max_walls_per_player", None)
 

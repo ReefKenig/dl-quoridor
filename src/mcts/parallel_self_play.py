@@ -6,11 +6,6 @@ import threading
 import numpy as np
 import torch
 
-from src.env.quoridor_env import QuoridorEnv
-from src.mcts.mcts import MCTS
-from src.model.network import QuoridorModel
-from src.utils.config import load_config
-
 
 def inference_worker(model, request_queue, response_queues, batch_size=64):
     """
@@ -190,6 +185,9 @@ def generate_parallel_self_play_data(
 
 
 if __name__ == "__main__":
+    from src.model.network import QuoridorModel
+    from src.utils.config import load_config
+
     mp.set_start_method("spawn")
 
     cfg = load_config("configs/config_5x5.json")

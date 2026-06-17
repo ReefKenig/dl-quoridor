@@ -1,4 +1,6 @@
 import multiprocessing as mp
+import os
+import sys
 import threading
 
 import numpy as np
@@ -10,7 +12,7 @@ from src.model.network import QuoridorModel
 from src.utils.config import load_config
 
 
-def inference_worker(model, request_queue, response_dicts, batch_size=64):
+def inference_worker(model, request_queue, response_queues, batch_size=64):
     """
     Batches requests from MCTS workers and processes them on the GPU.
     Exits when it receives a "STOP" sentinel.
@@ -26,7 +28,7 @@ def inference_worker(model, request_queue, response_dicts, batch_size=64):
                 if req == "STOP":
                     return
                 batch_requests.append(req)
-            except mp.queues.Empty:
+            except Exception:
                 break
 
         if not batch_requests:
@@ -41,32 +43,49 @@ def inference_worker(model, request_queue, response_dicts, batch_size=64):
             policies, values = model.predict_batch(batch_tensor)
 
         for i, w_id in enumerate(worker_ids):
-            response_dicts[w_id]["policy"] = policies[i].cpu().numpy()
-            response_dicts[w_id]["value"] = values[i].item()
-            response_dicts[w_id]["event"].set()
+            response_queues[w_id].put(
+                (policies[i].cpu().numpy(), values[i].item()))
 
 
 def game_worker(
-    worker_id, request_queue, response_dict, num_games, config, results_queue
+    worker_id, request_queue, response_queue, num_games, config_dict, results_queue
 ):
     """
     Plays Quoridor games using MCTS, pausing to ask the GPU for predictions.
+    Runs in a spawned process — imports are resolved here.
     """
+    # Ensure src is importable in spawned processes
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
+    from src.env.quoridor_env import QuoridorEnv
+    from src.mcts.mcts import MCTS, MCTSConfig
+
+    board_size = config_dict["board_size"]
+    max_walls = config_dict["max_walls_per_player"]
+    mcts_cfg = config_dict["mcts"]
+    gamma = config_dict["reward_decay"]
 
     def batched_evaluate(state):
-        # Convert state to tensor (HWC) then to CHW torch tensor for GPU batching
         tensor = torch.from_numpy(
             env.state_to_tensor(state)).float().permute(2, 0, 1)
-        response_dict["event"].clear()
         request_queue.put((worker_id, tensor))
-        response_dict["event"].wait()
-        return response_dict["policy"], response_dict["value"]
+        policy, value = response_queue.get()
+        return policy, value
 
-    env = QuoridorEnv(
-        board_size=config.board_size,
-        max_walls_per_player=config.max_walls_per_player,
+    env = QuoridorEnv(board_size=board_size, max_walls_per_player=max_walls)
+    mcts = MCTS(
+        config=MCTSConfig(
+            num_simulations=mcts_cfg.get("num_simulations", 150),
+            c_puct=mcts_cfg.get("c_puct", 1.41),
+            temperature=mcts_cfg.get("temperature", 1.0),
+            dirichlet_alpha=mcts_cfg.get("dirichlet_alpha", 0.3),
+            dirichlet_epsilon=mcts_cfg.get("dirichlet_epsilon", 0.25),
+            max_rollout_depth=mcts_cfg.get("max_rollout_depth", 100),
+        ),
+        evaluate_fn=batched_evaluate,
     )
-    mcts = MCTS(config=config.mcts_config(), evaluate_fn=batched_evaluate)
 
     worker_history = []
 
@@ -86,8 +105,6 @@ def game_worker(
             )
             state = next_state
 
-        gamma = config.reward_decay
-
         final_reward = -1.0 if state.winner is None else 1.0
 
         for i, (tensor, probs, player) in enumerate(game_history):
@@ -101,8 +118,6 @@ def game_worker(
             worker_history.append((tensor, probs, discounted_reward))
 
     results_queue.put(worker_history)
-
-    return worker_history
 
 
 def generate_parallel_self_play_data(
@@ -118,16 +133,20 @@ def generate_parallel_self_play_data(
     Returns:
         list of tuples: (state_hwc, policy_probs, discounted_value)
     """
-    # Use spawn context to avoid CUDA fork deadlocks in notebooks/Colab
     ctx = mp.get_context("spawn")
 
     request_queue = ctx.Queue()
     results_queue = ctx.Queue()
-    manager = ctx.Manager()
 
-    response_dicts = {
-        i: manager.dict({"policy": None, "value": None, "event": manager.Event()})
-        for i in range(num_workers)
+    # Per-worker response queues (no Manager needed)
+    response_queues = {i: ctx.Queue() for i in range(num_workers)}
+
+    # Serialize config to a plain dict so it pickles cleanly across spawn
+    config_dict = {
+        "board_size": config.board_size,
+        "max_walls_per_player": config.max_walls_per_player,
+        "reward_decay": config.reward_decay,
+        "mcts": config.raw.get("mcts", {}),
     }
 
     processes = []
@@ -137,9 +156,9 @@ def generate_parallel_self_play_data(
             args=(
                 i,
                 request_queue,
-                response_dicts[i],
+                response_queues[i],
                 games_per_worker,
-                config,
+                config_dict,
                 results_queue,
             ),
         )
@@ -148,7 +167,7 @@ def generate_parallel_self_play_data(
 
     inference_thread = threading.Thread(
         target=inference_worker,
-        args=(model, request_queue, response_dicts, batch_size),
+        args=(model, request_queue, response_queues, batch_size),
     )
     inference_thread.start()
 

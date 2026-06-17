@@ -48,16 +48,16 @@ def inference_worker(model, request_queue, response_queues, batch_size=64):
 
 
 def game_worker(
-    worker_id, request_queue, response_queue, num_games, config_dict, results_queue
+    worker_id, request_queue, response_queue, num_games, config_dict, results_queue, project_dir
 ):
     """
     Plays Quoridor games using MCTS, pausing to ask the GPU for predictions.
     Runs in a spawned process — imports are resolved here.
     """
     # Ensure src is importable in spawned processes
-    cwd = os.getcwd()
-    if cwd not in sys.path:
-        sys.path.insert(0, cwd)
+    os.chdir(project_dir)
+    if project_dir not in sys.path:
+        sys.path.insert(0, project_dir)
 
     from src.env.quoridor_env import QuoridorEnv
     from src.mcts.mcts import MCTS, MCTSConfig
@@ -149,6 +149,9 @@ def generate_parallel_self_play_data(
         "mcts": config.raw.get("mcts", {}),
     }
 
+    # Pass the current working directory so spawned processes can find src
+    project_dir = os.getcwd()
+
     processes = []
     for i in range(num_workers):
         p = ctx.Process(
@@ -160,6 +163,7 @@ def generate_parallel_self_play_data(
                 games_per_worker,
                 config_dict,
                 results_queue,
+                project_dir,
             ),
         )
         p.start()

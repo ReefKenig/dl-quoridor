@@ -118,19 +118,21 @@ def generate_parallel_self_play_data(
     Returns:
         list of tuples: (state_hwc, policy_probs, discounted_value)
     """
-    request_queue = mp.Queue()
-    results_queue = mp.Queue()
-    manager = mp.Manager()
+    # Use spawn context to avoid CUDA fork deadlocks in notebooks/Colab
+    ctx = mp.get_context("spawn")
+
+    request_queue = ctx.Queue()
+    results_queue = ctx.Queue()
+    manager = ctx.Manager()
 
     response_dicts = {
-        i: manager.dict({"policy": None, "value": None,
-                        "event": manager.Event()})
+        i: manager.dict({"policy": None, "value": None, "event": manager.Event()})
         for i in range(num_workers)
     }
 
     processes = []
     for i in range(num_workers):
-        p = mp.Process(
+        p = ctx.Process(
             target=game_worker,
             args=(
                 i,

@@ -114,7 +114,9 @@ def game_worker(
 
         results_queue.put(worker_history)
     except Exception as e:
-        print(f"[WORKER {worker_id}] CRASHED: {e}", flush=True)
+        import traceback
+        print(
+            f"[WORKER {worker_id}] CRASHED: {e}\n{traceback.format_exc()}", flush=True)
         results_queue.put([])
 
 
@@ -183,6 +185,10 @@ def generate_parallel_self_play_data(
     while not results_queue.empty():
         worker_data = results_queue.get()
         global_training_buffer.extend(worker_data)
+
+    if not global_training_buffer:
+        print(
+            "[PARALLEL] WARNING: No samples generated! Workers may have crashed.", flush=True)
 
     return global_training_buffer
 

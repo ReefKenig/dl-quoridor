@@ -2,8 +2,13 @@
 
 This repository is a small AlphaZero-style Quoridor AI project with two main goals:
 
-- implement the Quoridor game environment and action semantics,
+- implement the Quoridor game environment and action semantics (2–4 players),
 - train a dual-headed neural network with MCTS self-play.
+
+The 2-player path uses negamax MCTS with a scalar value head. The N-player
+path (2–4) uses max^n MCTS with a vector value head (length N). Both share
+the same action space (44 on 5×5, 140 on 9×9) and the same `QuoridorEnvInterface`
+contract.
 
 It is organized into:
 
@@ -44,31 +49,43 @@ It is organized into:
     - `get_valid_actions(state)` to compute legal pawn moves and valid walls, including path existence checks
     - `state_to_tensor(state)` to convert board state into a neural-network input tensor
 - tensor_spec.py
-  - Defines the 10-channel tensor format used by the network
+  - Defines the 10-channel tensor format used by the 2-player network
   - Channels:
     - 0-1: player pawn positions
     - 2-5: wall maps per player / orientation
     - 6-7: remaining walls for each player (broadcast plane)
-    - 8-9: BFS distance maps to each player’s goal row
+    - 8-9: BFS distance maps to each player's goal row
   - This makes the network aware of spatial board state, wall ownership, resource counts, and connectivity.
+- quoridor_env_mp.py
+  - N-player engine (2..4). Shared wall sets, per-seat remaining counts.
+  - Seat layout via `seat_specs`: 0=bottom→top, 1=top→bottom, 2=left→right, 3=right→left.
+  - Jump rule: official Quoridor (straight over one pawn if landing is in-board/unblocked/empty, else diagonals beside it; no double-jump).
+  - Wall counts are deliberately scaled down for the 5×5 POC (N≥3 → 2 walls/seat). Override `max_walls_per_player` for coalition-emergence experiments.
+- tensor_spec_mp.py
+  - N-player tensor (3N+3 channels): N pawn planes, 2 shared wall maps, N walls-remaining planes, N BFS distance maps, 1 turn plane.
+  - Parity with `tensor_spec.py` at N=2 is verified by `tests/test_env_mp.py::TestTensorParity`.
 
 ---
 
 ### 2. model — Neural network
 
 - network.py
-  - Implements `QuoridorNetwork` and `QuoridorModel`
+  - Implements `QuoridorNetwork` and `QuoridorModel` (2-player, scalar value)
   - Architecture:
     - input conv layer
     - residual tower (`ResidualBlock`)
     - dual heads:
       - policy head → action probabilities
-      - value head → win probability in [-1, 1]
+      - value head → win probability in [-1, 1] (scalar)
   - `QuoridorModel` wrapper provides:
     - `predict(state_tensor)` for inference
     - `train_step(states, policies, values)` for training
     - `save(path)` and `load(path)` for checkpointing
   - Uses PyTorch
+- network_mp.py
+  - `QuoridorNetworkMP` / `QuoridorModelMP` — same architecture but value head emits length-N vector (tanh per component)
+  - No sign-flipping; the vector targets carry absolute-perspective values
+  - Same interface as `QuoridorModel` except `predict` returns `(policy, value_vec)` instead of `(policy, scalar)`
 
 ---
 
@@ -92,7 +109,7 @@ It is organized into:
     - random rollout when `evaluate_fn` is `None`
     - neural network evaluation when `evaluate_fn` is provided
 - self_play.py
-  - Implements self-play training pipeline
+  - Implements 2-player self-play training pipeline
   - Main pieces:
     - `TrainingSample` dataclass
     - `ReplayBuffer`
@@ -106,6 +123,16 @@ It is organized into:
       - evaluation vs best model and vs random
       - checkpointing and logging
   - Uses `CheckpointManager` and `TrainingLogger`
+- mcts_maxn.py
+  - Max^n MCTS for N players. Node stores length-N value vector; selection maximises Q[parent_mover]; backprop adds same vector to all ancestors (no sign flip).
+  - Reduces to negamax at N=2 (proven by `scripts/run_reduction.py`).
+- self_play_mp.py
+  - Vector value-target assignment: `vec[j] = +disc if j==winner, -disc otherwise, 0 for draw`.
+  - No per-position mover-perspective sign flip (the vector design eliminates it).
+- evaluator_mp.py
+  - N-player evaluation harness. Candidate agent rotates through all N seats; remaining seats filled by opponent. Fair share = 1/N.
+- training_mp.py
+  - Full N-player AlphaZero loop: max^n self-play → vector-target training → accept/reject gate (candidate rotated through seats) → eval vs random → checkpoint.
 
 ---
 

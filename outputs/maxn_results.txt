@@ -1,0 +1,21 @@
+Deterministic evaluator, no Dirichlet, no rollout — must be bit-identical at N=2
+
+  pos 0: max|Δvisit-dist|=0.00e+00  IDENTICAL
+  pos 1: max|Δvisit-dist|=0.00e+00  IDENTICAL
+  pos 2: max|Δvisit-dist|=0.00e+00  IDENTICAL
+  pos 3: max|Δvisit-dist|=0.00e+00  IDENTICAL
+  pos 4: max|Δvisit-dist|=0.00e+00  IDENTICAL
+  pos 5: max|Δvisit-dist|=0.00e+00  IDENTICAL
+  pos 6: max|Δvisit-dist|=0.00e+00  IDENTICAL
+  pos 7: max|Δvisit-dist|=0.00e+00  IDENTICAL
+
+  RESULT: PASS — max^n(N=2) == negamax
+---
+Vector/max^n self-play + train, N=2 (tiny, CPU)
+
+  iter 0: games=8 wins(p0/p1/draw)=1/5/2 | buf=289 | loss_p=2.682 loss_v=0.075 | mean|v0+v1|=0.046 | 5s
+  iter 1: games=8 wins(p0/p1/draw)=4/2/2 | buf=563 | loss_p=2.011 loss_v=0.081 | mean|v0+v1|=0.056 | 5s
+  iter 2: games=8 wins(p0/p1/draw)=4/3/1 | buf=773 | loss_p=1.766 loss_v=0.065 | mean|v0+v1|=0.055 | 4s
+
+  Note: mean|v0+v1| trending toward 0 = network learning the zero-sum
+  structure on its own from the +1/-1 vector targets (not imposed).

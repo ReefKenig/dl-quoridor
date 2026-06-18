@@ -1,0 +1,46 @@
+Loaded checkpoint: model.pt
+
+============================================================
+TEST B.1: Head-to-head (negamax vs max^n), 20 games each side
+============================================================
+  game  1: nega=0 maxn=1 draw=0 [M]
+  game  2: nega=1 maxn=1 draw=0 [=]
+  game  3: nega=1 maxn=2 draw=0 [M]
+  game  4: nega=2 maxn=2 draw=0 [=]
+  game  5: nega=2 maxn=3 draw=0 [M]
+  game  6: nega=3 maxn=3 draw=0 [=]
+  game  7: nega=3 maxn=4 draw=0 [M]
+  game  8: nega=4 maxn=4 draw=0 [=]
+  game  9: nega=4 maxn=5 draw=0 [M]
+  game 10: nega=5 maxn=5 draw=0 [=]
+  game 11: nega=5 maxn=6 draw=0 [M]
+  game 12: nega=6 maxn=6 draw=0 [=]
+  game 13: nega=6 maxn=7 draw=0 [M]
+  game 14: nega=7 maxn=7 draw=0 [=]
+  game 15: nega=7 maxn=8 draw=0 [M]
+  game 16: nega=8 maxn=8 draw=0 [=]
+  game 17: nega=8 maxn=9 draw=0 [M]
+  game 18: nega=9 maxn=9 draw=0 [=]
+  game 19: nega=9 maxn=10 draw=0 [M]
+  game 20: nega=10 maxn=10 draw=0 [=]
+
+  RESULT: negamax 10W (50%) | max^n 10W (50%) | draws 0
+  EXPECTED: ~50/50 (same model, equivalent search)
+
+============================================================
+TEST B.2: negamax vs random, 20 games
+============================================================
+  negamax wins: 20/20 (100%)
+
+============================================================
+TEST B.3: max^n vs random, 20 games
+============================================================
+  max^n wins: 20/20 (100%)
+
+============================================================
+SUMMARY
+============================================================
+  H2H:         negamax 50% vs max^n 50%  (expect ~50/50)
+  vs Random:   negamax 100% | max^n 100%  (expect ~100%)
+
+  VERDICT: PASS — max^n preserves model strength

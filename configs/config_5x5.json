@@ -22,7 +22,8 @@
         "weight_decay": 0.0001,
         "max_game_moves": 80,
         "eval_random_games": 20,
-        "self_play_checkpoint_freq": 10
+        "self_play_checkpoint_freq": 10,
+        "reward_decay": 0.97
     },
     "network": {
         "num_res_blocks": 4,

@@ -103,21 +103,35 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         history = meta.get("history", [])
         logger.info("Resumed from iteration %d (checkpoint: %s)",
                     start_iter, checkpoint_dir)
+    else:
+        print(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
+              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims",
+              flush=True)
 
     for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
         # --- 1. self-play ---
+        print(f"[iter {it+1}/{cfg.num_iterations}] self-play: 0/{cfg.games_per_iteration} games...",
+              end="", flush=True)
         sp_mcts = _mcts(model, env, cfg)
         wins = {}
-        for _ in range(cfg.games_per_iteration):
+        for g in range(cfg.games_per_iteration):
             samples, w = play_one_game(env, sp_mcts, cfg.num_players,
                                        max_moves=cfg.max_game_moves,
                                        discount=cfg.discount,
                                        explore_moves=cfg.explore_moves)
             buffer.add(samples)
             wins[w] = wins.get(w, 0) + 1
+            if (g + 1) % 10 == 0:
+                print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {g+1}/{cfg.games_per_iteration} games...",
+                      end="", flush=True)
+        sp_secs = time.time() - t0
+        print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {cfg.games_per_iteration}/{cfg.games_per_iteration} done ({sp_secs:.0f}s)",
+              flush=True)
 
         # --- 2. train ---
+        print(f"[iter {it+1}/{cfg.num_iterations}] training...",
+              end="", flush=True)
         lp = lv = 0.0
         steps = cfg.train_steps_per_iter if len(
             buffer) >= cfg.batch_size else 0
@@ -128,8 +142,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             lv += b
         lp /= max(steps, 1)
         lv /= max(steps, 1)
+        print(f" loss_p={lp:.3f} loss_v={lv:.3f}", flush=True)
 
         # --- 3. accept/reject vs best (candidate rotates seats) ---
+        print(f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games)...",
+              end="", flush=True)
         cand = mcts_agent_mp(_mcts(model, env, cfg), temperature=0.1)
         champ = mcts_agent_mp(_mcts(best, env, cfg), temperature=0.1)
         ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
@@ -137,10 +154,15 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         accepted = ev.should_accept(threshold)
         if accepted:
             best.copy_weights_from(model)
+        print(f" {100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'}",
+              flush=True)
 
         # --- 4. eval vs random ---
+        print(f"[iter {it+1}/{cfg.num_iterations}] eval vs random ({cfg.eval_random_games} games)...",
+              end="", flush=True)
         evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
                                          max_moves=cfg.max_game_moves)
+        print(f" {100*evr.candidate_win_rate:.1f}%", flush=True)
 
         # --- 5. checkpoint ---
         model.save(os.path.join(checkpoint_dir, "latest.pt"))
@@ -156,11 +178,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         # Save resume metadata
         with open(os.path.join(checkpoint_dir, "meta.json"), "w") as f:
             json.dump({"completed_iterations": it + 1, "history": history}, f)
-        if (it % log_every) == 0:
-            logger.info(
-                "iter %d | loss_p=%.3f loss_v=%.3f | vs_best=%.1f%% (acc>%.1f%%) %s | "
-                "vs_rand=%.1f%% (fair=%.1f%%) | buf=%d | %.0fs",
-                it + 1, lp, lv, 100 * ev.candidate_win_rate, 100 * threshold,
-                "ACCEPT" if accepted else "reject",
-                100 * evr.candidate_win_rate, 100 * fair, len(buffer), row["secs"])
+
+        print(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
+              f"vs_best={100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'} | "
+              f"vs_rand={100*evr.candidate_win_rate:.1f}% | buf={len(buffer)} | {row['secs']:.0f}s",
+              flush=True)
     return history

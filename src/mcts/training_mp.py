@@ -5,6 +5,7 @@ Self-contained: self-play with the current model's maxⁿ → train on vector ta
 → accept/reject vs the best model (candidate rotated through all seats) → eval vs
 random → checkpoint best/latest. Reduces to the standard duel at N=2.
 """
+import json
 import os
 import copy
 import time
@@ -85,7 +86,25 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     threshold = fair + cfg.accept_margin
     history = []
 
-    for it in range(cfg.num_iterations):
+    # --- Resume from checkpoint if available ---
+    start_iter = 0
+    meta_path = os.path.join(checkpoint_dir, "meta.json")
+    latest_path = os.path.join(checkpoint_dir, "latest.pt")
+    best_path = os.path.join(checkpoint_dir, "best.pt")
+    if os.path.exists(meta_path) and os.path.exists(latest_path):
+        with open(meta_path) as f:
+            meta = json.load(f)
+        start_iter = meta.get("completed_iterations", 0)
+        model.load(latest_path)
+        if os.path.exists(best_path):
+            best.load(best_path)
+        else:
+            best.copy_weights_from(model)
+        history = meta.get("history", [])
+        logger.info("Resumed from iteration %d (checkpoint: %s)",
+                    start_iter, checkpoint_dir)
+
+    for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
         # --- 1. self-play ---
         sp_mcts = _mcts(model, env, cfg)
@@ -133,6 +152,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    win_vs_random=evr.candidate_win_rate, fair=fair,
                    secs=time.time() - t0, buffer=len(buffer))
         history.append(row)
+
+        # Save resume metadata
+        with open(os.path.join(checkpoint_dir, "meta.json"), "w") as f:
+            json.dump({"completed_iterations": it + 1, "history": history}, f)
         if (it % log_every) == 0:
             logger.info(
                 "iter %d | loss_p=%.3f loss_v=%.3f | vs_best=%.1f%% (acc>%.1f%%) %s | "

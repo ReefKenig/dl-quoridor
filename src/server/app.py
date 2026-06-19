@@ -23,7 +23,7 @@ CORS(app)
 IS_POC = os.environ.get("IS_POC", "True").lower() == "true"
 BOARD_SIZE = 5 if IS_POC else 9
 ACTION_SIZE = compute_action_space_size(BOARD_SIZE)
-MODEL_PATH = os.environ.get("MODEL_PATH", "checkpoints/best/model.pt")
+MODEL_PATH = os.environ.get("MODEL_PATH", "runs/legacy_2p/best/model.pt")
 
 env = QuoridorEnv(board_size=BOARD_SIZE)
 model = QuoridorModel(

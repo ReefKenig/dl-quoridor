@@ -1,0 +1,13 @@
+[peak] iter 1: 66.7% -> checkpoints_mp_n4/peak_iter1_67.pt
+[peak] iter 6: 75.0% -> checkpoints_mp_n4/peak_iter6_75.pt
+[peak] iter 9: 75.0% -> checkpoints_mp_n4/peak_iter9_75.pt
+[peak] iter 11: 75.0% -> checkpoints_mp_n4/peak_iter11_75.pt
+[peak] iter 16: 79.2% -> checkpoints_mp_n4/peak_iter16_79.pt
+[peak] iter 23: 79.2% -> checkpoints_mp_n4/peak_iter23_79.pt
+[peak] iter 31: 79.2% -> checkpoints_mp_n4/peak_iter31_79.pt
+[peak] iter 32: 79.2% -> checkpoints_mp_n4/peak_iter32_79.pt
+[peak] iter 35: 83.3% -> checkpoints_mp_n4/peak_iter35_83.pt
+[peak] iter 37: 91.7% -> checkpoints_mp_n4/peak_iter37_92.pt
+[peak] iter 47: 95.8% -> checkpoints_mp_n4/peak_iter47_96.pt
+[peak] iter 68: 95.8% -> checkpoints_mp_n4/peak_iter68_96.pt
+[peak] iter 69: 100.0% -> checkpoints_mp_n4/peak_iter69_100.pt

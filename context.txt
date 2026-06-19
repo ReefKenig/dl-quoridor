@@ -1,5 +1,5 @@
 # Project: dl-quoridor
-# Files: 62
+# Files: 65
 ================================================================================
 
 ## FILE TREE
@@ -9,6 +9,7 @@
   overview.md
   requirements-server.txt
   requirements.txt
+  checkpoints_mp_n4/meta.json
   configs/config_5x5.json
   configs/config_9x9.json
   docs/action_space_5x5.md
@@ -20,10 +21,12 @@
   scripts/manual_server_check.py
   scripts/plot_training.py
   scripts/run_compare.py
+  scripts/run_compare_models.py
   scripts/run_e2e.py
   scripts/run_mp_validate.py
   scripts/run_reduction.py
   scripts/run_train_eval.py
+  scripts/run_train_n4.py
   src/__init__.py
   src/__main__.py
   src/env/__init__.py
@@ -77,7 +80,7 @@ FILE: README.md
 
 Deep Reinforcement Learning final project (Group 501, Colman College).
 
-An autonomous AI agent for the board game Quoridor, using a dual-headed neural network + MCTS trained via self-play.
+An autonomous AI agent for the board game Quoridor, using a dual-headed neural network + MCTS trained via self-play. Supports 2–4 players: the 2-player path uses negamax MCTS with a scalar value head; the N-player path uses max^n MCTS with a vector value head.
 
 ## Project Structure
 
@@ -86,14 +89,21 @@ dl-quoridor/
 ├── src/
 │   ├── env/                    # Game engine & environment interface
 │   │   ├── env_interface.py    #   ABC contract for MCTS ↔ Engine
-│   │   ├── quoridor_env.py     #   Gymnasium wrapper & game logic
-│   │   └── tensor_spec.py      #   Observation/action space specs
+│   │   ├── quoridor_env.py     #   2-player game logic (per-player walls)
+│   │   ├── quoridor_env_mp.py  #   N-player engine (2..4, shared walls)
+│   │   ├── tensor_spec.py      #   2-player tensor (10 channels)
+│   │   └── tensor_spec_mp.py   #   N-player tensor (3N+3 channels)
 │   ├── mcts/                   # Monte Carlo Tree Search
-│   │   ├── mcts.py             #   Core MCTS engine
-│   │   ├── evaluator.py        #   Model evaluation & agent matchups
-│   │   └── self_play.py        #   Self-play data generation & training loop
+│   │   ├── mcts.py             #   Negamax MCTS (2-player)
+│   │   ├── mcts_maxn.py        #   Max^n MCTS (N-player)
+│   │   ├── evaluator.py        #   2-player evaluation & matchups
+│   │   ├── evaluator_mp.py     #   N-player evaluation (seat rotation)
+│   │   ├── self_play.py        #   2-player self-play & training loop
+│   │   ├── self_play_mp.py     #   N-player self-play (vector targets)
+│   │   └── training_mp.py      #   N-player training loop
 │   ├── model/                  # Neural network architecture
-│   │   └── network.py          #   Dual-headed ResNet (Policy + Value)
+│   │   ├── network.py          #   Dual-headed ResNet (scalar value)
+│   │   └── network_mp.py       #   Dual-headed ResNet (vector value)
 │   ├── server/                 # Inference server
 │   │   └── app.py              #   Flask API for remote NN evaluation
 │   ├── ui/                     # PyGame client
@@ -105,7 +115,7 @@ dl-quoridor/
 ├── tests/                      # Unit & integration tests
 ├── notebooks/                  # Colab training notebooks
 ├── configs/                    # Hyperparameter configs (5×5 POC, 9×9)
-├── scripts/                    # Dev helper scripts
+├── scripts/                    # Dev helper & validation scripts
 ├── docs/                       # Design docs (action space, etc.)
 ├── checkpoints/                # Saved model weights
 ├── requirements.txt
@@ -136,6 +146,25 @@ python -m src --config configs/config_5x5.json --no-resume
 ```
 
 Training runs an AlphaZero-style loop: self-play → collect data (with data augmentation) → train network → evaluate vs best model → checkpoint.
+
+### N-player training (2–4 players)
+
+The N-player path uses `QuoridorEnvMP`, `MCTSMaxN`, and `QuoridorModelMP`:
+
+```python
+from src.mcts.training_mp import training_loop_mp, TrainingConfigMP
+```
+
+See `scripts/run_train_eval.py` for a smoke-test example. Wall counts are deliberately reduced for the 5×5 POC (N≥3 → 2 walls/seat). To demonstrate leader-blocking or coalition-emergence at N=4, override with `max_walls_per_player=4` or higher.
+
+### Validation scripts
+
+| Script | What it proves |
+|---|---|
+| `scripts/run_reduction.py` | max^n(N=2) produces bit-identical visit distributions to negamax — the equivalence proof |
+| `scripts/run_mp_validate.py` | N=2 lockstep parity, jump rules, random termination (N=2/3/4), max^n search drives to terminal |
+| `scripts/run_train_eval.py` | Evaluator harness + tiny N=4 training loop + checkpoint reload |
+| `scripts/run_compare.py` | Same-weights negamax vs max^n H2H (structural 50/50, not a correctness proof) |
 
 ## Play vs AI
 
@@ -173,8 +202,13 @@ FILE: overview.md
 
 This repository is a small AlphaZero-style Quoridor AI project with two main goals:
 
-- implement the Quoridor game environment and action semantics,
+- implement the Quoridor game environment and action semantics (2–4 players),
 - train a dual-headed neural network with MCTS self-play.
+
+The 2-player path uses negamax MCTS with a scalar value head. The N-player
+path (2–4) uses max^n MCTS with a vector value head (length N). Both share
+the same action space (44 on 5×5, 140 on 9×9) and the same `QuoridorEnvInterface`
+contract.
 
 It is organized into:
 
@@ -215,31 +249,43 @@ It is organized into:
     - `get_valid_actions(state)` to compute legal pawn moves and valid walls, including path existence checks
     - `state_to_tensor(state)` to convert board state into a neural-network input tensor
 - tensor_spec.py
-  - Defines the 10-channel tensor format used by the network
+  - Defines the 10-channel tensor format used by the 2-player network
   - Channels:
     - 0-1: player pawn positions
     - 2-5: wall maps per player / orientation
     - 6-7: remaining walls for each player (broadcast plane)
-    - 8-9: BFS distance maps to each player’s goal row
+    - 8-9: BFS distance maps to each player's goal row
   - This makes the network aware of spatial board state, wall ownership, resource counts, and connectivity.
+- quoridor_env_mp.py
+  - N-player engine (2..4). Shared wall sets, per-seat remaining counts.
+  - Seat layout via `seat_specs`: 0=bottom→top, 1=top→bottom, 2=left→right, 3=right→left.
+  - Jump rule: official Quoridor (straight over one pawn if landing is in-board/unblocked/empty, else diagonals beside it; no double-jump).
+  - Wall counts are deliberately scaled down for the 5×5 POC (N≥3 → 2 walls/seat). Override `max_walls_per_player` for coalition-emergence experiments.
+- tensor_spec_mp.py
+  - N-player tensor (3N+3 channels): N pawn planes, 2 shared wall maps, N walls-remaining planes, N BFS distance maps, 1 turn plane.
+  - Parity with `tensor_spec.py` at N=2 is verified by `tests/test_env_mp.py::TestTensorParity`.
 
 ---
 
 ### 2. model — Neural network
 
 - network.py
-  - Implements `QuoridorNetwork` and `QuoridorModel`
+  - Implements `QuoridorNetwork` and `QuoridorModel` (2-player, scalar value)
   - Architecture:
     - input conv layer
     - residual tower (`ResidualBlock`)
     - dual heads:
       - policy head → action probabilities
-      - value head → win probability in [-1, 1]
+      - value head → win probability in [-1, 1] (scalar)
   - `QuoridorModel` wrapper provides:
     - `predict(state_tensor)` for inference
     - `train_step(states, policies, values)` for training
     - `save(path)` and `load(path)` for checkpointing
   - Uses PyTorch
+- network_mp.py
+  - `QuoridorNetworkMP` / `QuoridorModelMP` — same architecture but value head emits length-N vector (tanh per component)
+  - No sign-flipping; the vector targets carry absolute-perspective values
+  - Same interface as `QuoridorModel` except `predict` returns `(policy, value_vec)` instead of `(policy, scalar)`
 
 ---
 
@@ -263,7 +309,7 @@ It is organized into:
     - random rollout when `evaluate_fn` is `None`
     - neural network evaluation when `evaluate_fn` is provided
 - self_play.py
-  - Implements self-play training pipeline
+  - Implements 2-player self-play training pipeline
   - Main pieces:
     - `TrainingSample` dataclass
     - `ReplayBuffer`
@@ -277,6 +323,16 @@ It is organized into:
       - evaluation vs best model and vs random
       - checkpointing and logging
   - Uses `CheckpointManager` and `TrainingLogger`
+- mcts_maxn.py
+  - Max^n MCTS for N players. Node stores length-N value vector; selection maximises Q[parent_mover]; backprop adds same vector to all ancestors (no sign flip).
+  - Reduces to negamax at N=2 (proven by `scripts/run_reduction.py`).
+- self_play_mp.py
+  - Vector value-target assignment: `vec[j] = +disc if j==winner, -disc otherwise, 0 for draw`.
+  - No per-position mover-perspective sign flip (the vector design eliminates it).
+- evaluator_mp.py
+  - N-player evaluation harness. Candidate agent rotates through all N seats; remaining seats filled by opponent. Fair share = 1/N.
+- training_mp.py
+  - Full N-player AlphaZero loop: max^n self-play → vector-target training → accept/reject gate (candidate rotated through seats) → eval vs random → checkpoint.
 
 ---
 
@@ -414,6 +470,12 @@ stable-baselines3>=2.4.0
 gymnasium>=1.0.0
 shimmy>=1.3.0
 gunicorn==20.1.0
+
+================================================================================
+FILE: checkpoints_mp_n4/meta.json
+================================================================================
+
+{"completed_iterations": 20, "history": [{"iter": 1, "loss_p": 2.2640949022769927, "loss_v": 0.052626114077866076, "win_vs_best": 0.375, "accepted": true, "win_vs_random": 0.4583333333333333, "fair": 0.25, "secs": 861.8852446079254, "buffer": 1586}, {"iter": 2, "loss_p": 1.676204610466957, "loss_v": 0.05569126071408391, "win_vs_best": 0.225, "accepted": false, "win_vs_random": 0.5416666666666666, "fair": 0.25, "secs": 1322.6604068279266, "buffer": 4062}, {"iter": 3, "loss_p": 1.4033782547712326, "loss_v": 0.054063303833827375, "win_vs_best": 0.3125, "accepted": true, "win_vs_random": 0.5, "fair": 0.25, "secs": 1460.1763870716095, "buffer": 6947}, {"iter": 4, "loss_p": 1.285903854072094, "loss_v": 0.0566176725551486, "win_vs_best": 0.2, "accepted": false, "win_vs_random": 0.4583333333333333, "fair": 0.25, "secs": 1997.6941487789154, "buffer": 9802}, {"iter": 5, "loss_p": 1.2173919010162353, "loss_v": 0.05710206858813763, "win_vs_best": 0.175, "accepted": false, "win_vs_random": 0.6666666666666666, "fair": 0.25, "secs": 1408.043617963791, "buffer": 12296}, {"iter": 6, "loss_p": 1.1787162804603577, "loss_v": 0.05630886419676244, "win_vs_best": 0.15, "accepted": false, "win_vs_random": 0.5416666666666666, "fair": 0.25, "secs": 1586.285140991211, "buffer": 14915}, {"iter": 7, "loss_p": 1.1845487189292907, "loss_v": 0.05959975863806903, "win_vs_best": 0.2875, "accepted": false, "win_vs_random": 0.625, "fair": 0.25, "secs": 1212.9278633594513, "buffer": 17056}, {"iter": 8, "loss_p": 1.1714744067192078, "loss_v": 0.05750460246577859, "win_vs_best": 0.2625, "accepted": false, "win_vs_random": 0.75, "fair": 0.25, "secs": 1216.0010924339294, "buffer": 19302}, {"iter": 9, "loss_p": 1.152788951396942, "loss_v": 0.06138025537133217, "win_vs_best": 0.2625, "accepted": false, "win_vs_random": 0.625, "fair": 0.25, "secs": 1533.6981675624847, "buffer": 21718}, {"iter": 10, "loss_p": 1.1646940425038337, "loss_v": 0.06573614351451397, "win_vs_best": 0.3125, "accepted": true, "win_vs_random": 0.625, "fair": 0.25, "secs": 1255.5178105831146, "buffer": 23490}, {"iter": 11, "loss_p": 1.1536690548062325, "loss_v": 0.06393454778008163, "win_vs_best": 0.4, "accepted": true, "win_vs_random": 0.6666666666666666, "fair": 0.25, "secs": 982.4784848690033, "buffer": 25993}, {"iter": 12, "loss_p": 1.1747137761116029, "loss_v": 0.067239481639117, "win_vs_best": 0.3125, "accepted": true, "win_vs_random": 0.625, "fair": 0.25, "secs": 1013.3979332447052, "buffer": 28227}, {"iter": 13, "loss_p": 1.1783702510595322, "loss_v": 0.06964540091343224, "win_vs_best": 0.2625, "accepted": false, "win_vs_random": 0.6666666666666666, "fair": 0.25, "secs": 871.3029072284698, "buffer": 29813}, {"iter": 14, "loss_p": 1.1659913811087608, "loss_v": 0.06926513526588679, "win_vs_best": 0.275, "accepted": false, "win_vs_random": 0.5833333333333334, "fair": 0.25, "secs": 1055.9791433811188, "buffer": 31341}, {"iter": 15, "loss_p": 1.183448987901211, "loss_v": 0.0723669179342687, "win_vs_best": 0.25, "accepted": false, "win_vs_random": 0.625, "fair": 0.25, "secs": 1075.687795639038, "buffer": 33213}, {"iter": 16, "loss_p": 1.1784562641382217, "loss_v": 0.07469044663012028, "win_vs_best": 0.25, "accepted": false, "win_vs_random": 0.5, "fair": 0.25, "secs": 948.4561953544617, "buffer": 34998}, {"iter": 17, "loss_p": 1.1730475398898124, "loss_v": 0.0782125316746533, "win_vs_best": 0.225, "accepted": false, "win_vs_random": 0.75, "fair": 0.25, "secs": 1140.4019570350647, "buffer": 37306}, {"iter": 18, "loss_p": 1.1716434785723686, "loss_v": 0.07518550846725702, "win_vs_best": 0.225, "accepted": false, "win_vs_random": 0.7083333333333334, "fair": 0.25, "secs": 902.0832757949829, "buffer": 39088}, {"iter": 19, "loss_p": 1.195252809524536, "loss_v": 0.07854767315089703, "win_vs_best": 0.2875, "accepted": false, "win_vs_random": 0.5416666666666666, "fair": 0.25, "secs": 880.2181811332703, "buffer": 40362}, {"iter": 20, "loss_p": 1.1589763954281807, "loss_v": 0.07887040250003338, "win_vs_best": 0.35, "accepted": true, "win_vs_random": 0.4583333333333333, "fair": 0.25, "secs": 871.7690217494965, "buffer": 42433}]}
 
 ================================================================================
 FILE: configs/config_5x5.json
@@ -2545,6 +2607,168 @@ else:
     print()
 
 ================================================================================
+FILE: scripts/run_compare_models.py
+================================================================================
+
+"""
+Compare 2p model (scalar value, negamax) vs N=4 model (vector value, max^n)
+on the 2-player environment. Both play as N=2 on the same 5×5 board.
+
+The 4p model uses max^n MCTS at N=2, which reduces to negamax.
+The 2p model uses the original negamax MCTS.
+
+Requires:
+  - checkpoints/best/model.pt (2p model, 10ch input, scalar value)
+  - checkpoints_mp_n4/best.pt (4p model, 15ch input at N=4 — but at N=2 it's 9ch)
+
+NOTE: The 4p model was trained with in_channels=15 (3*4+3). At N=2, the MP tensor
+is 9 channels (3*2+3). We can't directly load the 4p checkpoint into a 9ch model
+because the first conv layer expects 15 input channels. So we run the 4p model
+on the MP env at N=2 (which produces 9ch tensors) — this requires rebuilding the
+model with in_channels=9. Since the weights don't match, we instead run both
+models on their native environments and compare via a shared game state.
+
+ACTUALLY: the simplest valid comparison is both on QuoridorEnvMP(num_players=2)
+using the MP tensor. The 4p model has in_channels=15 but at N=2 the tensor is 9ch —
+mismatch. So we can't directly compare them on the same env.
+
+VALID COMPARISON: both play on QuoridorEnv (2p original env, 11ch tensor).
+- 2p model: loads directly, uses MCTS negamax
+- 4p model: can't use directly (trained on 15ch)
+
+CONCLUSION: direct head-to-head isn't possible without retraining. Instead, we
+compare both models against the SAME random baseline on their respective envs
+and compare win rates. This shows relative strength.
+"""
+from src.mcts.evaluator_mp import random_agent as random_agent_mp
+from src.mcts.evaluator_mp import evaluate_mp, evaluate_against_random_mp, mcts_agent_mp
+from src.mcts.evaluator import evaluate, evaluate_against_random, mcts_agent, random_agent
+from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
+from src.mcts.mcts import MCTS, MCTSConfig as MCTSConfig2p
+from src.model.network_mp import QuoridorModelMP
+from src.model.network import QuoridorModel
+from src.env.quoridor_env_mp import QuoridorEnvMP
+from src.env.quoridor_env import QuoridorEnv
+import logging
+import torch
+import numpy as np
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+
+logging.disable(logging.CRITICAL)
+
+SIMS = 200
+GAMES = 40
+
+print("=" * 60)
+print("MODEL COMPARISON: 2-player vs 4-player (both vs random)")
+print("=" * 60)
+
+# --- 2p model on 2p env ---
+print("\n[1] 2-player model (negamax, scalar value) vs random")
+env_2p = QuoridorEnv(board_size=5, max_walls_per_player=3, max_turns=200)
+model_2p = QuoridorModel(board_size=5, action_space_size=44, in_channels=10,
+                         num_channels=64, num_res_blocks=4, device="cpu")
+
+ckpt_2p = Path("checkpoints/best/model.pt")
+if ckpt_2p.exists():
+    model_2p.load(str(ckpt_2p))
+    print(f"  Loaded: {ckpt_2p}")
+else:
+    print(f"  WARNING: {ckpt_2p} not found, using untrained model")
+
+
+def eval_2p(state):
+    tensor = env_2p.state_to_tensor(state)
+    tensor = tensor[:, :, :10]  # strip turn channel; model trained on 10ch
+    return model_2p.predict(tensor)
+
+
+mcts_2p = MCTS(config=MCTSConfig2p(num_simulations=SIMS, dirichlet_epsilon=0.0),
+               evaluate_fn=eval_2p)
+agent_2p = mcts_agent(mcts_2p, temperature=0.1)
+
+result_2p = evaluate_against_random(
+    env_2p, agent_2p, num_games=GAMES, verbose=False)
+print(f"  Win rate vs random: {result_2p.agent_a_win_rate:.1%} "
+      f"({result_2p.agent_a_wins}W / {result_2p.agent_b_wins}L / {result_2p.draws}D)")
+print(f"  Avg game length: {result_2p.avg_game_length:.1f} moves")
+
+# --- 4p model on 2-player MP env ---
+print("\n[2] 4-player model (max^n, vector value) on N=2 MP env vs random")
+N = 2
+env_mp2 = QuoridorEnvMP(board_size=5, num_players=N, max_turns=200,
+                        max_walls_per_player=3)
+
+# At N=2, MP tensor is 3*2+3 = 9 channels, but the model was trained with 15ch.
+# We need to load it into a 15ch model and pad the tensor to 15ch.
+model_4p = QuoridorModelMP(board_size=5, action_space_size=44, in_channels=15,
+                           num_channels=64, num_res_blocks=4, num_players=4, device="cpu")
+
+ckpt_4p = Path("checkpoints_mp_n4/best.pt")
+if not ckpt_4p.exists():
+    ckpt_4p = Path("/Users/irisyedidia/Downloads/best.pt")
+if ckpt_4p.exists():
+    model_4p.load(str(ckpt_4p))
+    print(f"  Loaded: {ckpt_4p}")
+else:
+    print(f"  WARNING: No 4p checkpoint found, using untrained model")
+
+
+def eval_4p_on_2p(state):
+    """Evaluate using the 4p model on a 2-player state.
+    Pad the 9ch tensor to 15ch (zeros for missing seats 2,3)."""
+    tensor_9ch = env_mp2.state_to_tensor(state)  # (5, 5, 9)
+    # Pad to 15 channels: insert zeros for the missing 2 pawn planes,
+    # 2 walls-remaining planes, and 2 distance planes
+    bs = 5
+    tensor_15ch = np.zeros((bs, bs, 15), dtype=np.float32)
+    # Ch 0-1: pawn planes (seats 0,1) → same
+    tensor_15ch[:, :, 0:2] = tensor_9ch[:, :, 0:2]
+    # Ch 2-3: seats 2,3 pawn planes → zeros (no pawns)
+    # Ch 4-5: shared wall maps → from 9ch ch 2-3
+    tensor_15ch[:, :, 4:6] = tensor_9ch[:, :, 2:4]
+    # Ch 6-7: walls remaining seats 0,1 → from 9ch ch 4-5
+    tensor_15ch[:, :, 6:8] = tensor_9ch[:, :, 4:6]
+    # Ch 8-9: walls remaining seats 2,3 → zeros
+    # Ch 10-11: distance maps seats 0,1 → from 9ch ch 6-7
+    tensor_15ch[:, :, 10:12] = tensor_9ch[:, :, 6:8]
+    # Ch 12-13: distance maps seats 2,3 → zeros
+    # Ch 14: turn plane → from 9ch ch 8
+    tensor_15ch[:, :, 14] = tensor_9ch[:, :, 8]
+
+    policy, value_vec = model_4p.predict(tensor_15ch)
+    # value_vec is (4,) — take first 2 components for the 2 players
+    return policy, value_vec[:2]
+
+
+mcts_4p = MCTSMaxN(config=MCTSConfig(num_simulations=SIMS, dirichlet_epsilon=0.0),
+                   evaluate_fn=eval_4p_on_2p, num_players=N)
+agent_4p = mcts_agent_mp(mcts_4p, temperature=0.1)
+
+result_4p = evaluate_against_random_mp(env_mp2, agent_4p, num_games=GAMES,
+                                       max_moves=200)
+print(f"  Win rate vs random: {result_4p.candidate_win_rate:.1%} "
+      f"({result_4p.candidate_wins}W / {result_4p.opponent_wins}L / {result_4p.draws}D)")
+
+# --- Summary ---
+print("\n" + "=" * 60)
+print("SUMMARY")
+print("=" * 60)
+print(f"  2p model vs random:  {result_2p.agent_a_win_rate:.1%}")
+print(f"  4p model vs random:  {result_4p.candidate_win_rate:.1%}")
+print(f"\n  (Both at {SIMS} MCTS sims, {GAMES} games, 5×5 board)")
+if result_2p.agent_a_win_rate > result_4p.candidate_win_rate:
+    diff = result_2p.agent_a_win_rate - result_4p.candidate_win_rate
+    print(
+        f"  2p model is stronger by {diff:.1%} — expected (trained longer, simpler task)")
+else:
+    diff = result_4p.candidate_win_rate - result_2p.agent_a_win_rate
+    print(f"  4p model matches/exceeds 2p by {diff:.1%}")
+
+================================================================================
 FILE: scripts/run_e2e.py
 ================================================================================
 
@@ -2901,6 +3125,54 @@ m2.load("/tmp/ckpt_mp/latest.pt")
 pol, val = m2.predict(env4.state_to_tensor(env4.reset()))
 print(f"  reloaded ok: policy{pol.shape} value{val.shape} (expect (44,) (4,))")
 print("\nALL DONE")
+
+================================================================================
+FILE: scripts/run_train_n4.py
+================================================================================
+
+"""Real N=4 training driver. Walls=4 to make blocking matter."""
+from src.mcts.training_mp import TrainingConfigMP, training_loop_mp
+from src.model.network_mp import QuoridorModelMP
+from src.env.quoridor_env_mp import QuoridorEnvMP
+import logging
+import numpy as np
+import torch
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+np.random.seed(0)
+torch.manual_seed(0)
+
+N = 4
+env = QuoridorEnvMP(board_size=5, num_players=N, max_turns=300,
+                    max_walls_per_player=4)
+
+
+def make_model():
+    return QuoridorModelMP(board_size=5, action_space_size=44,
+                           in_channels=3 * N + 3,   # =15 at N=4
+                           num_channels=64, num_res_blocks=4,
+                           num_players=N, device="auto")
+
+
+model = make_model()
+cfg = TrainingConfigMP(
+    num_players=N,
+    num_iterations=20,
+    games_per_iteration=40,
+    mcts_simulations=100,
+    batch_size=64,
+    train_steps_per_iter=200,
+    eval_games=80,
+    eval_random_games=24,
+    accept_margin=0.05,
+    max_game_moves=300,
+)
+training_loop_mp(env, model, make_model, cfg,
+                 checkpoint_dir="checkpoints_mp_n4")
 
 ================================================================================
 FILE: src/__init__.py
@@ -3624,6 +3896,8 @@ class QuoridorEnvMP(QuoridorEnvInterface):
         reward, done = self._check_terminal(ns)
         ns.current_player = (cp + 1) % ns.num_players
         ns.turn_count += 1
+        if not done:
+            self._skip_stuck_players(ns)
         return ns, reward, done, {"winner": ns.winner if done else None}
 
     def get_valid_actions(self, state):
@@ -3674,6 +3948,43 @@ class QuoridorEnvMP(QuoridorEnvInterface):
             state.winner = None
             return 0.0, True
         return 0.0, False
+
+    def _skip_stuck_players(self, state):
+        """After advancing current_player, skip any player who has zero
+        legal moves (locally boxed in by pawns + walls). Mutates state
+        in-place. Safe: the path-check rule guarantees a goal-path always
+        exists, so the stuck player can be freed by others' moves — this
+        just skips their turn until they're unstuck."""
+        for _ in range(state.num_players):
+            if self._player_has_moves(state):
+                return
+            state.current_player = (state.current_player + 1) % state.num_players
+            state.turn_count += 1
+            if state.turn_count >= self.max_turns:
+                state.game_over = True
+                state.winner = None
+                return
+
+    def _player_has_moves(self, state):
+        """Quick check: does current_player have at least one legal action?"""
+        cp = state.current_player
+        pos = state.positions[cp]
+        others = set(state.positions[i]
+                     for i in range(state.num_players) if i != cp)
+        if self._pawn_moves(pos, others, state.h_walls, state.v_walls):
+            return True
+        # No pawn moves; check if any wall placement is legal
+        if state.walls_remaining[cp] > 0:
+            W = self.board_size - 1
+            for r in range(W):
+                for c in range(W):
+                    if self._valid_h(r, c, state.h_walls, state.v_walls):
+                        if self._all_paths(state, state.h_walls | {(r, c)}, state.v_walls):
+                            return True
+                    if self._valid_v(r, c, state.h_walls, state.v_walls):
+                        if self._all_paths(state, state.h_walls, state.v_walls | {(r, c)}):
+                            return True
+        return False
 
     def _can_move(self, p1, p2, h, v):
         r1, c1 = p1
@@ -6010,6 +6321,7 @@ def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
             break
         temp = temp_explore if move_count < explore_moves else 0.3
         probs = mcts.search(env, state, temperature=temp)
+        probs = probs / probs.sum()   # renormalize for fp precision
         mover = env.get_current_player(state)
         trajectory.append((env.state_to_tensor(state), probs, mover))
         action = int(np.random.choice(len(probs), p=probs))
@@ -6031,6 +6343,7 @@ Self-contained: self-play with the current model's maxⁿ → train on vector ta
 → accept/reject vs the best model (candidate rotated through all seats) → eval vs
 random → checkpoint best/latest. Reduces to the standard duel at N=2.
 """
+import json
 import os
 import copy
 import time
@@ -6111,20 +6424,52 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     threshold = fair + cfg.accept_margin
     history = []
 
-    for it in range(cfg.num_iterations):
+    # --- Resume from checkpoint if available ---
+    start_iter = 0
+    meta_path = os.path.join(checkpoint_dir, "meta.json")
+    latest_path = os.path.join(checkpoint_dir, "latest.pt")
+    best_path = os.path.join(checkpoint_dir, "best.pt")
+    if os.path.exists(meta_path) and os.path.exists(latest_path):
+        with open(meta_path) as f:
+            meta = json.load(f)
+        start_iter = meta.get("completed_iterations", 0)
+        model.load(latest_path)
+        if os.path.exists(best_path):
+            best.load(best_path)
+        else:
+            best.copy_weights_from(model)
+        history = meta.get("history", [])
+        logger.info("Resumed from iteration %d (checkpoint: %s)",
+                    start_iter, checkpoint_dir)
+    else:
+        print(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
+              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims",
+              flush=True)
+
+    for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
         # --- 1. self-play ---
+        print(f"[iter {it+1}/{cfg.num_iterations}] self-play: 0/{cfg.games_per_iteration} games...",
+              end="", flush=True)
         sp_mcts = _mcts(model, env, cfg)
         wins = {}
-        for _ in range(cfg.games_per_iteration):
+        for g in range(cfg.games_per_iteration):
             samples, w = play_one_game(env, sp_mcts, cfg.num_players,
                                        max_moves=cfg.max_game_moves,
                                        discount=cfg.discount,
                                        explore_moves=cfg.explore_moves)
             buffer.add(samples)
             wins[w] = wins.get(w, 0) + 1
+            if (g + 1) % 10 == 0:
+                print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {g+1}/{cfg.games_per_iteration} games...",
+                      end="", flush=True)
+        sp_secs = time.time() - t0
+        print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {cfg.games_per_iteration}/{cfg.games_per_iteration} done ({sp_secs:.0f}s)",
+              flush=True)
 
         # --- 2. train ---
+        print(f"[iter {it+1}/{cfg.num_iterations}] training...",
+              end="", flush=True)
         lp = lv = 0.0
         steps = cfg.train_steps_per_iter if len(
             buffer) >= cfg.batch_size else 0
@@ -6135,8 +6480,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             lv += b
         lp /= max(steps, 1)
         lv /= max(steps, 1)
+        print(f" loss_p={lp:.3f} loss_v={lv:.3f}", flush=True)
 
         # --- 3. accept/reject vs best (candidate rotates seats) ---
+        print(f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games)...",
+              end="", flush=True)
         cand = mcts_agent_mp(_mcts(model, env, cfg), temperature=0.1)
         champ = mcts_agent_mp(_mcts(best, env, cfg), temperature=0.1)
         ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
@@ -6144,10 +6492,15 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         accepted = ev.should_accept(threshold)
         if accepted:
             best.copy_weights_from(model)
+        print(f" {100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'}",
+              flush=True)
 
         # --- 4. eval vs random ---
+        print(f"[iter {it+1}/{cfg.num_iterations}] eval vs random ({cfg.eval_random_games} games)...",
+              end="", flush=True)
         evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
                                          max_moves=cfg.max_game_moves)
+        print(f" {100*evr.candidate_win_rate:.1f}%", flush=True)
 
         # --- 5. checkpoint ---
         model.save(os.path.join(checkpoint_dir, "latest.pt"))
@@ -6159,13 +6512,15 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    win_vs_random=evr.candidate_win_rate, fair=fair,
                    secs=time.time() - t0, buffer=len(buffer))
         history.append(row)
-        if (it % log_every) == 0:
-            logger.info(
-                "iter %d | loss_p=%.3f loss_v=%.3f | vs_best=%.1f%% (acc>%.1f%%) %s | "
-                "vs_rand=%.1f%% (fair=%.1f%%) | buf=%d | %.0fs",
-                it + 1, lp, lv, 100 * ev.candidate_win_rate, 100 * threshold,
-                "ACCEPT" if accepted else "reject",
-                100 * evr.candidate_win_rate, 100 * fair, len(buffer), row["secs"])
+
+        # Save resume metadata
+        with open(os.path.join(checkpoint_dir, "meta.json"), "w") as f:
+            json.dump({"completed_iterations": it + 1, "history": history}, f)
+
+        print(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
+              f"vs_best={100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'} | "
+              f"vs_rand={100*evr.candidate_win_rate:.1f}% | buf={len(buffer)} | {row['secs']:.0f}s",
+              flush=True)
     return history
 
 ================================================================================

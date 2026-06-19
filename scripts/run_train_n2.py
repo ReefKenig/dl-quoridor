@@ -1,4 +1,5 @@
-"""Real N=4 training driver. Walls=4 to make blocking matter."""
+"""Vector-maxⁿ architecture at N=2. Tests the unified-architecture generality claim
+and the prediction that value-loss drift is a 4-way property absent at N=2."""
 from src.mcts.training_mp import TrainingConfigMP, training_loop_mp
 from src.model.network_mp import QuoridorModelMP
 from src.env.quoridor_env_mp import QuoridorEnvMP
@@ -14,21 +15,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Bump the version suffix for each new run so progress is tracked per-run.
 # See runs/README.md for the layout + versioning convention.
-RUN_DIR = "runs/n4_5x5_v4"
-
+RUN_DIR = "runs/n2_5x5_v1"
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 np.random.seed(0)
 torch.manual_seed(0)
 
-N = 4
+N = 2
 env = QuoridorEnvMP(board_size=5, num_players=N, max_turns=300,
-                    max_walls_per_player=4)
+                    max_walls_per_player=3)
 
 
 def make_model():
     return QuoridorModelMP(board_size=5, action_space_size=44,
-                           in_channels=3 * N + 3,   # =15 at N=4
+                           in_channels=3 * N + 3,   # = 9 at N=2
                            num_channels=64, num_res_blocks=4,
                            num_players=N, device="auto")
 
@@ -36,7 +36,7 @@ def make_model():
 model = make_model()
 cfg = TrainingConfigMP(
     num_players=N,
-    num_iterations=70,
+    num_iterations=30,
     games_per_iteration=40,
     mcts_simulations=100,
     batch_size=64,
@@ -54,7 +54,7 @@ with open(os.path.join(RUN_DIR, "config.json"), "w") as f:
     json.dump({
         "board_size": 5,
         "num_players": N,
-        "max_walls_per_player": 4,
+        "max_walls_per_player": 3,
         "max_turns": 300,
         **dataclasses.asdict(cfg),
     }, f, indent=2)

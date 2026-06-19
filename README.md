@@ -39,10 +39,26 @@ dl-quoridor/
 ├── configs/                    # Hyperparameter configs (5×5 POC, 9×9)
 ├── scripts/                    # Dev helper & validation scripts
 ├── docs/                       # Design docs (action space, etc.)
-├── checkpoints/                # Saved model weights
+├── runs/                       # Training runs, versioned (see runs/README.md)
+│   ├── README.md               #   Layout + versioning convention
+│   └── <arch>_<board>_<vN>/    #   One self-contained dir per run:
+│       ├── config.json         #     frozen hyperparams (tracked)
+│       ├── meta.json           #     per-iteration progress history (tracked)
+│       ├── train.log           #     run log (tracked)
+│       ├── figures/            #     plots from THIS run's metrics (tracked)
+│       ├── best.pt / latest.pt #     weights (git-ignored)
+│       └── peaks/              #     new-high snapshots (git-ignored)
+├── outputs/                    # Cross-run artifacts only
+│   ├── model_comparison.png    #   2p vs 4p summary
+│   └── results/                #   model-vs-model eval dumps
 ├── requirements.txt
 └── README.md
 ```
+
+> **Checkpoints & versioning:** each training run lives in its own
+> `runs/<id>/` directory. Git tracks the lightweight progress record
+> (`config.json`, `meta.json`, logs, figures) and ignores model weights
+> (`*.pt`). See [`runs/README.md`](runs/README.md) for the full convention.
 
 ## Setup
 

@@ -29,15 +29,17 @@ def make_model():
 model = make_model()
 cfg = TrainingConfigMP(
     num_players=N,
-    num_iterations=20,
+    num_iterations=70,
     games_per_iteration=40,
     mcts_simulations=100,
     batch_size=64,
-    train_steps_per_iter=200,
+    train_steps_per_iter=400,
     eval_games=80,
     eval_random_games=24,
     accept_margin=0.05,
-    max_game_moves=300,
+    max_game_moves=150,
+    discount=0.99,
+    replay_buffer_size=100_000,
 )
 training_loop_mp(env, model, make_model, cfg,
                  checkpoint_dir="checkpoints_mp_n4")

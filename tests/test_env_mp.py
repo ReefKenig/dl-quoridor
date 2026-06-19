@@ -132,3 +132,32 @@ class TestTensorParity:
 
     def test_parity_9x9_no_walls(self):
         self._compare(9, (8, 4), (0, 4), [], [], 10, 10, 10)
+
+
+# ── Augmentation guard test ──
+
+class TestAugmentMP:
+    def test_augment_mp_swaps_seats_2_and_3(self):
+        from src.env.tensor_spec_mp import build_tensor_mp
+        from src.mcts.self_play_mp import augment_mp
+        bs, N = 5, 4
+        # seats 2,3 distinguishable: different positions AND different walls-rem
+        T = build_tensor_mp(bs, positions=[(4, 2), (0, 2), (2, 0), (2, 4)],
+                            h_walls=set(), v_walls=set(),
+                            remaining=[3, 3, 4, 1], max_walls=4,
+                            goals=[("row", 0), ("row", 4), ("col", 4), ("col", 0)],
+                            current_player=2)
+        pol = np.zeros(44, np.float32)
+        pol[3] = 1.0      # a RIGHT move
+        val = np.array([0.1, 0.2, 0.3, 0.4], np.float32)
+        aT, aPol, aVal = augment_mp(T, pol, val, N, bs)
+        # seat-2 pawn plane must equal column-flip of ORIGINAL seat-3 plane
+        np.testing.assert_array_equal(aT[:, :, 2], T[:, ::-1, 3])
+        # value vector swapped on 2,3
+        np.testing.assert_array_equal(aVal, np.array([0.1, 0.2, 0.4, 0.3], np.float32))
+        # RIGHT move (3) -> LEFT (2)
+        assert aPol[2] == 1.0
+        # involution: mirror twice == identity
+        bT, bPol, bVal = augment_mp(aT, aPol, aVal, N, bs)
+        np.testing.assert_allclose(bT, T, atol=1e-6)
+        np.testing.assert_array_equal(bVal, val)

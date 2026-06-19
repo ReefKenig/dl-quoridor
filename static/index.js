@@ -40,7 +40,7 @@ async function startGame() {
   statusText.innerText = "Connecting to server...";
 
   try {
-    const response = await fetch("/api/reset", {
+    const response = await fetch(`/api/${currentGridSize}x${currentGridSize}/reset`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ num_players: numPlayers }),
@@ -63,7 +63,7 @@ async function restartGame() {
   restartBtn.classList.add("hidden");
 
   try {
-    const response = await fetch("/api/reset", {
+    const response = await fetch(`/api/${currentGridSize}x${currentGridSize}/reset`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ num_players: numPlayers }),
@@ -286,7 +286,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
   isPlayerTurn = false;
 
   try {
-    const response = await fetch("/api/move", {
+    const response = await fetch(`/api/${currentGridSize}x${currentGridSize}/move`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

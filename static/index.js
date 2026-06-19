@@ -1,4 +1,5 @@
-// UI Elements
+// --- Global state (shared across modules) ---
+
 const mainMenu = document.getElementById("main-menu");
 const gameScreen = document.getElementById("game-screen");
 const canvas = document.getElementById("game-board");
@@ -13,11 +14,6 @@ let cellSize = 0;
 let isPlayerTurn = true;
 let hoverState = null;
 
-// Player colors
-const PLAYER_COLORS = ["#00b4d8", "#e63946", "#2ecc71", "#f1c40f"];
-const PLAYER_LABELS = ["You", "AI-1", "AI-2", "AI-3"];
-
-// Track game state from server
 let gameState = {
   players: [],
   h_walls: [],

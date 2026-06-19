@@ -166,7 +166,7 @@ class GameUI:
                 (center_x, center_y), self.cell_size * 0.35
             )
             # Draw player number on pawn
-            label = self.small_font.render(str(i), True, (255, 255, 255))
+            label = self.small_font.render(str(i + 1), True, (255, 255, 255))
             self.screen.blit(label, (center_x - label.get_width() // 2,
                                      center_y - label.get_height() // 2))
 
@@ -174,13 +174,13 @@ class GameUI:
         y_offset = 5
         for i in range(self.num_players):
             txt = self.small_font.render(
-                f"P{i}: {state.walls_remaining[i]}w", True, PLAYER_COLORS[i])
+                f"P{i + 1}: {state.walls_remaining[i]}w", True, PLAYER_COLORS[i])
             self.screen.blit(txt, (MARGIN + i * 150, y_offset))
 
         # Current turn indicator
         cp = state.current_player
         turn_text = self.font.render(
-            f"Turn: P{cp}" + (" (YOU)" if cp == 0 else " (AI)"),
+            f"Turn: P{cp + 1}" + (" (YOU)" if cp == 0 else " (AI)"),
             True, PLAYER_COLORS[cp])
         self.screen.blit(turn_text,
                          (WINDOW_SIZE // 2 - turn_text.get_width() // 2, WINDOW_SIZE - 40))
@@ -190,7 +190,7 @@ class GameUI:
                 win_text = "DRAW!"
                 color = COLORS["text"]
             else:
-                win_text = f"PLAYER {state.winner} WINS!" + (
+                win_text = f"PLAYER {state.winner + 1} WINS!" + (
                     " (YOU!)" if state.winner == 0 else "")
                 color = PLAYER_COLORS[state.winner]
             go_surf = self.font.render(win_text, True, color)
@@ -243,7 +243,7 @@ class GameUI:
             if not state.game_over and state.current_player != 0:
                 cp = state.current_player
                 thinking_text = self.font.render(
-                    f"P{cp} (AI) thinking...", True, PLAYER_COLORS[cp])
+                    f"P{cp + 1} (AI) thinking...", True, PLAYER_COLORS[cp])
                 self.screen.blit(thinking_text, (MARGIN, WINDOW_SIZE - 70))
                 pygame.display.flip()
 

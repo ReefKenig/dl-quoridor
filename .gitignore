@@ -21,13 +21,17 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Training artifacts
-checkpoints/
-logs/
-wandb/
+# Training artifacts — metadata-only versioning.
+# Model weights are large and regenerable; we version the PROGRESS record
+# (runs/<id>/meta.json, config.json, *.log) and figures, not the binaries.
 *.pt
 *.pth
 *.onnx
+*.pkl          # replay buffers
+wandb/
+
+# Legacy / dead checkpoint dirs (kept on disk under runs/, weights ignored above).
+# meta.json / config.json / *.log inside runs/ are tracked for versioning.
 
 # Testing
 .pytest_cache/

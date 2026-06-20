@@ -34,11 +34,13 @@ ACTION_SIZE = compute_action_space_size(BOARD_SIZE)
 SIMS = 200
 
 # ── Load 2-player model ──
-cfg_2p = MODEL_REGISTRY["2p_legacy"]
+# TODO: remove 2p_legacy from registry once server fully migrated to vector head
+cfg_2p = MODEL_REGISTRY["2p_vector"]
 env_2p = QuoridorEnv(board_size=BOARD_SIZE, max_walls_per_player=3)
-model_2p = QuoridorModel(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE,
-                         in_channels=cfg_2p["in_channels"],
-                         num_channels=64, num_res_blocks=4)
+model_2p = QuoridorModelMP(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE,
+                           in_channels=cfg_2p["in_channels"],
+                           num_channels=64, num_res_blocks=4,
+                           num_players=cfg_2p["num_players"])
 if os.path.exists(cfg_2p["path"]):
     model_2p.load(cfg_2p["path"])
     print(f"[2P] Loaded: {cfg_2p['path']}")

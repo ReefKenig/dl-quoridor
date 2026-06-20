@@ -1,14 +1,14 @@
 {
     "models": {
-        "2p_legacy": {
-            "path": "runs/legacy_2p/best/model.pt",
-            "architecture": "QuoridorModel (scalar value head)",
-            "in_channels": 10,
+        "2p_vector": {
+            "path": "runs/n2_5x5_v1/ship.pt",
+            "architecture": "QuoridorModelMP (vector value head, N=2)",
+            "in_channels": 9,
             "num_players": 2,
             "board_size": 5,
-            "eval_win_rate": "95% vs random (fair share 50%)",
+            "eval_win_rate": "99.2% ± 1.2% vs random (fair share 50%)",
             "eval_games": 240,
-            "notes": "Trained with negamax MCTS, v3.2 notebook, 40 iterations"
+            "notes": "Trained with max^n MCTS (≡ negamax at N=2), 30 iterations, augmentation + γ=0.99."
         },
         "4p_ship": {
             "path": "runs/n4_5x5_v3/ship.pt",
@@ -19,10 +19,21 @@
             "eval_win_rate": "84.2% ± 4.6% vs random (fair share 25%)",
             "eval_games": 240,
             "notes": "Trained with max^n MCTS, 70 iterations, augmentation + γ=0.99. Peak checkpoint iter 68."
+        },
+        "2p_legacy": {
+            "path": "runs/legacy_2p/best/model.pt",
+            "architecture": "QuoridorModel (scalar value head)",
+            "in_channels": 10,
+            "num_players": 2,
+            "board_size": 5,
+            "eval_win_rate": "95% vs random (fair share 50%)",
+            "eval_games": 240,
+            "notes": "Original scalar architecture. Trained with negamax MCTS, v3.2 notebook, 40 iterations."
         }
     },
     "usage": {
-        "2p_legacy": "QuoridorModel(board_size=5, action_space_size=44, in_channels=10, num_channels=64, num_res_blocks=4)",
-        "4p_ship": "QuoridorModelMP(board_size=5, action_space_size=44, in_channels=15, num_channels=64, num_res_blocks=4, num_players=4)"
+        "2p_vector": "QuoridorModelMP(board_size=5, action_space_size=44, in_channels=9, num_channels=64, num_res_blocks=4, num_players=2)",
+        "4p_ship": "QuoridorModelMP(board_size=5, action_space_size=44, in_channels=15, num_channels=64, num_res_blocks=4, num_players=4)",
+        "2p_legacy": "QuoridorModel(board_size=5, action_space_size=44, in_channels=10, num_channels=64, num_res_blocks=4)"
     }
 }

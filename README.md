@@ -2,7 +2,7 @@
 
 Deep Reinforcement Learning final project (Group 501, Colman College).
 
-An autonomous AI agent for the board game Quoridor, using a dual-headed neural network + MCTS trained via self-play. Supports 2–4 players: the 2-player path uses negamax MCTS with a scalar value head; the N-player path uses max^n MCTS with a vector value head.
+An autonomous AI agent for the board game Quoridor, using a dual-headed neural network + MCTS trained via self-play. Supports 2 and 4 players: the 2-player path uses negamax MCTS with a scalar value head; the N-player path uses max^n MCTS with a vector value head.
 
 ## Project Structure
 
@@ -85,7 +85,7 @@ python -m src --config configs/config_5x5.json --no-resume
 
 Training runs an AlphaZero-style loop: self-play → collect data (with data augmentation) → train network → evaluate vs best model → checkpoint.
 
-### N-player training (2–4 players)
+### N-player training (2 and 4 players)
 
 The N-player path uses `QuoridorEnvMP`, `MCTSMaxN`, and `QuoridorModelMP`:
 
@@ -93,14 +93,14 @@ The N-player path uses `QuoridorEnvMP`, `MCTSMaxN`, and `QuoridorModelMP`:
 from src.mcts.training_mp import training_loop_mp, TrainingConfigMP
 ```
 
-See `scripts/run_train_eval.py` for a smoke-test example. Wall counts are deliberately reduced for the 5×5 POC (N≥3 → 2 walls/seat). To demonstrate leader-blocking or coalition-emergence at N=4, override with `max_walls_per_player=4` or higher.
+See `scripts/run_train_eval.py` for a smoke-test example. Wall counts are deliberately reduced for the 5×5 POC (N=4 → 2 walls/seat). To demonstrate leader-blocking or coalition-emergence at N=4, override with `max_walls_per_player=4` or higher.
 
 ### Validation scripts
 
 | Script | What it proves |
 |---|---|
 | `scripts/run_reduction.py` | max^n(N=2) produces bit-identical visit distributions to negamax — the equivalence proof |
-| `scripts/run_mp_validate.py` | N=2 lockstep parity, jump rules, random termination (N=2/3/4), max^n search drives to terminal |
+| `scripts/run_mp_validate.py` | N=2 lockstep parity, jump rules, random termination (N=2/4), max^n search drives to terminal |
 | `scripts/run_train_eval.py` | Evaluator harness + tiny N=4 training loop + checkpoint reload |
 | `scripts/run_compare.py` | Same-weights negamax vs max^n H2H (structural 50/50, not a correctness proof) |
 

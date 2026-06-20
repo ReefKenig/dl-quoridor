@@ -7,8 +7,9 @@ import time
 import shutil
 import os
 import re
+import sys
 
-RUN_DIR = "runs/n4_5x5_v3"
+RUN_DIR = sys.argv[1] if len(sys.argv) > 1 else "runs/n4_5x5_v3"
 LOG = os.path.join(RUN_DIR, "train.log")
 CKPT_DIR = RUN_DIR
 PEAK_DIR = os.path.join(RUN_DIR, "peaks")

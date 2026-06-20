@@ -75,10 +75,11 @@ class QuoridorNetworkMP(nn.Module):
 class QuoridorModelMP:
     def __init__(self, board_size=5, action_space_size=44, num_channels=64,
                  num_res_blocks=4, lr=1e-3, weight_decay=1e-4, device="auto",
-                 in_channels=11, num_players=2):
+                 in_channels=11, num_players=2, value_loss_weight=1.0):
         self.device = torch.device("cuda" if (device == "auto" and torch.cuda.is_available())
                                    else (device if device != "auto" else "cpu"))
         self.num_players = num_players
+        self.value_loss_weight = value_loss_weight
         self.network = QuoridorNetworkMP(
             board_size=board_size, in_channels=in_channels, num_channels=num_channels,
             num_res_blocks=num_res_blocks, action_space_size=action_space_size,
@@ -111,7 +112,7 @@ class QuoridorModelMP:
         log_policy, value = self.network(x)
         loss_policy = -torch.sum(pi * log_policy) / pi.size(0)
         loss_value = F.mse_loss(value, z)           # MSE over the vector
-        total = loss_policy + loss_value
+        total = loss_policy + self.value_loss_weight * loss_value
         self.optimizer.zero_grad()
         total.backward()
         self.optimizer.step()

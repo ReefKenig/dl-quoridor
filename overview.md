@@ -2,11 +2,11 @@
 
 This repository is a small AlphaZero-style Quoridor AI project with two main goals:
 
-- implement the Quoridor game environment and action semantics (2–4 players),
+- implement the Quoridor game environment and action semantics (2 and 4 players),
 - train a dual-headed neural network with MCTS self-play.
 
 The 2-player path uses negamax MCTS with a scalar value head. The N-player
-path (2–4) uses max^n MCTS with a vector value head (length N). Both share
+path (2 and 4) uses max^n MCTS with a vector value head (length N). Both share
 the same action space (44 on 5×5, 140 on 9×9) and the same `QuoridorEnvInterface`
 contract.
 
@@ -60,7 +60,7 @@ It is organized into:
   - N-player engine (2..4). Shared wall sets, per-seat remaining counts.
   - Seat layout via `seat_specs`: 0=bottom→top, 1=top→bottom, 2=left→right, 3=right→left.
   - Jump rule: official Quoridor (straight over one pawn if landing is in-board/unblocked/empty, else diagonals beside it; no double-jump).
-  - Wall counts are deliberately scaled down for the 5×5 POC (N≥3 → 2 walls/seat). Override `max_walls_per_player` for coalition-emergence experiments.
+  - Wall counts are deliberately scaled down for the 5×5 POC (N=4 → 2 walls/seat). Override `max_walls_per_player` for coalition-emergence experiments.
 - tensor_spec_mp.py
   - N-player tensor (3N+3 channels): N pawn planes, 2 shared wall maps, N walls-remaining planes, N BFS distance maps, 1 turn plane.
   - Parity with `tensor_spec.py` at N=2 is verified by `tests/test_env_mp.py::TestTensorParity`.

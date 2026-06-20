@@ -84,9 +84,9 @@ assert all(abs(x[0]-2) <= 2 and abs(x[1]-2) <= 2 for x in t)
 print("  (c) no double-jump (max reach 2):", "OK")
 print("  PASS")
 
-# ---------- TEST 3: full games terminate with a winner, N=2/3/4 ----------
-banner("TEST 3  random self-play terminates with a winner (N=2,3,4)")
-for N in (2, 3, 4):
+# ---------- TEST 3: full games terminate with a winner, N=2/4 ----------
+banner("TEST 3  random self-play terminates with a winner (N=2,4)")
+for N in (2, 4):
     env = QuoridorEnvMP(board_size=5, num_players=N, max_turns=400)
     rng = np.random.RandomState(0)
     wins = {}
@@ -111,9 +111,9 @@ for N in (2, 3, 4):
     print(f"  N={N}: {decided}/15 games had a winner | win dist={{k: v for k, v in sorted(wins.items(), key=lambda x: (x[0] is None, x[0]))} } | jump-moves seen={jumps}")
 print("  (random play; just checking termination + path-legality across N seats)")
 
-# ---------- TEST 4: max^n search runs on N=3 and N=4 ----------
-banner("TEST 4  max^n search drives N=3 and N=4 to terminal")
-for N in (3, 4):
+# ---------- TEST 4: max^n search runs on N=4 ----------
+banner("TEST 4  max^n search drives N=4 to terminal")
+for N in (4,):
     env = QuoridorEnvMP(board_size=5, num_players=N, max_turns=200)
     mc = MCTSMaxN(config=MCTSConfig(num_simulations=30, dirichlet_epsilon=0.25, max_rollout_depth=80),
                   evaluate_fn=None, num_players=N)   # random-rollout

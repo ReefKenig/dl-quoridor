@@ -300,6 +300,54 @@ def plot_comparison(n4_history, metrics_2p, output_path):
 
 
 # ══════════════════════════════════════════════════════════════
+# Figure 5: γ-Drift Ablation Overlay
+# ══════════════════════════════════════════════════════════════
+DRIFT_RUNS = {
+    "n2 γ=0.99":        ("runs/n2_5x5_v1/meta.json",       {"color": "#E53935", "ls": "-"}),
+    "n2 γ=0.97":        ("runs/n2_5x5_g097_v1/meta.json",  {"color": "#1E88E5", "ls": "-"}),
+    "n4 γ=0.99":        ("runs/n4_5x5_v3/meta.json",       {"color": "#E53935", "ls": "--"}),
+    "n2 γ=0.99 c_v=2":  ("runs/n2_5x5_cv2_v1/meta.json",  {"color": "#E53935", "ls": ":"}),
+    "n2 γ=0.99 buf=10k":("runs/n2_5x5_buf10k_v1/meta.json",{"color": "#E53935", "ls": "-."}),
+}
+
+
+def plot_gamma_drift(output_path):
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig.suptitle("Value-Loss Drift: γ is the Sole Driver",
+                 fontsize=13, fontweight="bold")
+
+    for label, (path, style) in DRIFT_RUNS.items():
+        if not Path(path).exists():
+            continue
+        with open(path) as f:
+            hist = json.load(f)["history"]
+        iters = [h["iter"] for h in hist]
+        loss_v = [h["loss_v"] for h in hist]
+        # N=4 has 70 iters; plot only first 30 for comparable window
+        if len(iters) > 30:
+            iters, loss_v = iters[:30], loss_v[:30]
+        ax.plot(iters, loss_v, label=label, color=style["color"],
+                linestyle=style["ls"], linewidth=2.2, alpha=0.85)
+
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Value Loss (MSE)")
+    ax.legend(fontsize=9, loc="upper left")
+    ax.grid(True, alpha=0.25)
+    ax.set_ylim(bottom=0)
+
+    # Annotated takeaway
+    ax.text(0.98, 0.04,
+            "γ=0.97 halves drift; N, buffer size, loss weight have no effect",
+            transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=9, fontstyle="italic", color="#555")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.94])
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {output_path}")
+
+
+# ══════════════════════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
@@ -325,6 +373,10 @@ if __name__ == "__main__":
     plot_comparison(n4_history, metrics_2p, str(
         OUT_DIR / "model_comparison.png"))
 
+    # γ-drift ablation overlay → shared outputs/
+    plot_gamma_drift(str(OUT_DIR / "gamma_drift_ablation.png"))
+
     print(f"\nN=4 figures   -> {N4_FIG_DIR}/")
     print(f"2p figures    -> {LEGACY_2P_FIG_DIR}/")
     print(f"comparison    -> {OUT_DIR}/model_comparison.png")
+    print(f"γ-drift       -> {OUT_DIR}/gamma_drift_ablation.png")

@@ -6,7 +6,7 @@
             "in_channels": 9,
             "num_players": 2,
             "board_size": 5,
-            "eval_win_rate": "99.2% ± 1.2% vs random (fair share 50%)",
+            "eval_win_rate": "97.9% ± 1.9% vs random (fair share 50%)",
             "eval_games": 240,
             "notes": "Trained with max^n MCTS (≡ negamax at N=2), 30 iterations, augmentation + γ=0.99."
         },

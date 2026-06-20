@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-06-21T00:55:04",
+  "mcts_sims": 100,
+  "results": [
+    {
+      "model": "2p_vector",
+      "path": "runs/n2_5x5_v1/ship.pt",
+      "num_games": 240,
+      "wins": 235,
+      "draws": 1,
+      "win_rate": 0.9792,
+      "ci_95_lo": 0.9522,
+      "ci_95_hi": 0.9911,
+      "margin_95": 0.0195,
+      "elapsed_s": 117.6,
+      "by_seat": {
+        "0": 118,
+        "1": 117
+      }
+    }
+  ]
+}

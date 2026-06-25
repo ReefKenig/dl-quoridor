@@ -1,4 +1,5 @@
-// UI Elements
+// --- Global state (shared across modules) ---
+
 const mainMenu = document.getElementById("main-menu");
 const gameScreen = document.getElementById("game-screen");
 const canvas = document.getElementById("game-board");
@@ -8,56 +9,48 @@ const restartBtn = document.getElementById("restart-btn");
 
 // Game State Variables
 let currentGridSize = parseInt(document.getElementById("board-size").value);
+let numPlayers = parseInt(document.getElementById("num-players").value);
 let cellSize = 0;
-let isPlayerTurn = true; // Prevents clicking while waiting for AI
+let isPlayerTurn = true;
 let hoverState = null;
 
-// Track position
 let gameState = {
-  player1: { row: 4, col: 2 },
-  player2: { row: 0, col: 2 },
+  players: [],
   h_walls: [],
   v_walls: [],
+  valid_moves: [],
+  walls_remaining: [],
+  num_players: 4,
+  current_player: 0,
 };
 
 // --- NAVIGATION FUNCTIONS ---
 
 async function startGame() {
-  // Read settings from the menu
   currentGridSize = parseInt(document.getElementById("board-size").value);
+  numPlayers = parseInt(document.getElementById("num-players").value);
   const difficulty = document.getElementById("difficulty").value;
 
-  // Hide menu, show game
   mainMenu.classList.add("hidden");
   gameScreen.classList.remove("hidden");
   statusText.innerText = "Connecting to server...";
 
-  // Ask Python for the official starting positions
   try {
-    const response = await fetch(
-      `/api/${currentGridSize}x${currentGridSize}/reset`,
-      { method: "POST" },
-    );
+    const response = await fetch(`/api/${currentGridSize}x${currentGridSize}/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ num_players: numPlayers }),
+    });
 
     const data = await response.json();
-
     isPlayerTurn = true;
+    gameState = data;
 
-    // Overwrite the local JS state with the true Python state
-    gameState = {
-      player1: data.player1,
-      player2: data.player2,
-      h_walls: data.h_walls,
-      v_walls: data.v_walls,
-      valid_moves: data.valid_moves,
-    };
-
-    statusText.innerText = `Game Started! ${currentGridSize}x${currentGridSize} - Player 1's turn`;
+    statusText.innerText = `Game Started! ${numPlayers}P ${currentGridSize}x${currentGridSize} - Your turn`;
     drawBoard();
   } catch (error) {
     console.log("Failed to start game:", error);
     statusText.innerText = "Server connection lost.";
-    return;
   }
 }
 
@@ -66,24 +59,25 @@ async function restartGame() {
   restartBtn.classList.add("hidden");
 
   try {
-    const response = await fetch(
-      `/api/${currentGridSize}x${currentGridSize}/reset`,
-      { method: "POST" },
-    );
+    const response = await fetch(`/api/${currentGridSize}x${currentGridSize}/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ num_players: numPlayers }),
+    });
     const data = await response.json();
 
     isPlayerTurn = true;
     gameState = data;
 
-    statusText.innerText = `Game Started! (${currentGridSize}x${currentGridSize}) - Your turn.`;
+    statusText.innerText = `Game Started! (${numPlayers}P) - Your turn.`;
+    drawBoard();
   } catch (error) {
     console.error("Failed to restart:", error);
-    (statusText, (innerText = "Server connection lost."));
+    statusText.innerText = "Server connection lost.";
   }
 }
 
 function quitToMenu() {
-  // Hide game, show menu
   gameScreen.classList.add("hidden");
   mainMenu.classList.remove("hidden");
   restartBtn.classList.add("hidden");
@@ -92,18 +86,13 @@ function quitToMenu() {
 // --- DRAWING LOGIC ---
 
 function drawBoard() {
-  // Clear the canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Calculate how big each square should be based on the grid size
-  // We leave a little math room for the walls between squares
   cellSize = canvas.width / currentGridSize;
 
-  // Draw the grid squares
+  // Draw grid squares
   ctx.fillStyle = "#1b263b";
   for (let row = 0; row < currentGridSize; row++) {
     for (let col = 0; col < currentGridSize; col++) {
-      // Draw a square with a slight gap for the walls
       ctx.fillRect(
         col * cellSize + 5,
         row * cellSize + 5,
@@ -113,9 +102,8 @@ function drawBoard() {
     }
   }
 
-  // Draw walls (bright red)
+  // Draw walls
   ctx.fillStyle = "#e94560";
-
   if (gameState.h_walls) {
     gameState.h_walls.forEach((wall) => {
       ctx.fillRect(
@@ -131,27 +119,26 @@ function drawBoard() {
     gameState.v_walls.forEach((wall) => {
       ctx.fillRect(
         (wall.col + 1) * cellSize - 4,
-        wall.row * cellSize - 5,
+        wall.row * cellSize + 5,
         8,
         cellSize * 2 - 10,
       );
     });
   }
 
-  // Draw Player 1 (Human - Cyan)
-  if (gameState.player1)
-    drawPawn(gameState.player1.row, gameState.player1.col, "#00b4d8");
+  // Draw all player pawns
+  if (gameState.players) {
+    gameState.players.forEach((pos, i) => {
+      drawPawn(pos.row, pos.col, PLAYER_COLORS[i], i);
+    });
+  }
 
-  // Draw Player 2 (AI - Red)
-  if (gameState.player2)
-    drawPawn(gameState.player2.row, gameState.player2.col, "#e63946");
-
-  // Draw hover Preview (Semi-transparent)
+  // Draw hover preview
   if (hoverState && isPlayerTurn) {
     ctx.globalAlpha = 0.4;
 
     if (hoverState.type === "pawn") {
-      drawPawn(hoverState.row, hoverState.col, "#00b4d8");
+      drawPawn(hoverState.row, hoverState.col, PLAYER_COLORS[0], null);
     } else if (hoverState.type === "h_wall") {
       ctx.fillStyle = "#e94560";
       ctx.fillRect(
@@ -170,11 +157,14 @@ function drawBoard() {
       );
     }
 
-    ctx.globalAlpha = 1.0; // Reset transparancy
+    ctx.globalAlpha = 1.0;
   }
+
+  // Draw walls-remaining info
+  drawWallsInfo();
 }
 
-function drawPawn(row, col, color) {
+function drawPawn(row, col, color, playerIndex) {
   const centerX = col * cellSize + cellSize / 2;
   const centerY = row * cellSize + cellSize / 2;
   const radius = cellSize / 2 - 15;
@@ -186,6 +176,33 @@ function drawPawn(row, col, color) {
   ctx.lineWidth = 3;
   ctx.strokeStyle = "#fff";
   ctx.stroke();
+
+  // Draw player number
+  if (playerIndex !== null) {
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(playerIndex), centerX, centerY);
+  }
+}
+
+function drawWallsInfo() {
+  if (!gameState.walls_remaining) return;
+  const infoY = canvas.height - 5;
+  ctx.font = "12px sans-serif";
+  ctx.textBaseline = "bottom";
+  ctx.textAlign = "left";
+  const np = gameState.num_players || numPlayers;
+  for (let i = 0; i < np; i++) {
+    ctx.fillStyle = PLAYER_COLORS[i];
+    const label = i === 0 ? "You" : `AI${i}`;
+    ctx.fillText(
+      `${label}: ${gameState.walls_remaining[i]}w`,
+      10 + i * 120,
+      infoY,
+    );
+  }
 }
 
 // --- INTERACTION LOGIC ---
@@ -204,7 +221,6 @@ function getGridActionFromPixels(clientX, clientY) {
   const distToVLine = Math.abs(gridX - Math.round(gridX));
   const W = currentGridSize - 1;
 
-  // 1. Declare the action variable (Do NOT return yet!)
   let action = null;
 
   if (distToHLine < 0.25 && distToHLine < distToVLine) {
@@ -225,8 +241,7 @@ function getGridActionFromPixels(clientX, clientY) {
     }
   }
 
-  // 2. --- SERVER-SIDE VALIDATION FILTER ---
-  // Only process if an action was detected AND the server gave us the cheat-sheet
+  // Server-side validation filter
   if (action && gameState.valid_moves) {
     const isLegal = gameState.valid_moves.some(
       (move) =>
@@ -234,15 +249,10 @@ function getGridActionFromPixels(clientX, clientY) {
         move.row === action.row &&
         move.col === action.col,
     );
-
-    if (isLegal) {
-      return action; // Safely return ONLY if Python explicitly approved it
-    } else {
-      return null; // It's illegal. Return null to hide the ghost hover.
-    }
+    return isLegal ? action : null;
   }
 
-  return null; // Fallback
+  return null;
 }
 
 canvas.addEventListener("mousemove", function (event) {
@@ -256,7 +266,6 @@ canvas.addEventListener("mouseout", function () {
   drawBoard();
 });
 
-// Listen for clicks on the canvas
 canvas.addEventListener("click", function (event) {
   if (!isPlayerTurn) return;
 
@@ -272,45 +281,43 @@ async function sendMoveToServer(type, targetRow, targetCol) {
   statusText.innerText = "AI is thinking...";
   isPlayerTurn = false;
 
-  // Send the player's requested move to Flask
   try {
-    const response = await fetch(
-      `/api/${currentGridSize}x${currentGridSize}/move`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: type,
-          target: { row: targetRow, col: targetCol },
-        }),
-      },
-    );
+    const response = await fetch(`/api/${currentGridSize}x${currentGridSize}/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: type,
+        target: { row: targetRow, col: targetCol },
+      }),
+    });
 
     const data = await response.json();
 
     if (data.error) {
-      // Invalid move
       alert("Invalid move: " + data.error);
-      statusText.innerText = "Player 1's turn";
+      statusText.innerText = "Your turn";
       isPlayerTurn = true;
       return;
     }
 
-    // Update the board with the new state from the server
     gameState = data.newState;
     drawBoard();
 
-    // Game Over lock
     if (data.status === "game_over") {
-      const winner = data.winner === "ai" ? "AI" : "Player 1";
-      statusText.innerText = `Game Over! Winner: ${data.winner}`;
+      const winner = data.winner;
+      if (winner === 0) {
+        statusText.innerText = "Game Over! You win!";
+      } else if (winner === null) {
+        statusText.innerText = "Game Over! Draw!";
+      } else {
+        statusText.innerText = `Game Over! Player ${winner} (AI) wins!`;
+      }
       isPlayerTurn = false;
       restartBtn.classList.remove("hidden");
       return;
     }
 
-    // Give control back to the player
-    statusText.innerText = "Player 1's turn";
+    statusText.innerText = "Your turn";
     isPlayerTurn = true;
   } catch (error) {
     console.error("Error communicating with AI:", error);

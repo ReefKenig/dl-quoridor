@@ -1,0 +1,3 @@
+iter 1 | loss_p=2.268 loss_v=0.053 | vs_best=30.0% (acc>30.0%) reject | vs_rand=66.7% (fair=25.0%) | buf=1586 | 405s
+iter 2 | loss_p=1.712 loss_v=0.057 | vs_best=31.2% (acc>30.0%) ACCEPT | vs_rand=62.5% (fair=25.0%) | buf=4096 | 707s
+iter 3 | loss_p=1.519 loss_v=0.063 | vs_best=36.2% (acc>30.0%) ACCEPT | vs_rand=45.8% (fair=25.0%) | buf=6549 | 684s

@@ -25,6 +25,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DIFFICULTY_SETTINGS = {
+    "easy": {"num_simulations": 50, "temperature": 1.5, "c_puct": 1.41, "dirichlet_epsilon": 0.25},
+    "medium": {"num_simulations": 200, "temperature": 0.4, "c_puct": 1.41, "dirichlet_epsilon": 0.25},
+    "hard": {"num_simulations": 1200, "temperature": 0.0, "c_puct": 1.0, "dirichlet_epsilon": 0.0},
+}
+DEFAULT_DIFFICULTY = "medium"
+
 
 @dataclass
 class AppConfig:

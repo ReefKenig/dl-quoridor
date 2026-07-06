@@ -43,6 +43,11 @@
 
     <div id="game-screen" class="container hidden">
       <h2 id="game-status">Player 1's turn</h2>
+      <div class="difficulty-switcher">
+        <button class="diff-opt" data-diff="easy" onclick="switchDifficulty('easy')">Easy</button>
+        <button class="diff-opt" data-diff="medium" onclick="switchDifficulty('medium')">Medium</button>
+        <button class="diff-opt" data-diff="hard" onclick="switchDifficulty('hard')">Hard</button>
+      </div>
 
       <div class="game-layout">
         <canvas id="game-board"></canvas>
@@ -75,7 +80,7 @@
             <li>Each player has a limited number of walls (shown in the side panel).</li>
             <li>The first player to reach the opposite side wins!</li>
           </ul>
-          <p><strong>Controls:</strong> Click a highlighted square to move, or click between squares to place a wall. On mobile, use the <em>Move / Place Wall</em> toggle to switch modes.</p>
+          <p><strong>Controls:</strong> Click a highlighted square to move, or click between squares to place a wall.</p>
         </div>
         <button onclick="hideInstructions(event)">Got it!</button>
       </div>

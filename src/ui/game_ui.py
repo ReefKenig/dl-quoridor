@@ -8,6 +8,7 @@ import pygame
 from src.env.quoridor_env_mp import QuoridorEnvMP, QuoridorStateMP, ACTION_TO_MOVE
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.model.network_mp import QuoridorModelMP
+from src.utils.config import DIFFICULTY_SETTINGS, DEFAULT_DIFFICULTY
 
 # Constants
 FPS = 30
@@ -199,7 +200,7 @@ class GameUI:
 
         pygame.display.flip()
 
-    def play_vs_ai(self, mcts: MCTSMaxN):
+    def play_vs_ai(self, mcts: MCTSMaxN, temperature: float = 0.3):
         """Play Human (P0) vs AI (all others)."""
         state = self.env.reset()
         running = True
@@ -247,8 +248,11 @@ class GameUI:
                 self.screen.blit(thinking_text, (MARGIN, WINDOW_SIZE - 70))
                 pygame.display.flip()
 
-                action_probs = mcts.search(self.env, state, temperature=0.0)
-                best_action = int(np.argmax(action_probs))
+                action_probs = mcts.search(self.env, state, temperature=temperature)
+                if temperature < 0.1:
+                    best_action = int(np.argmax(action_probs))
+                else:
+                    best_action = int(np.random.choice(len(action_probs), p=action_probs))
                 state, _, _, _ = self.env.step(state, best_action)
 
             self.clock.tick(FPS)
@@ -257,7 +261,9 @@ class GameUI:
         sys.exit()
 
 
-def load_ai_and_run(num_players: int = 4, num_simulations: int = 100):
+def load_ai_and_run(num_players: int = 4, num_simulations: int = 100,
+                    temperature: float = 0.3, c_puct: float = 1.41,
+                    dirichlet_epsilon: float = 0.25):
     board_size = 5
     print(
         f"Setting up {num_players}-player Quoridor on {board_size}x{board_size} board...")
@@ -290,13 +296,14 @@ def load_ai_and_run(num_players: int = 4, num_simulations: int = 100):
         tensor = env.state_to_tensor(state)
         return model.predict(tensor)
 
-    mcts_cfg = MCTSConfig(num_simulations=num_simulations, c_puct=1.41)
+    mcts_cfg = MCTSConfig(num_simulations=num_simulations, c_puct=c_puct,
+                          dirichlet_epsilon=dirichlet_epsilon)
     mcts = MCTSMaxN(config=mcts_cfg, evaluate_fn=nn_evaluate,
                     num_players=num_players)
 
     print("Starting GUI...")
     gui = GameUI(env)
-    gui.play_vs_ai(mcts)
+    gui.play_vs_ai(mcts, temperature=temperature)
 
 
 if __name__ == "__main__":
@@ -310,11 +317,20 @@ if __name__ == "__main__":
         help="Number of players (2 or 4)",
     )
     parser.add_argument(
-        "--simulations", "-s",
-        type=int,
-        default=100,
-        help="MCTS simulations per AI move (lower = faster but weaker)",
+        "--difficulty", "-d",
+        type=str,
+        default=DEFAULT_DIFFICULTY,
+        choices=list(DIFFICULTY_SETTINGS.keys()),
+        help="AI difficulty level",
     )
     args = parser.parse_args()
 
-    load_ai_and_run(num_players=args.players, num_simulations=args.simulations)
+    settings = DIFFICULTY_SETTINGS[args.difficulty]
+
+    load_ai_and_run(
+        num_players=args.players,
+        num_simulations=settings["num_simulations"],
+        temperature=settings["temperature"],
+        c_puct=settings["c_puct"],
+        dirichlet_epsilon=settings["dirichlet_epsilon"],
+    )

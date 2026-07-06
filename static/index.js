@@ -25,12 +25,14 @@ let gameState = {
 };
 
 function resizeCanvas() {
-  const container = canvas.parentElement;
-  const style = getComputedStyle(container);
+  const gameContainer = document.getElementById("game-screen");
+  const style = getComputedStyle(gameContainer);
   const padLeft = parseFloat(style.paddingLeft);
   const padRight = parseFloat(style.paddingRight);
-  const available = container.clientWidth - padLeft - padRight;
-  const size = Math.min(Math.floor(available), 500);
+  const containerWidth = gameContainer.clientWidth - padLeft - padRight;
+  const panelWidth = window.innerWidth > 480 ? 126 : 0; // side panel + gap
+  const available = containerWidth - panelWidth;
+  const size = Math.min(Math.floor(available), 420);
   if (size > 0) {
     canvas.width = size;
     canvas.height = size;

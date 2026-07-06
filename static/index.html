@@ -43,7 +43,11 @@
     <div id="game-screen" class="container hidden">
       <h2 id="game-status">Player 1's turn</h2>
 
-      <canvas id="game-board"></canvas>
+      <div class="game-layout">
+        <canvas id="game-board"></canvas>
+
+        <div id="walls-panel" class="walls-panel"></div>
+      </div>
 
       <div class="game-buttons">
         <button onclick="quitToMenu()">Quit</button>

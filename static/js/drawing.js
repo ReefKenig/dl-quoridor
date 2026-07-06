@@ -103,21 +103,30 @@ function drawPawn(row, col, color, displayNumber) {
 }
 
 function drawWallsInfo() {
-  if (!gameState.walls_remaining) return;
-  const infoY = canvas.height - 5;
-  const fontSize = Math.max(10, Math.round(canvas.width * 0.025));
-  ctx.font = `${fontSize}px sans-serif`;
-  ctx.textBaseline = "bottom";
-  ctx.textAlign = "left";
-  const np = gameState.num_players || numPlayers;
-  const spacing = canvas.width / np;
-  for (let i = 0; i < np; i++) {
-    ctx.fillStyle = PLAYER_COLORS[i];
-    const label = i === 0 ? "P1 (You)" : `P${i + 1} (AI)`;
-    ctx.fillText(
-      `${label}: ${gameState.walls_remaining[i]}w`,
-      10 + i * spacing,
-      infoY,
-    );
+  const panel = document.getElementById("walls-panel");
+  if (!gameState.walls_remaining) {
+    panel.innerHTML = "";
+    return;
   }
+  const np = gameState.num_players || numPlayers;
+  let html = "";
+  for (let i = 0; i < np; i++) {
+    const color = PLAYER_COLORS[i];
+    const label = i === 0 ? "You" : `P${i + 1}`;
+    const count = gameState.walls_remaining[i];
+    const maxWalls = gameState.walls_remaining.reduce((a, b) => Math.max(a, b), 1);
+    const bricks = [];
+    for (let w = 0; w < maxWalls; w++) {
+      bricks.push(
+        `<span class="wall-brick ${w < count ? "active" : "used"}" style="--color: ${color}"></span>`,
+      );
+    }
+    html += `<div class="wall-player${gameState.current_player === i ? " current-turn" : ""}">
+      <span class="wall-dot" style="background: ${color}"></span>
+      <span class="wall-label">${label}</span>
+      <span class="wall-bricks">${bricks.join("")}</span>
+      <span class="wall-count">${count}</span>
+    </div>`;
+  }
+  panel.innerHTML = html;
 }

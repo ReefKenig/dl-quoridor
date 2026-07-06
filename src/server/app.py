@@ -235,6 +235,7 @@ def _extract_positions(env, state):
         "h_walls": [{"row": r, "col": c} for r, c in h_walls],
         "v_walls": [{"row": r, "col": c} for r, c in v_walls],
         "valid_moves": valid_moves,
+        "walls_remaining": list(state.walls_remaining),
         "num_players": len(positions),
         "current_player": env.get_current_player(state),
     }

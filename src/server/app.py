@@ -50,7 +50,8 @@ else:
 
 def eval_2p(state):
     tensor = env_2p.state_to_tensor(state)
-    return model_2p.predict(tensor[:, :, :cfg_2p["in_channels"]])
+    policy, value_vec = model_2p.predict(tensor[:, :, :cfg_2p["in_channels"]])
+    return policy, float(value_vec[state.current_player])
 
 
 mcts_2p = MCTS(config=MCTSConfig(num_simulations=SIMS), evaluate_fn=eval_2p)

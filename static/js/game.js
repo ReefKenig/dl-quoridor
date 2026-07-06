@@ -3,11 +3,12 @@
 async function startGame() {
   currentGridSize = parseInt(document.getElementById("board-size").value);
   numPlayers = parseInt(document.getElementById("num-players").value);
+  currentDifficulty = document.getElementById("difficulty").value;
 
   mainMenu.classList.add("hidden");
   gameScreen.classList.remove("hidden");
+  updateDifficultySwitcher();
   resizeCanvas();
-  statusText.innerText = "Connecting to server...";
 
   try {
     const response = await fetch(
@@ -15,7 +16,7 @@ async function startGame() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_players: numPlayers }),
+        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty }),
       },
     );
 
@@ -32,9 +33,7 @@ async function startGame() {
 }
 
 async function restartGame() {
-  statusText.innerText = "Restarting game...";
   restartBtn.classList.add("hidden");
-  resizeCanvas();
 
   try {
     const response = await fetch(
@@ -42,7 +41,7 @@ async function restartGame() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_players: numPlayers }),
+        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty }),
       },
     );
     const data = await response.json();
@@ -64,6 +63,16 @@ function quitToMenu() {
   restartBtn.classList.add("hidden");
 }
 
+function showInstructions() {
+  document.getElementById("instructions-modal").classList.remove("hidden");
+}
+
+function hideInstructions(event) {
+  if (event.target === document.getElementById("instructions-modal") || event.target.tagName === "BUTTON") {
+    document.getElementById("instructions-modal").classList.add("hidden");
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -79,17 +88,27 @@ function showToast(message, duration = 2500) {
 async function sendMoveToServer(type, targetRow, targetCol) {
   isPlayerTurn = false;
 
-  // Show thinking messages for AI opponents
-  if (numPlayers === 2) {
-    statusText.innerText = getThinkingMessage("2");
-  } else {
-    const names = [];
-    for (let i = 1; i < numPlayers; i++) names.push(i + 1);
-    statusText.innerText = `🤔 Players ${names.join(", ")} are thinking...`;
+  // Optimistically show the player's move immediately
+  if (type === "pawn" && gameState.players && gameState.players.length > 0) {
+    gameState.players[0] = { row: targetRow, col: targetCol };
+  } else if (type === "h_wall") {
+    if (!gameState.h_walls) gameState.h_walls = [];
+    gameState.h_walls.push({ row: targetRow, col: targetCol });
+    if (gameState.walls_remaining && gameState.walls_remaining[0] > 0) {
+      gameState.walls_remaining[0]--;
+    }
+  } else if (type === "v_wall") {
+    if (!gameState.v_walls) gameState.v_walls = [];
+    gameState.v_walls.push({ row: targetRow, col: targetCol });
+    if (gameState.walls_remaining && gameState.walls_remaining[0] > 0) {
+      gameState.walls_remaining[0]--;
+    }
   }
+  drawBoard();
 
-  // Small delay so the user sees the thinking message
-  await sleep(300);
+  statusText.innerText = numPlayers === 2
+    ? "P2 thinking..."
+    : "P2, P3, P4 thinking...";
 
   try {
     const response = await fetch(
@@ -110,12 +129,31 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       showToast("⚠️ " + data.error);
       statusText.innerText = "🎯 Your turn (Player 1)";
       isPlayerTurn = true;
+      // Re-sync state from server in case of drift
+      try {
+        const sync = await fetch(`/api/${currentGridSize}x${currentGridSize}/state`);
+        if (sync.ok) {
+          gameState = await sync.json();
+          drawBoard();
+        }
+      } catch (_) {}
       return;
     }
 
-    // Add a small "reveal" delay after AI responds
-    await sleep(400);
+    // Animate AI moves one by one
+    if (data.ai_steps && data.ai_steps.length > 0) {
+      for (let i = 0; i < data.ai_steps.length; i++) {
+        const step = data.ai_steps[i];
+        const playerNum = i + 2;
+        statusText.innerText = `P${playerNum} ${getThinkingMessage()}`;
+        await sleep(600);
+        gameState = step;
+        drawBoard();
+        await sleep(300);
+      }
+    }
 
+    // Always use newState as the authoritative final state
     gameState = data.newState;
     drawBoard();
 
@@ -140,4 +178,18 @@ async function sendMoveToServer(type, targetRow, targetCol) {
     console.error("Error communicating with AI:", error);
     statusText.innerText = "❌ Server connection lost.";
   }
+}
+
+function updateDifficultySwitcher() {
+  document.querySelectorAll(".diff-opt").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.diff === currentDifficulty);
+  });
+}
+
+function switchDifficulty(diff) {
+  if (diff === currentDifficulty) return;
+  currentDifficulty = diff;
+  document.getElementById("difficulty").value = diff;
+  updateDifficultySwitcher();
+  restartGame();
 }

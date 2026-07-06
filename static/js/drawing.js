@@ -102,13 +102,22 @@ function drawPawn(row, col, color, displayNumber) {
   }
 }
 
+let lastWallsInfoKey = "";
+
 function drawWallsInfo() {
   const panel = document.getElementById("walls-panel");
   if (!gameState.walls_remaining) {
-    panel.innerHTML = "";
+    if (lastWallsInfoKey !== "empty") {
+      panel.innerHTML = "";
+      lastWallsInfoKey = "empty";
+    }
     return;
   }
   const np = gameState.num_players || numPlayers;
+  const infoKey = gameState.walls_remaining.join(",") + ":" + gameState.current_player;
+  if (infoKey === lastWallsInfoKey) return;
+  lastWallsInfoKey = infoKey;
+
   let html = "";
   for (let i = 0; i < np; i++) {
     const color = PLAYER_COLORS[i];

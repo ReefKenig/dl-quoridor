@@ -37,8 +37,41 @@ h1 {
 
 h2 {
   font-size: 1.1rem;
-  margin: 0 0 12px;
+  margin: 0 0 6px;
   min-height: 1.4em;
+}
+
+.difficulty-switcher {
+  display: inline-flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1.5px solid #0f3460;
+  margin-bottom: 10px;
+}
+
+.diff-opt {
+  padding: 5px 14px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #667988;
+  min-height: 0;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.diff-opt:hover:not(.active) {
+  background: rgba(233, 69, 96, 0.1);
+  color: #ccc;
+}
+
+.diff-opt.active {
+  background: #e94560;
+  color: white;
 }
 
 .menu-options {

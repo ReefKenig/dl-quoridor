@@ -10,6 +10,7 @@ const restartBtn = document.getElementById("restart-btn");
 // Game State Variables
 let currentGridSize = parseInt(document.getElementById("board-size").value);
 let numPlayers = parseInt(document.getElementById("num-players").value);
+let currentDifficulty = document.getElementById("difficulty").value;
 let cellSize = 0;
 let isPlayerTurn = true;
 let hoverState = null;
@@ -24,18 +25,23 @@ let gameState = {
   current_player: 0,
 };
 
+let lastCanvasSize = 0;
+
 function resizeCanvas() {
   const gameContainer = document.getElementById("game-screen");
   const style = getComputedStyle(gameContainer);
   const padLeft = parseFloat(style.paddingLeft);
   const padRight = parseFloat(style.paddingRight);
   const containerWidth = gameContainer.clientWidth - padLeft - padRight;
-  const panelWidth = window.innerWidth > 480 ? 126 : 0; // side panel + gap
+  const panelWidth = window.innerWidth > 480 ? 126 : 0;
   const available = containerWidth - panelWidth;
   const size = Math.min(Math.floor(available), 420);
-  if (size > 0) {
+  if (size > 0 && size !== lastCanvasSize) {
+    lastCanvasSize = size;
     canvas.width = size;
     canvas.height = size;
+    canvas.style.width = size + "px";
+    canvas.style.height = size + "px";
     if (gameState.players && gameState.players.length > 0) {
       drawBoard();
     }

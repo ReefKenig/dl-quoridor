@@ -68,6 +68,14 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function showToast(message, duration = 2500) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(toast._timeout);
+  toast._timeout = setTimeout(() => toast.classList.remove("show"), duration);
+}
+
 async function sendMoveToServer(type, targetRow, targetCol) {
   isPlayerTurn = false;
 
@@ -99,7 +107,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
     const data = await response.json();
 
     if (data.error) {
-      alert("Invalid move: " + data.error);
+      showToast("⚠️ " + data.error);
       statusText.innerText = "🎯 Your turn (Player 1)";
       isPlayerTurn = true;
       return;

@@ -110,31 +110,29 @@ function resetWallsInfoCache() {
 
 function drawWallsInfo() {
   const panel = document.getElementById("walls-panel");
-  if (!gameState.walls_remaining) {
-    if (lastWallsInfoKey !== "empty") {
-      panel.innerHTML = "";
-      lastWallsInfoKey = "empty";
-    }
-    return;
-  }
   const np = gameState.num_players || numPlayers;
-  const infoKey = gameState.walls_remaining.join(",") + ":" + gameState.current_player;
+  const walls = gameState.walls_remaining && gameState.walls_remaining.length === np
+    ? gameState.walls_remaining
+    : Array(np).fill(0);
+  const cp = gameState.current_player || 0;
+
+  const infoKey = walls.join(",") + ":" + cp;
   if (infoKey === lastWallsInfoKey) return;
   lastWallsInfoKey = infoKey;
 
+  const maxWalls = walls.reduce((a, b) => Math.max(a, b), 0);
   let html = "";
   for (let i = 0; i < np; i++) {
     const color = PLAYER_COLORS[i];
     const label = i === 0 ? "You" : `P${i + 1}`;
-    const count = gameState.walls_remaining[i];
-    const maxWalls = gameState.walls_remaining.reduce((a, b) => Math.max(a, b), 1);
+    const count = walls[i];
     const bricks = [];
     for (let w = 0; w < maxWalls; w++) {
       bricks.push(
         `<span class="wall-brick ${w < count ? "active" : "used"}" style="--color: ${color}"></span>`,
       );
     }
-    html += `<div class="wall-player${gameState.current_player === i ? " current-turn" : ""}">
+    html += `<div class="wall-player${cp === i ? " current-turn" : ""}">
       <span class="wall-dot" style="background: ${color}"></span>
       <span class="wall-label">${label}</span>
       <span class="wall-bricks">${bricks.join("")}</span>

@@ -1,16 +1,27 @@
 // --- API & GAME LOGIC ---
 
+let moveController = null;
+
 async function startGame() {
-  currentGridSize = parseInt(document.getElementById("board-size").value);
+  if (moveController) {
+    moveController.abort();
+    moveController = null;
+  }
+  const newGridSize = parseInt(document.getElementById("board-size").value);
   numPlayers = parseInt(document.getElementById("num-players").value);
   currentDifficulty = document.getElementById("difficulty").value;
+
+  if (newGridSize !== currentGridSize) {
+    currentGridSize = newGridSize;
+    lastCanvasSize = 0;
+  }
 
   mainMenu.classList.add("hidden");
   gameScreen.classList.remove("hidden");
   updateDifficultySwitcher();
   resetWallsInfoCache();
   gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
-  lastCanvasSize = 0;
+  drawWallsInfo();
   resizeCanvas();
 
   try {
@@ -36,10 +47,16 @@ async function startGame() {
 }
 
 async function restartGame() {
+  if (moveController) {
+    moveController.abort();
+    moveController = null;
+  }
   restartBtn.classList.add("btn-hidden");
   resetWallsInfoCache();
+  statusText.innerText = "Resetting...";
   gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawWallsInfo();
+  drawBoard();
 
   try {
     const response = await fetch(
@@ -64,6 +81,10 @@ async function restartGame() {
 }
 
 function quitToMenu() {
+  if (moveController) {
+    moveController.abort();
+    moveController = null;
+  }
   gameScreen.classList.add("hidden");
   mainMenu.classList.remove("hidden");
   restartBtn.classList.add("btn-hidden");
@@ -123,6 +144,10 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       : "P2, P3, P4 thinking...";
   }
 
+  if (moveController) moveController.abort();
+  moveController = new AbortController();
+  const signal = moveController.signal;
+
   try {
     const response = await fetch(
       `/api/${currentGridSize}x${currentGridSize}/move`,
@@ -133,9 +158,11 @@ async function sendMoveToServer(type, targetRow, targetCol) {
           type: type,
           target: { row: targetRow, col: targetCol },
         }),
+        signal,
       },
     );
 
+    if (signal.aborted) return;
     const data = await response.json();
 
     if (data.error) {
@@ -159,6 +186,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
         + (gameState.v_walls ? gameState.v_walls.length : 0);
 
       for (let i = 0; i < data.ai_steps.length; i++) {
+        if (signal.aborted) return;
         const step = data.ai_steps[i];
         const playerNum = i + 2;
         const newWallCount = (step.h_walls ? step.h_walls.length : 0)
@@ -172,6 +200,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
             : `P${playerNum} moved`;
         }
         await sleep(400);
+        if (signal.aborted) return;
         gameState = step;
         drawBoard();
         if (i < data.ai_steps.length - 1) {
@@ -206,6 +235,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
     statusText.innerText = "🎯 Your turn (Player 1)";
     isPlayerTurn = true;
   } catch (error) {
+    if (error.name === "AbortError") return;
     console.error("Error communicating with AI:", error);
     statusText.innerText = "❌ Server connection lost.";
   }

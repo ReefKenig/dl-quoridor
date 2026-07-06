@@ -12,6 +12,7 @@ body {
   min-height: 100dvh;
   margin: 0;
   padding: 16px;
+  overflow: hidden;
 }
 
 .container {
@@ -22,11 +23,15 @@ body {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   width: 100%;
   max-width: 480px;
+  flex-shrink: 0;
 }
 
 #game-screen {
   max-width: 600px;
   min-height: 0;
+  overflow: hidden;
+  align-self: flex-start;
+  margin-top: max(16px, calc(50dvh - 320px));
 }
 
 h1 {
@@ -38,7 +43,8 @@ h1 {
 h2 {
   font-size: 1.1rem;
   margin: 0 0 6px;
-  min-height: 1.4em;
+  height: 1.4em;
+  overflow: hidden;
 }
 
 .difficulty-switcher {
@@ -211,7 +217,8 @@ canvas {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: 110px;
+  width: 110px;
+  flex-shrink: 0;
 }
 
 .wall-player {
@@ -366,6 +373,10 @@ canvas {
     padding-top: 24px;
   }
 
+  #game-screen {
+    margin-top: 0;
+  }
+
   .container {
     padding: 24px 16px;
     border-radius: 12px;
@@ -379,13 +390,15 @@ canvas {
   .game-layout {
     flex-direction: column;
     align-items: center;
+    min-height: 0;
   }
 
   .walls-panel {
     flex-direction: row;
     flex-wrap: wrap;
     gap: 6px;
-    min-width: 0;
+    width: 100%;
+    min-height: 36px;
   }
 
   .wall-player {

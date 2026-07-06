@@ -36,12 +36,18 @@ function resizeCanvas() {
   const panelWidth = window.innerWidth > 480 ? 126 : 0;
   const available = containerWidth - panelWidth;
   const size = Math.min(Math.floor(available), 420);
-  if (size > 0 && size !== lastCanvasSize) {
+  if (size > 0 && Math.abs(size - lastCanvasSize) > 2) {
     lastCanvasSize = size;
     canvas.width = size;
     canvas.height = size;
     canvas.style.width = size + "px";
     canvas.style.height = size + "px";
+    const layout = document.querySelector(".game-layout");
+    if (window.innerWidth > 480) {
+      layout.style.height = size + "px";
+    } else {
+      layout.style.height = "";
+    }
     if (gameState.players && gameState.players.length > 0) {
       drawBoard();
     } else {

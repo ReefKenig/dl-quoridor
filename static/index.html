@@ -38,6 +38,7 @@
       </div>
 
       <button class="btn-primary" onclick="startGame()">Start Game</button>
+      <button class="btn-secondary" onclick="showInstructions()">How to Play</button>
     </div>
 
     <div id="game-screen" class="container hidden">
@@ -51,9 +52,32 @@
 
       <div class="game-buttons">
         <button onclick="quitToMenu()">Quit</button>
+        <button onclick="showInstructions()">Rules</button>
         <button id="restart-btn" class="hidden" onclick="restartGame()">
           Play Again
         </button>
+      </div>
+    </div>
+
+    <div id="instructions-modal" class="modal-overlay hidden" onclick="hideInstructions(event)">
+      <div class="modal-content">
+        <h2>How to Play Quoridor</h2>
+        <div class="instructions-body">
+          <p><strong>Goal:</strong> Move your pawn to the opposite side of the board.</p>
+          <p><strong>On your turn</strong>, do one of the following:</p>
+          <ul>
+            <li><strong>Move your pawn</strong> one square (up, down, left, or right). You can jump over an adjacent opponent.</li>
+            <li><strong>Place a wall</strong> to block your opponents' path. Walls span two squares.</li>
+          </ul>
+          <p><strong>Rules:</strong></p>
+          <ul>
+            <li>You cannot completely block any player from reaching their goal — at least one path must always remain.</li>
+            <li>Each player has a limited number of walls (shown in the side panel).</li>
+            <li>The first player to reach the opposite side wins!</li>
+          </ul>
+          <p><strong>Controls:</strong> Click a highlighted square to move, or click between squares to place a wall. On mobile, use the <em>Move / Place Wall</em> toggle to switch modes.</p>
+        </div>
+        <button onclick="hideInstructions(event)">Got it!</button>
       </div>
     </div>
 

@@ -44,6 +44,8 @@ function resizeCanvas() {
     canvas.style.height = size + "px";
     if (gameState.players && gameState.players.length > 0) {
       drawBoard();
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
   }
 }

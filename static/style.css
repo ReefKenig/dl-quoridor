@@ -161,14 +161,32 @@ button:active {
 
 .game-buttons {
   display: flex;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 14px;
   justify-content: center;
+  min-height: 28px;
 }
 
 .game-buttons button {
-  flex: 1;
-  max-width: 200px;
+  background: #0f3460;
+  border: none;
+  color: #8899aa;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 14px;
+  min-height: 0;
+  border-radius: 14px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.game-buttons button:hover {
+  color: #fff;
+  background: #1a4a80;
+}
+
+.game-buttons .btn-hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 canvas {
@@ -379,12 +397,6 @@ canvas {
 
   .wall-bricks {
     display: none;
-  }
-
-  .game-buttons {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: stretch;
   }
 
   .game-buttons button {

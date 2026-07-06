@@ -104,6 +104,10 @@ function drawPawn(row, col, color, displayNumber) {
 
 let lastWallsInfoKey = "";
 
+function resetWallsInfoCache() {
+  lastWallsInfoKey = "";
+}
+
 function drawWallsInfo() {
   const panel = document.getElementById("walls-panel");
   if (!gameState.walls_remaining) {

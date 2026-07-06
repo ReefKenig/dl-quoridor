@@ -8,6 +8,9 @@ async function startGame() {
   mainMenu.classList.add("hidden");
   gameScreen.classList.remove("hidden");
   updateDifficultySwitcher();
+  resetWallsInfoCache();
+  gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
+  lastCanvasSize = 0;
   resizeCanvas();
 
   try {
@@ -33,7 +36,10 @@ async function startGame() {
 }
 
 async function restartGame() {
-  restartBtn.classList.add("hidden");
+  restartBtn.classList.add("btn-hidden");
+  resetWallsInfoCache();
+  gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   try {
     const response = await fetch(
@@ -60,7 +66,7 @@ async function restartGame() {
 function quitToMenu() {
   gameScreen.classList.add("hidden");
   mainMenu.classList.remove("hidden");
-  restartBtn.classList.add("hidden");
+  restartBtn.classList.add("btn-hidden");
 }
 
 function showInstructions() {
@@ -106,9 +112,16 @@ async function sendMoveToServer(type, targetRow, targetCol) {
   }
   drawBoard();
 
-  statusText.innerText = numPlayers === 2
-    ? "P2 thinking..."
-    : "P2, P3, P4 thinking...";
+  if (type === "pawn") {
+    statusText.innerText = numPlayers === 2
+      ? "P2 thinking..."
+      : "P2, P3, P4 thinking...";
+  } else {
+    showToast("Wall placed", 1500);
+    statusText.innerText = numPlayers === 2
+      ? "P2 thinking..."
+      : "P2, P3, P4 thinking...";
+  }
 
   try {
     const response = await fetch(
@@ -142,20 +155,38 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
     // Animate AI moves one by one
     if (data.ai_steps && data.ai_steps.length > 0) {
+      let prevWallCount = (gameState.h_walls ? gameState.h_walls.length : 0)
+        + (gameState.v_walls ? gameState.v_walls.length : 0);
+
       for (let i = 0; i < data.ai_steps.length; i++) {
         const step = data.ai_steps[i];
         const playerNum = i + 2;
-        statusText.innerText = `P${playerNum} ${getThinkingMessage()}`;
-        await sleep(600);
+        const newWallCount = (step.h_walls ? step.h_walls.length : 0)
+          + (step.v_walls ? step.v_walls.length : 0);
+        const placedWall = newWallCount > prevWallCount;
+        prevWallCount = newWallCount;
+
+        if (numPlayers > 2) {
+          statusText.innerText = placedWall
+            ? `P${playerNum} placed a wall`
+            : `P${playerNum} moved`;
+        }
+        await sleep(400);
         gameState = step;
         drawBoard();
-        await sleep(300);
+        if (i < data.ai_steps.length - 1) {
+          await sleep(300);
+        }
       }
     }
 
     // Always use newState as the authoritative final state
-    gameState = data.newState;
-    drawBoard();
+    if (!data.ai_steps || data.ai_steps.length === 0) {
+      gameState = data.newState;
+      drawBoard();
+    } else {
+      gameState = data.newState;
+    }
 
     if (data.status === "game_over") {
       const winner = data.winner;
@@ -168,7 +199,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
         statusText.innerText = `😤 Player ${pNum} (AI) beat you this time!`;
       }
       isPlayerTurn = false;
-      restartBtn.classList.remove("hidden");
+      restartBtn.classList.remove("btn-hidden");
       return;
     }
 

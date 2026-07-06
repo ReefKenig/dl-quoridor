@@ -53,7 +53,7 @@ async function restartGame() {
   }
   restartBtn.classList.add("btn-hidden");
   resetWallsInfoCache();
-  statusText.innerText = "Resetting...";
+  isPlayerTurn = false;
   gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
   drawWallsInfo();
   drawBoard();

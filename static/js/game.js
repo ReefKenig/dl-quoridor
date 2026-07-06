@@ -195,7 +195,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       } else if (winner === null || winner === undefined) {
         statusText.innerText = "🤝 It's a draw!";
       } else {
-        const pNum = typeof winner === "number" ? winner + 1 : 2;
+        const pNum = data.ai_steps ? data.ai_steps.length + 1 : 2;
         statusText.innerText = `😤 Player ${pNum} (AI) beat you this time!`;
       }
       isPlayerTurn = false;

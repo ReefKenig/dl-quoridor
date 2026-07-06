@@ -6,6 +6,7 @@ async function startGame() {
 
   mainMenu.classList.add("hidden");
   gameScreen.classList.remove("hidden");
+  resizeCanvas();
   statusText.innerText = "Connecting to server...";
 
   try {
@@ -33,6 +34,7 @@ async function startGame() {
 async function restartGame() {
   statusText.innerText = "Restarting game...";
   restartBtn.classList.add("hidden");
+  resizeCanvas();
 
   try {
     const response = await fetch(

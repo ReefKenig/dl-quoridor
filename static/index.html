@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Quoridor AI</title>
     <link rel="stylesheet" href="style.css" />
   </head>
@@ -10,44 +10,47 @@
     <div id="main-menu" class="container">
       <h1>Quoridor AI</h1>
 
-      <div>
-        <label for="num-players">Number of Players:</label><br />
-        <select id="num-players">
-          <option value="2">2 Players</option>
-          <option value="4" selected>4 Players</option>
-        </select>
+      <div class="menu-options">
+        <div>
+          <label for="num-players">Number of Players</label>
+          <select id="num-players">
+            <option value="2">2 Players</option>
+            <option value="4" selected>4 Players</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="difficulty">Difficulty</label>
+          <select id="difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="board-size">Board Size</label>
+          <select id="board-size">
+            <option value="5">5 × 5</option>
+            <option value="9">9 × 9</option>
+          </select>
+        </div>
       </div>
 
-      <div>
-        <label for="difficulty">Select Difficulty:</label><br />
-        <select id="difficulty">
-          <option value="easy">Easy</option>
-          <option value="medium">Medium</option>
-          <option value="hard">Hard</option>
-        </select>
-      </div>
-
-      <div>
-        <label for="board-size">Board Size:</label><br />
-        <select id="board-size">
-          <option value="5">5x5</option>
-          <option value="9">9x9</option>
-        </select>
-      </div>
-
-      <button onclick="startGame()">Start Game</button>
+      <button class="btn-primary" onclick="startGame()">Start Game</button>
     </div>
 
     <div id="game-screen" class="container hidden">
       <h2 id="game-status">Player 1's turn</h2>
 
-      <canvas id="game-board" width="500" height="500"></canvas>
-      <br />
+      <canvas id="game-board"></canvas>
 
-      <button onclick="quitToMenu()">Quit to Menu</button>
-      <button id="restart-btn" class="hidden" onclick="restartGame()">
-        Play Again
-      </button>
+      <div class="game-buttons">
+        <button onclick="quitToMenu()">Quit</button>
+        <button id="restart-btn" class="hidden" onclick="restartGame()">
+          Play Again
+        </button>
+      </div>
     </div>
 
     <script src="js/constants.js"></script>

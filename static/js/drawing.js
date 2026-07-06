@@ -82,20 +82,20 @@ function drawBoard() {
 function drawPawn(row, col, color, displayNumber) {
   const centerX = col * cellSize + cellSize / 2;
   const centerY = row * cellSize + cellSize / 2;
-  const radius = cellSize / 2 - 15;
+  const radius = cellSize * 0.35;
 
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI, false);
   ctx.fillStyle = color;
   ctx.fill();
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 2;
   ctx.strokeStyle = "#fff";
   ctx.stroke();
 
-  // Draw player number (1-based)
   if (displayNumber !== null) {
     ctx.fillStyle = "#fff";
-    ctx.font = "bold 14px sans-serif";
+    const fontSize = Math.max(10, Math.round(cellSize * 0.28));
+    ctx.font = `bold ${fontSize}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(String(displayNumber), centerX, centerY);
@@ -105,16 +105,18 @@ function drawPawn(row, col, color, displayNumber) {
 function drawWallsInfo() {
   if (!gameState.walls_remaining) return;
   const infoY = canvas.height - 5;
-  ctx.font = "12px sans-serif";
+  const fontSize = Math.max(10, Math.round(canvas.width * 0.025));
+  ctx.font = `${fontSize}px sans-serif`;
   ctx.textBaseline = "bottom";
   ctx.textAlign = "left";
   const np = gameState.num_players || numPlayers;
+  const spacing = canvas.width / np;
   for (let i = 0; i < np; i++) {
     ctx.fillStyle = PLAYER_COLORS[i];
     const label = i === 0 ? "P1 (You)" : `P${i + 1} (AI)`;
     ctx.fillText(
       `${label}: ${gameState.walls_remaining[i]}w`,
-      10 + i * 130,
+      10 + i * spacing,
       infoY,
     );
   }

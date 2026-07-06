@@ -69,3 +69,29 @@ canvas.addEventListener("click", function (event) {
     drawBoard();
   }
 });
+
+canvas.addEventListener("touchstart", function (event) {
+  if (!isPlayerTurn) return;
+  event.preventDefault();
+  const touch = event.touches[0];
+  hoverState = getGridActionFromPixels(touch.clientX, touch.clientY);
+  drawBoard();
+});
+
+canvas.addEventListener("touchmove", function (event) {
+  if (!isPlayerTurn) return;
+  event.preventDefault();
+  const touch = event.touches[0];
+  hoverState = getGridActionFromPixels(touch.clientX, touch.clientY);
+  drawBoard();
+});
+
+canvas.addEventListener("touchend", function (event) {
+  if (!isPlayerTurn) return;
+  event.preventDefault();
+  if (hoverState) {
+    sendMoveToServer(hoverState.type, hoverState.row, hoverState.col);
+    hoverState = null;
+    drawBoard();
+  }
+});

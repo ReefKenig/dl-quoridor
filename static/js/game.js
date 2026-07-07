@@ -147,10 +147,11 @@ async function sendMoveToServer(type, targetRow, targetCol) {
   if (moveController) moveController.abort();
   moveController = new AbortController();
   const signal = moveController.signal;
+  document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "none");
+  const diffSelect = document.getElementById("difficulty");
+  if (diffSelect) diffSelect.disabled = true;
 
   try {
-    const difficultyElement = document.getElementById("difficulty");
-    const activeDifficulty = difficultyElement ? difficultyElement.value : currentDifficulty;
     const response = await fetch(
       `/api/${currentGridSize}x${currentGridSize}/move`,
       {

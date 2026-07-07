@@ -145,7 +145,8 @@ class MCTS:
             # === 1. SELECT ===
             while node.is_expanded and node.children:
                 node = self._select_child(node)
-                scratch_state, reward, done, info = env.step(scratch_state, node.action)
+                scratch_state, reward, done, info = env.step(
+                    scratch_state, node.action)
                 if done:
                     break
 
@@ -267,7 +268,8 @@ class MCTS:
         if not root.children:
             return
         actions = list(root.children.keys())
-        noise = np.random.dirichlet([self.config.dirichlet_alpha] * len(actions))
+        noise = np.random.dirichlet(
+            [self.config.dirichlet_alpha] * len(actions))
         eps = self.config.dirichlet_epsilon
         for i, action in enumerate(actions):
             root.children[action].prior = (1 - eps) * root.children[

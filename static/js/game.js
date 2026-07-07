@@ -1,12 +1,28 @@
 // --- API & GAME LOGIC ---
 
+let moveController = null;
+
 async function startGame() {
-  currentGridSize = parseInt(document.getElementById("board-size").value);
+  if (moveController) {
+    moveController.abort();
+    moveController = null;
+  }
+  const newGridSize = parseInt(document.getElementById("board-size").value);
   numPlayers = parseInt(document.getElementById("num-players").value);
+  currentDifficulty = document.getElementById("difficulty").value;
+
+  if (newGridSize !== currentGridSize) {
+    currentGridSize = newGridSize;
+    lastCanvasSize = 0;
+  }
 
   mainMenu.classList.add("hidden");
   gameScreen.classList.remove("hidden");
-  statusText.innerText = "Connecting to server...";
+  updateDifficultySwitcher();
+  resetWallsInfoCache();
+  gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
+  drawWallsInfo();
+  resizeCanvas();
 
   try {
     const response = await fetch(
@@ -14,7 +30,7 @@ async function startGame() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_players: numPlayers }),
+        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty }),
       },
     );
 
@@ -31,8 +47,16 @@ async function startGame() {
 }
 
 async function restartGame() {
-  statusText.innerText = "Restarting game...";
-  restartBtn.classList.add("hidden");
+  if (moveController) {
+    moveController.abort();
+    moveController = null;
+  }
+  restartBtn.classList.add("btn-hidden");
+  resetWallsInfoCache();
+  isPlayerTurn = false;
+  gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
+  drawWallsInfo();
+  drawBoard();
 
   try {
     const response = await fetch(
@@ -40,7 +64,7 @@ async function restartGame() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_players: numPlayers }),
+        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty }),
       },
     );
     const data = await response.json();
@@ -57,29 +81,72 @@ async function restartGame() {
 }
 
 function quitToMenu() {
+  if (moveController) {
+    moveController.abort();
+    moveController = null;
+  }
   gameScreen.classList.add("hidden");
   mainMenu.classList.remove("hidden");
-  restartBtn.classList.add("hidden");
+  restartBtn.classList.add("btn-hidden");
+}
+
+function showInstructions() {
+  document.getElementById("instructions-modal").classList.remove("hidden");
+}
+
+function hideInstructions(event) {
+  if (event.target === document.getElementById("instructions-modal") || event.target.tagName === "BUTTON") {
+    document.getElementById("instructions-modal").classList.add("hidden");
+  }
 }
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function showToast(message, duration = 2500) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(toast._timeout);
+  toast._timeout = setTimeout(() => toast.classList.remove("show"), duration);
+}
+
 async function sendMoveToServer(type, targetRow, targetCol) {
   isPlayerTurn = false;
 
-  // Show thinking messages for AI opponents
-  if (numPlayers === 2) {
-    statusText.innerText = getThinkingMessage("2");
+  // Optimistically show the player's move immediately
+  if (type === "pawn" && gameState.players && gameState.players.length > 0) {
+    gameState.players[0] = { row: targetRow, col: targetCol };
+  } else if (type === "h_wall") {
+    if (!gameState.h_walls) gameState.h_walls = [];
+    gameState.h_walls.push({ row: targetRow, col: targetCol });
+    if (gameState.walls_remaining && gameState.walls_remaining[0] > 0) {
+      gameState.walls_remaining[0]--;
+    }
+  } else if (type === "v_wall") {
+    if (!gameState.v_walls) gameState.v_walls = [];
+    gameState.v_walls.push({ row: targetRow, col: targetCol });
+    if (gameState.walls_remaining && gameState.walls_remaining[0] > 0) {
+      gameState.walls_remaining[0]--;
+    }
+  }
+  drawBoard();
+
+  if (type === "pawn") {
+    statusText.innerText = numPlayers === 2
+      ? "P2 thinking..."
+      : "P2, P3, P4 thinking...";
   } else {
-    const names = [];
-    for (let i = 1; i < numPlayers; i++) names.push(i + 1);
-    statusText.innerText = `🤔 Players ${names.join(", ")} are thinking...`;
+    showToast("Wall placed", 1500);
+    statusText.innerText = numPlayers === 2
+      ? "P2 thinking..."
+      : "P2, P3, P4 thinking...";
   }
 
-  // Small delay so the user sees the thinking message
-  await sleep(300);
+  if (moveController) moveController.abort();
+  moveController = new AbortController();
+  const signal = moveController.signal;
 
   try {
     const response = await fetch(
@@ -91,23 +158,64 @@ async function sendMoveToServer(type, targetRow, targetCol) {
           type: type,
           target: { row: targetRow, col: targetCol },
         }),
+        signal,
       },
     );
 
+    if (signal.aborted) return;
     const data = await response.json();
 
     if (data.error) {
-      alert("Invalid move: " + data.error);
+      showToast("⚠️ " + data.error);
       statusText.innerText = "🎯 Your turn (Player 1)";
       isPlayerTurn = true;
+      // Re-sync state from server in case of drift
+      try {
+        const sync = await fetch(`/api/${currentGridSize}x${currentGridSize}/state`);
+        if (sync.ok) {
+          gameState = await sync.json();
+          drawBoard();
+        }
+      } catch (_) {}
       return;
     }
 
-    // Add a small "reveal" delay after AI responds
-    await sleep(400);
+    // Animate AI moves one by one
+    if (data.ai_steps && data.ai_steps.length > 0) {
+      let prevWallCount = (gameState.h_walls ? gameState.h_walls.length : 0)
+        + (gameState.v_walls ? gameState.v_walls.length : 0);
 
-    gameState = data.newState;
-    drawBoard();
+      for (let i = 0; i < data.ai_steps.length; i++) {
+        if (signal.aborted) return;
+        const step = data.ai_steps[i];
+        const playerNum = i + 2;
+        const newWallCount = (step.h_walls ? step.h_walls.length : 0)
+          + (step.v_walls ? step.v_walls.length : 0);
+        const placedWall = newWallCount > prevWallCount;
+        prevWallCount = newWallCount;
+
+        if (numPlayers > 2) {
+          statusText.innerText = placedWall
+            ? `P${playerNum} placed a wall`
+            : `P${playerNum} moved`;
+        }
+        await sleep(400);
+        if (signal.aborted) return;
+        gameState = step;
+        drawBoard();
+        if (i < data.ai_steps.length - 1) {
+          await sleep(300);
+        }
+      }
+    }
+
+    // Always use newState as the authoritative final state
+    if (!data.ai_steps || data.ai_steps.length === 0) {
+      gameState = data.newState;
+      drawBoard();
+    } else {
+      gameState = data.newState;
+    }
 
     if (data.status === "game_over") {
       const winner = data.winner;
@@ -116,18 +224,33 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       } else if (winner === null || winner === undefined) {
         statusText.innerText = "🤝 It's a draw!";
       } else {
-        const pNum = typeof winner === "number" ? winner + 1 : 2;
+        const pNum = data.ai_steps ? data.ai_steps.length + 1 : 2;
         statusText.innerText = `😤 Player ${pNum} (AI) beat you this time!`;
       }
       isPlayerTurn = false;
-      restartBtn.classList.remove("hidden");
+      restartBtn.classList.remove("btn-hidden");
       return;
     }
 
     statusText.innerText = "🎯 Your turn (Player 1)";
     isPlayerTurn = true;
   } catch (error) {
+    if (error.name === "AbortError") return;
     console.error("Error communicating with AI:", error);
     statusText.innerText = "❌ Server connection lost.";
   }
+}
+
+function updateDifficultySwitcher() {
+  document.querySelectorAll(".diff-opt").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.diff === currentDifficulty);
+  });
+}
+
+function switchDifficulty(diff) {
+  if (diff === currentDifficulty) return;
+  currentDifficulty = diff;
+  document.getElementById("difficulty").value = diff;
+  updateDifficultySwitcher();
+  restartGame();
 }

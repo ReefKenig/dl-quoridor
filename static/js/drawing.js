@@ -82,40 +82,62 @@ function drawBoard() {
 function drawPawn(row, col, color, displayNumber) {
   const centerX = col * cellSize + cellSize / 2;
   const centerY = row * cellSize + cellSize / 2;
-  const radius = cellSize / 2 - 15;
+  const radius = cellSize * 0.35;
 
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI, false);
   ctx.fillStyle = color;
   ctx.fill();
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 2;
   ctx.strokeStyle = "#fff";
   ctx.stroke();
 
-  // Draw player number (1-based)
   if (displayNumber !== null) {
     ctx.fillStyle = "#fff";
-    ctx.font = "bold 14px sans-serif";
+    const fontSize = Math.max(10, Math.round(cellSize * 0.28));
+    ctx.font = `bold ${fontSize}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(String(displayNumber), centerX, centerY);
   }
 }
 
+let lastWallsInfoKey = "";
+
+function resetWallsInfoCache() {
+  lastWallsInfoKey = "";
+}
+
 function drawWallsInfo() {
-  if (!gameState.walls_remaining) return;
-  const infoY = canvas.height - 5;
-  ctx.font = "12px sans-serif";
-  ctx.textBaseline = "bottom";
-  ctx.textAlign = "left";
+  const panel = document.getElementById("walls-panel");
   const np = gameState.num_players || numPlayers;
+  const walls = gameState.walls_remaining && gameState.walls_remaining.length === np
+    ? gameState.walls_remaining
+    : Array(np).fill(0);
+  const cp = gameState.current_player || 0;
+
+  const infoKey = walls.join(",") + ":" + cp;
+  if (infoKey === lastWallsInfoKey) return;
+  lastWallsInfoKey = infoKey;
+
+  const maxWalls = walls.reduce((a, b) => Math.max(a, b), 0);
+  let html = "";
   for (let i = 0; i < np; i++) {
-    ctx.fillStyle = PLAYER_COLORS[i];
-    const label = i === 0 ? "P1 (You)" : `P${i + 1} (AI)`;
-    ctx.fillText(
-      `${label}: ${gameState.walls_remaining[i]}w`,
-      10 + i * 130,
-      infoY,
-    );
+    const color = PLAYER_COLORS[i];
+    const label = i === 0 ? "You" : `P${i + 1}`;
+    const count = walls[i];
+    const bricks = [];
+    for (let w = 0; w < maxWalls; w++) {
+      bricks.push(
+        `<span class="wall-brick ${w < count ? "active" : "used"}" style="--color: ${color}"></span>`,
+      );
+    }
+    html += `<div class="wall-player${cp === i ? " current-turn" : ""}">
+      <span class="wall-dot" style="background: ${color}"></span>
+      <span class="wall-label">${label}</span>
+      <span class="wall-bricks">${bricks.join("")}</span>
+      <span class="wall-count">${count}</span>
+    </div>`;
   }
+  panel.innerHTML = html;
 }

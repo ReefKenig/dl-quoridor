@@ -8,15 +8,14 @@ from flask_cors import CORS
 
 from src.env.quoridor_env import (
     MOVE_MAP,
-    QuoridorEnv,
     compute_action_space_size,
     decode_action,
 )
 from src.env.quoridor_env_mp import QuoridorEnvMP
 from src.mcts.mcts import MCTS, MCTSConfig
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig as MCTSConfigMaxN
-from src.model.network import QuoridorModel
 from src.model.network_mp import QuoridorModelMP
+from src.utils.config import DIFFICULTY_SETTINGS, DEFAULT_DIFFICULTY
 
 torch.set_num_threads(1)
 
@@ -31,12 +30,10 @@ with open(MODELS_PATH) as f:
 
 BOARD_SIZE = 5
 ACTION_SIZE = compute_action_space_size(BOARD_SIZE)
-SIMS = 200
 
 # ── Load 2-player model ──
-# TODO: remove 2p_legacy from registry once server fully migrated to vector head
 cfg_2p = MODEL_REGISTRY["2p_vector"]
-env_2p = QuoridorEnv(board_size=BOARD_SIZE, max_walls_per_player=3)
+env_2p = QuoridorEnvMP(board_size=BOARD_SIZE, num_players=2, max_walls_per_player=3)
 model_2p = QuoridorModelMP(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE,
                            in_channels=cfg_2p["in_channels"],
                            num_channels=64, num_res_blocks=4,
@@ -50,11 +47,15 @@ else:
 
 def eval_2p(state):
     tensor = env_2p.state_to_tensor(state)
-    policy, value_vec = model_2p.predict(tensor[:, :, :cfg_2p["in_channels"]])
+    policy, value_vec = model_2p.predict(tensor)
     return policy, float(value_vec[state.current_player])
 
 
-mcts_2p = MCTS(config=MCTSConfig(num_simulations=SIMS), evaluate_fn=eval_2p)
+def make_mcts_2p(settings):
+    cfg = MCTSConfig(num_simulations=settings["num_simulations"],
+                     c_puct=settings["c_puct"],
+                     dirichlet_epsilon=settings["dirichlet_epsilon"])
+    return MCTS(config=cfg, evaluate_fn=eval_2p)
 
 # ── Load 4-player model ──
 cfg_4p = MODEL_REGISTRY["4p_ship"]
@@ -76,14 +77,19 @@ def eval_4p(state):
     return model_4p.predict(tensor)
 
 
-mcts_4p = MCTSMaxN(config=MCTSConfigMaxN(num_simulations=SIMS),
-                   evaluate_fn=eval_4p, num_players=4)
+def make_mcts_4p(settings):
+    cfg = MCTSConfigMaxN(num_simulations=settings["num_simulations"],
+                         c_puct=settings["c_puct"],
+                         dirichlet_epsilon=settings["dirichlet_epsilon"])
+    return MCTSMaxN(config=cfg, evaluate_fn=eval_4p, num_players=4)
+
 
 # ── Game state ──
 current_game_state = None
 current_num_players = 2
 current_env = env_2p
-current_mcts = mcts_2p
+current_mcts = make_mcts_2p(DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY])
+current_temperature = DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY]["temperature"]
 
 
 # --- WEB ROUTES ---
@@ -100,20 +106,33 @@ def serve_static(path):
 # --- GAME API ROUTES ---
 @app.route("/api/<board_size>/reset", methods=["POST"])
 def reset_game(board_size):
-    global current_game_state, current_num_players, current_env, current_mcts
+    global current_game_state, current_num_players, current_env, current_mcts, current_temperature
     data = request.json or {}
     num_players = data.get("num_players", 2)
+    difficulty = data.get("difficulty", DEFAULT_DIFFICULTY)
+
+    if difficulty not in DIFFICULTY_SETTINGS:
+        difficulty = DEFAULT_DIFFICULTY
+    settings = DIFFICULTY_SETTINGS[difficulty]
+    current_temperature = settings["temperature"]
 
     if num_players == 4:
         current_num_players = 4
         current_env = env_4p
-        current_mcts = mcts_4p
+        current_mcts = make_mcts_4p(settings)
     else:
         current_num_players = 2
         current_env = env_2p
-        current_mcts = mcts_2p
+        current_mcts = make_mcts_2p(settings)
 
     current_game_state = current_env.reset()
+    return jsonify(_extract_positions(current_env, current_game_state))
+
+
+@app.route("/api/<board_size>/state", methods=["GET"])
+def get_state(board_size):
+    if current_game_state is None:
+        return jsonify({"error": "No active game"}), 404
     return jsonify(_extract_positions(current_env, current_game_state))
 
 
@@ -131,10 +150,7 @@ def process_move(board_size):
         human_action = None
 
         if action_type == "pawn":
-            if current_num_players == 2:
-                curr_r, curr_c = current_game_state.p0_pos
-            else:
-                curr_r, curr_c = current_game_state.positions[0]
+            curr_r, curr_c = current_game_state.positions[0]
             dr = target["row"] - curr_r
             dc = target["col"] - curr_c
             human_action = MOVE_MAP.get((dr, dc))
@@ -152,6 +168,8 @@ def process_move(board_size):
 
         valid_actions = current_env.get_valid_actions(current_game_state)
         if human_action not in valid_actions:
+            print(f"[MOVE REJECTED] action={human_action}, cp={current_game_state.current_player}, "
+                  f"pos={current_game_state.positions}, valid={valid_actions.tolist()}")
             return jsonify({"error": "Illegal move or wall placement blocked."}), 400
 
         current_game_state, reward, done, _ = current_env.step(
@@ -165,18 +183,24 @@ def process_move(board_size):
                 }
             )
 
-        # AI moves for all non-human players
+        # AI moves for all non-human players — collect intermediate states
+        ai_steps = []
         while current_env.get_current_player(current_game_state) != 0 and not current_game_state.game_over:
             action_probs = current_mcts.search(
-                current_env, current_game_state, temperature=0.1)
-            ai_action = int(np.argmax(action_probs))
+                current_env, current_game_state, temperature=current_temperature)
+            if current_temperature < 0.1:
+                ai_action = int(np.argmax(action_probs))
+            else:
+                ai_action = int(np.random.choice(len(action_probs), p=action_probs))
             current_game_state, reward, done, info = current_env.step(
                 current_game_state, ai_action)
+            ai_steps.append(_extract_positions(current_env, current_game_state))
             if done:
                 return jsonify(
                     {
                         "status": "game_over",
                         "newState": _extract_positions(current_env, current_game_state),
+                        "ai_steps": ai_steps,
                         "winner": "ai",
                     }
                 )
@@ -185,6 +209,7 @@ def process_move(board_size):
             {
                 "status": "ongoing",
                 "newState": _extract_positions(current_env, current_game_state),
+                "ai_steps": ai_steps,
                 "winner": None,
             }
         )
@@ -194,20 +219,11 @@ def process_move(board_size):
 
 
 def _extract_positions(env, state):
-    """Package game state for JavaScript — supports both 2p and MP states."""
+    """Package game state for JavaScript."""
     bs = env.board_size
-
-    # Handle both state formats
-    if hasattr(state, "p0_pos"):
-        # 2-player QuoridorState
-        positions = [state.p0_pos, state.p1_pos]
-        h_walls = list(state.p0_h_walls | state.p1_h_walls)
-        v_walls = list(state.p0_v_walls | state.p1_v_walls)
-    else:
-        # N-player QuoridorStateMP
-        positions = state.positions
-        h_walls = list(state.h_walls)
-        v_walls = list(state.v_walls)
+    positions = state.positions
+    h_walls = list(state.h_walls)
+    v_walls = list(state.v_walls)
 
     players = [{"row": int(p[0]), "col": int(p[1])} for p in positions]
 
@@ -235,6 +251,7 @@ def _extract_positions(env, state):
         "h_walls": [{"row": r, "col": c} for r, c in h_walls],
         "v_walls": [{"row": r, "col": c} for r, c in v_walls],
         "valid_moves": valid_moves,
+        "walls_remaining": list(state.walls_remaining),
         "num_players": len(positions),
         "current_player": env.get_current_player(state),
     }

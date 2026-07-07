@@ -149,6 +149,8 @@ async function sendMoveToServer(type, targetRow, targetCol) {
   const signal = moveController.signal;
 
   try {
+    const difficultyElement = document.getElementById("difficulty");
+    const activeDifficulty = difficultyElement ? difficultyElement.value : currentDifficulty;
     const response = await fetch(
       `/api/${currentGridSize}x${currentGridSize}/move`,
       {
@@ -157,6 +159,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
         body: JSON.stringify({
           type: type,
           target: { row: targetRow, col: targetCol },
+          difficulty: activeDifficulty
         }),
         signal,
       },

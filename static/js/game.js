@@ -253,7 +253,11 @@ function updateDifficultySwitcher() {
 function switchDifficulty(diff) {
   if (diff === currentDifficulty) return;
   currentDifficulty = diff;
-  document.getElementById("difficulty").value = diff;
+  const difficultySelect = document.getElementById("difficulty");
+  if (difficultySelect) {
+    difficultySelect.value = diff;
+  }
   updateDifficultySwitcher();
-  restartGame();
+  
+  showToast(`Difficulty shifted to ${diff}`, 1500);
 }

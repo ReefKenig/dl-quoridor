@@ -147,7 +147,6 @@ def process_move(board_size):
         action_type = data.get("type", "pawn")
         target = data.get("target")
 
- 
         difficulty = data.get("difficulty")
         if difficulty and difficulty in DIFFICULTY_SETTINGS:
             settings = DIFFICULTY_SETTINGS[difficulty]
@@ -157,7 +156,6 @@ def process_move(board_size):
             else:
                 current_mcts = make_mcts_2p(settings)
             print(f"[DYNAMIC DIFFICULTY] Switched AI to {difficulty} mid-game")
-       
 
         human_action = None
 
@@ -195,7 +193,6 @@ def process_move(board_size):
                 }
             )
 
-        # AI moves for all non-human players — collect intermediate states
         ai_steps = []
         while current_env.get_current_player(current_game_state) != 0 and not current_game_state.game_over:
             action_probs = current_mcts.search(

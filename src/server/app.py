@@ -138,7 +138,7 @@ def get_state(board_size):
 
 @app.route("/api/<board_size>/move", methods=["POST"])
 def process_move(board_size):
-    global current_game_state
+    global current_game_state, current_mcts, current_temperature 
     try:
         if current_game_state is None:
             return jsonify({"error": "Game state not found"})
@@ -146,6 +146,18 @@ def process_move(board_size):
         data = request.json
         action_type = data.get("type", "pawn")
         target = data.get("target")
+
+ 
+        difficulty = data.get("difficulty")
+        if difficulty and difficulty in DIFFICULTY_SETTINGS:
+            settings = DIFFICULTY_SETTINGS[difficulty]
+            current_temperature = settings["temperature"]
+            if current_num_players == 4:
+                current_mcts = make_mcts_4p(settings)
+            else:
+                current_mcts = make_mcts_2p(settings)
+            print(f"[DYNAMIC DIFFICULTY] Switched AI to {difficulty} mid-game")
+       
 
         human_action = None
 

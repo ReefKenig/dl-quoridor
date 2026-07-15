@@ -1,0 +1,255 @@
+"""
+Batched parallel self-play for the vector-maxⁿ (_mp) stack.
+
+Motivation — GPU starvation
+---------------------------
+`training_mp.py` plays self-play games sequentially: every MCTS leaf calls
+`model.predict(single_state)`, i.e. one (1, C, H, W) forward pass at a time.
+On a GPU that leaves the device idle between micro-calls and the launch
+overhead dominates — the CPU-side MCTS tree walk becomes the bottleneck while
+the GPU sits ~empty.
+
+This module fixes that the same way `parallel_self_play.py` does for the old
+single-player stack, but for the N-player vector-value network:
+
+  - N CPU processes ("game workers") each run their own MCTSMaxN game loop.
+  - Whenever a worker needs a leaf evaluated it ships the (C, H, W) tensor to a
+    single shared request queue and blocks on its private response queue.
+  - One "inference worker" thread in the main process drains up to `batch_size`
+    requests, stacks them into one (B, C, H, W) batch, runs a single
+    `model.predict_batch(...)` forward pass, and scatters the per-row
+    (policy, value_vec) back to each worker's response queue.
+
+So the GPU sees fat batches instead of a stream of singletons, and the CPU
+tree-walk of many workers overlaps with GPU compute.
+
+Value-target assignment, augmentation and the max^n search are unchanged — the
+workers reuse `play_one_game` from `self_play_mp.py`, so the samples produced
+here are bit-for-bit the same shape/semantics as the sequential path.
+"""
+import multiprocessing as mp
+import os
+import sys
+import threading
+import traceback
+
+import torch
+
+
+def _inference_worker(model, request_queue, response_queues, batch_size, stop_flag):
+    """Drain requests, batch them, run one GPU forward pass, scatter replies.
+
+    Each request is (worker_id, chw_tensor). Each reply is
+    (policy_np (A,), value_vec_np (num_players,)).
+    Returns when it sees the "STOP" sentinel.
+    """
+    model.network.eval()
+    batches_done = 0
+
+    while True:
+        batch = []
+        # Block for the first item so we don't busy-spin, then greedily drain
+        # whatever else is already queued up to batch_size.
+        try:
+            first = request_queue.get(timeout=0.2)
+        except Exception:
+            if stop_flag.is_set():
+                return
+            continue
+        if first == "STOP":
+            return
+        batch.append(first)
+        while len(batch) < batch_size:
+            try:
+                req = request_queue.get_nowait()
+            except Exception:
+                break
+            if req == "STOP":
+                # Finish the batch we have, then stop.
+                stop_flag.set()
+                break
+            batch.append(req)
+
+        worker_ids = [r[0] for r in batch]
+        tensors = [r[1] for r in batch]
+        batch_tensor = torch.stack(tensors).to(model.device)
+
+        policies, values = model.predict_batch(batch_tensor)  # (B, A), (B, N)
+        policies = policies.cpu().numpy()
+        values = values.cpu().numpy()
+
+        for i, w_id in enumerate(worker_ids):
+            response_queues[w_id].put((policies[i], values[i]))
+
+        batches_done += 1
+        if batches_done % 500 == 0:
+            print(f"  [GPU] {batches_done} batches processed...", flush=True)
+
+        if stop_flag.is_set():
+            return
+
+
+def _game_worker(worker_id, request_queue, response_queue, num_games,
+                 config_dict, results_queue, project_dir, seed):
+    """Play `num_games` self-play games, deferring every leaf eval to the GPU."""
+    try:
+        os.chdir(project_dir)
+        if project_dir not in sys.path:
+            sys.path.insert(0, project_dir)
+
+        import random
+        import numpy as np
+        from src.env.quoridor_env_mp import QuoridorEnvMP
+        from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
+        from src.mcts.self_play_mp import play_one_game
+
+        # Deterministic per-worker seed so parallel runs are reproducible.
+        # Distinct per worker so workers don't play identical games.
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+
+        N = config_dict["num_players"]
+        env = QuoridorEnvMP(
+            board_size=config_dict["board_size"],
+            num_players=N,
+            max_turns=config_dict["max_turns"],
+            max_walls_per_player=config_dict["max_walls_per_player"],
+        )
+
+        def batched_evaluate(state):
+            # HWC numpy -> CHW float tensor, hand off to the GPU batcher.
+            tensor = torch.from_numpy(env.state_to_tensor(state)).float().permute(2, 0, 1)
+            request_queue.put((worker_id, tensor))
+            policy, value_vec = response_queue.get()
+            return np.asarray(policy), np.asarray(value_vec)
+
+        mcts = MCTSMaxN(
+            config=MCTSConfig(
+                num_simulations=config_dict["mcts_simulations"],
+                dirichlet_epsilon=0.25,
+                max_rollout_depth=config_dict["max_game_moves"],
+            ),
+            evaluate_fn=batched_evaluate,
+            num_players=N,
+        )
+
+        produced = 0
+        for _ in range(num_games):
+            samples, winner = play_one_game(
+                env, mcts, N,
+                max_moves=config_dict["max_game_moves"],
+                discount=config_dict["discount"],
+                explore_moves=config_dict["explore_moves"],
+            )
+            results_queue.put(("game", worker_id, samples, winner))
+            produced += len(samples)
+
+        results_queue.put(("done", worker_id, produced))
+    except Exception as e:
+        print(f"[WORKER {worker_id}] CRASHED: {e}\n{traceback.format_exc()}", flush=True)
+        results_queue.put(("done", worker_id, 0))
+
+
+def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
+                                   batch_size=64, on_games_complete=None, base_seed=0):
+    """Generate one iteration of self-play data with batched GPU inference.
+
+    Args:
+        model : QuoridorModelMP (the learner; stays in the main process).
+        cfg   : TrainingConfigMP-like object. Reads num_players, board_size,
+                max_walls_per_player, max_turns, mcts_simulations, discount,
+                explore_moves, max_game_moves.
+        num_workers      : number of CPU game-worker processes.
+        total_games      : EXACT number of games to play this iteration. Split
+                           as evenly as possible across workers (the first
+                           `total_games % num_workers` workers play one extra),
+                           so the count matches the config regardless of how it
+                           factors against num_workers.
+        batch_size       : max leaves batched per GPU forward pass.
+        on_games_complete: optional callback(games_done, total_games, wins_dict).
+        base_seed        : worker w is seeded base_seed + w for reproducibility.
+
+    Returns:
+        (samples, wins) where samples is a flat list of (state_hwc, policy,
+        value_vec) tuples (already augmented) and wins maps winner -> count
+        (None key = draw/timeout).
+    """
+    # Distribute games exactly. If total < num_workers, spawn only as many
+    # workers as there are games (idle workers would just add spawn overhead).
+    n_workers = max(1, min(num_workers, total_games))
+    base, rem = divmod(total_games, n_workers)
+    games_for = [base + (1 if i < rem else 0) for i in range(n_workers)]
+    num_workers = n_workers
+    project_dir = os.getcwd()
+    existing = os.environ.get("PYTHONPATH", "")
+    if project_dir not in existing:
+        os.environ["PYTHONPATH"] = project_dir + (":" + existing if existing else "")
+
+    config_dict = {
+        "num_players": cfg.num_players,
+        "board_size": getattr(cfg, "board_size", None) or model.board_size,
+        "max_walls_per_player": getattr(cfg, "max_walls_per_player", 3),
+        "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),
+        "mcts_simulations": cfg.mcts_simulations,
+        "discount": cfg.discount,
+        "explore_moves": cfg.explore_moves,
+        "max_game_moves": cfg.max_game_moves,
+    }
+
+    ctx = mp.get_context("spawn")
+    request_queue = ctx.Queue()
+    results_queue = ctx.Queue()
+    response_queues = {i: ctx.Queue() for i in range(num_workers)}
+
+    processes = []
+    for i in range(num_workers):
+        p = ctx.Process(
+            target=_game_worker,
+            args=(i, request_queue, response_queues[i], games_for[i],
+                  config_dict, results_queue, project_dir, base_seed + i),
+        )
+        p.start()
+        processes.append(p)
+
+    print(f"[PARALLEL-MP] {num_workers} workers spawned "
+          f"({total_games} games, sims={cfg.mcts_simulations}), GPU batcher starting...",
+          flush=True)
+
+    stop_flag = threading.Event()
+    inference_thread = threading.Thread(
+        target=_inference_worker,
+        args=(model, request_queue, response_queues, batch_size, stop_flag),
+        daemon=True,
+    )
+    inference_thread.start()
+
+    samples = []
+    wins = {}
+    games_done = 0
+    workers_done = 0
+    while workers_done < num_workers:
+        msg = results_queue.get()
+        if msg[0] == "game":
+            _, _wid, game_samples, winner = msg
+            samples.extend(game_samples)
+            wins[winner] = wins.get(winner, 0) + 1
+            games_done += 1
+            if on_games_complete:
+                on_games_complete(games_done, total_games, wins)
+        elif msg[0] == "done":
+            workers_done += 1
+
+    for p in processes:
+        p.join()
+
+    # Tell the batcher to finish and wait for it.
+    request_queue.put("STOP")
+    stop_flag.set()
+    inference_thread.join(timeout=5.0)
+
+    if not samples:
+        print("[PARALLEL-MP] WARNING: no samples generated — workers may have crashed.",
+              flush=True)
+
+    return samples, wins

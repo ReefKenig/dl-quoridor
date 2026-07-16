@@ -41,52 +41,56 @@ def _inference_worker(model, request_queue, response_queues, batch_size, stop_fl
 
     Each request is (worker_id, chw_tensor). Each reply is
     (policy_np (A,), value_vec_np (num_players,)).
-    Returns when it sees the "STOP" sentinel.
+    Returns when it sees the "STOP" sentinel or on any unhandled exception.
     """
-    model.network.eval()
-    batches_done = 0
+    try:
+        model.network.eval()
+        batches_done = 0
 
-    while True:
-        batch = []
-        # Block for the first item so we don't busy-spin, then greedily drain
-        # whatever else is already queued up to batch_size.
-        try:
-            first = request_queue.get(timeout=0.2)
-        except Exception:
+        while True:
+            batch = []
+            # Block for the first item so we don't busy-spin, then greedily drain
+            # whatever else is already queued up to batch_size.
+            try:
+                first = request_queue.get(timeout=0.2)
+            except Exception:
+                if stop_flag.is_set():
+                    return
+                continue
+            if first == "STOP":
+                return
+            batch.append(first)
+            while len(batch) < batch_size:
+                try:
+                    req = request_queue.get_nowait()
+                except Exception:
+                    break
+                if req == "STOP":
+                    # Finish the batch we have, then stop.
+                    stop_flag.set()
+                    break
+                batch.append(req)
+
+            worker_ids = [r[0] for r in batch]
+            tensors = [r[1] for r in batch]
+            batch_tensor = torch.stack(tensors).to(model.device)
+
+            policies, values = model.predict_batch(batch_tensor)  # (B, A), (B, N)
+            policies = policies.cpu().numpy()
+            values = values.cpu().numpy()
+
+            for i, w_id in enumerate(worker_ids):
+                response_queues[w_id].put((policies[i], values[i]))
+
+            batches_done += 1
+            if batches_done % 500 == 0:
+                print(f"  [GPU] {batches_done} batches processed...", flush=True)
+
             if stop_flag.is_set():
                 return
-            continue
-        if first == "STOP":
-            return
-        batch.append(first)
-        while len(batch) < batch_size:
-            try:
-                req = request_queue.get_nowait()
-            except Exception:
-                break
-            if req == "STOP":
-                # Finish the batch we have, then stop.
-                stop_flag.set()
-                break
-            batch.append(req)
-
-        worker_ids = [r[0] for r in batch]
-        tensors = [r[1] for r in batch]
-        batch_tensor = torch.stack(tensors).to(model.device)
-
-        policies, values = model.predict_batch(batch_tensor)  # (B, A), (B, N)
-        policies = policies.cpu().numpy()
-        values = values.cpu().numpy()
-
-        for i, w_id in enumerate(worker_ids):
-            response_queues[w_id].put((policies[i], values[i]))
-
-        batches_done += 1
-        if batches_done % 500 == 0:
-            print(f"  [GPU] {batches_done} batches processed...", flush=True)
-
-        if stop_flag.is_set():
-            return
+    except Exception as e:
+        print(f"[GPU INFERENCE] CRASHED: {e}\n{traceback.format_exc()}", flush=True)
+        stop_flag.set()
 
 
 def _game_worker(worker_id, request_queue, response_queue, num_games,
@@ -127,7 +131,7 @@ def _game_worker(worker_id, request_queue, response_queue, num_games,
         mcts = MCTSMaxN(
             config=MCTSConfig(
                 num_simulations=config_dict["mcts_simulations"],
-                dirichlet_epsilon=0.25,
+                dirichlet_epsilon=config_dict.get("mcts_dirichlet_epsilon", 0.25),
                 max_rollout_depth=config_dict["max_game_moves"],
             ),
             evaluate_fn=batched_evaluate,
@@ -152,14 +156,15 @@ def _game_worker(worker_id, request_queue, response_queue, num_games,
 
 
 def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
-                                   batch_size=64, on_games_complete=None, base_seed=0):
+                                   batch_size=64, on_games_complete=None, base_seed=0,
+                                   worker_join_timeout=30.0):
     """Generate one iteration of self-play data with batched GPU inference.
 
     Args:
         model : QuoridorModelMP (the learner; stays in the main process).
         cfg   : TrainingConfigMP-like object. Reads num_players, board_size,
                 max_walls_per_player, max_turns, mcts_simulations, discount,
-                explore_moves, max_game_moves.
+                explore_moves, max_game_moves, mcts_dirichlet_epsilon.
         num_workers      : number of CPU game-worker processes.
         total_games      : EXACT number of games to play this iteration. Split
                            as evenly as possible across workers (the first
@@ -169,6 +174,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         batch_size       : max leaves batched per GPU forward pass.
         on_games_complete: optional callback(games_done, total_games, wins_dict).
         base_seed        : worker w is seeded base_seed + w for reproducibility.
+        worker_join_timeout: max seconds to wait for each worker to exit (default 30).
 
     Returns:
         (samples, wins) where samples is a flat list of (state_hwc, policy,
@@ -184,7 +190,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     project_dir = os.getcwd()
     existing = os.environ.get("PYTHONPATH", "")
     if project_dir not in existing:
-        os.environ["PYTHONPATH"] = project_dir + (":" + existing if existing else "")
+        os.environ["PYTHONPATH"] = project_dir + (os.pathsep + existing if existing else "")
 
     config_dict = {
         "num_players": cfg.num_players,
@@ -192,6 +198,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         "max_walls_per_player": getattr(cfg, "max_walls_per_player", 3),
         "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),
         "mcts_simulations": cfg.mcts_simulations,
+        "mcts_dirichlet_epsilon": getattr(cfg, "mcts_dirichlet_epsilon", 0.25),
         "discount": cfg.discount,
         "explore_moves": cfg.explore_moves,
         "max_game_moves": cfg.max_game_moves,
@@ -228,25 +235,48 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     wins = {}
     games_done = 0
     workers_done = 0
-    while workers_done < num_workers:
-        msg = results_queue.get()
-        if msg[0] == "game":
-            _, _wid, game_samples, winner = msg
-            samples.extend(game_samples)
-            wins[winner] = wins.get(winner, 0) + 1
-            games_done += 1
-            if on_games_complete:
-                on_games_complete(games_done, total_games, wins)
-        elif msg[0] == "done":
-            workers_done += 1
+    try:
+        while workers_done < num_workers:
+            try:
+                msg = results_queue.get(timeout=60.0)
+            except Exception:
+                print(f"[PARALLEL-MP] WARNING: results queue timeout after 60s. "
+                      f"Aborting ({workers_done}/{num_workers} workers done, "
+                      f"{games_done}/{total_games} games).", flush=True)
+                break
+            if msg[0] == "game":
+                _, _wid, game_samples, winner = msg
+                samples.extend(game_samples)
+                wins[winner] = wins.get(winner, 0) + 1
+                games_done += 1
+                if on_games_complete:
+                    on_games_complete(games_done, total_games, wins)
+            elif msg[0] == "done":
+                workers_done += 1
+    finally:
+        # Graceful shutdown: signal workers to stop.
+        request_queue.put("STOP")
+        stop_flag.set()
 
-    for p in processes:
-        p.join()
+        # Wait for processes with timeout; terminate stragglers.
+        for i, p in enumerate(processes):
+            p.join(timeout=worker_join_timeout)
+            if p.is_alive():
+                print(f"[PARALLEL-MP] Worker {i} did not exit after {worker_join_timeout}s; terminating.",
+                      flush=True)
+                p.terminate()
+                p.join(timeout=5.0)
+                if p.is_alive():
+                    print(f"[PARALLEL-MP] Worker {i} still alive after terminate; killing.",
+                          flush=True)
+                    p.kill()
+                    p.join()
 
-    # Tell the batcher to finish and wait for it.
-    request_queue.put("STOP")
-    stop_flag.set()
-    inference_thread.join(timeout=5.0)
+        # Wait for inference thread with timeout.
+        inference_thread.join(timeout=5.0)
+        if inference_thread.is_alive():
+            print("[PARALLEL-MP] WARNING: Inference thread did not exit after 5s "
+                  "(daemon thread will be killed on shutdown).", flush=True)
 
     if not samples:
         print("[PARALLEL-MP] WARNING: no samples generated — workers may have crashed.",

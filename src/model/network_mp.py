@@ -75,7 +75,10 @@ class QuoridorNetworkMP(nn.Module):
 class QuoridorModelMP:
     def __init__(self, board_size=5, action_space_size=44, num_channels=64,
                  num_res_blocks=4, lr=1e-3, weight_decay=1e-4, device="auto",
-                 in_channels=11, num_players=2, value_loss_weight=1.0):
+                 in_channels=None, num_players=2, value_loss_weight=1.0):
+        # Default in_channels depends on number of players: channels = 3*N + 3
+        if in_channels is None:
+            in_channels = 3 * num_players + 3
         self.device = torch.device("cuda" if (device == "auto" and torch.cuda.is_available())
                                    else (device if device != "auto" else "cpu"))
         self.num_players = num_players

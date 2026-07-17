@@ -7,7 +7,6 @@ random → checkpoint best/latest. Reduces to the standard duel at N=2.
 """
 import json
 import os
-import copy
 import time
 import logging
 from collections import deque
@@ -17,8 +16,9 @@ import numpy as np
 
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
+from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.evaluator_mp import (evaluate_mp, evaluate_against_random_mp,
-                                   mcts_agent_mp, random_agent)
+                                   mcts_agent_mp)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,14 @@ class TrainingConfigMP:
     discount: float = 0.97
     explore_moves: int = 15
     mcts_dirichlet_epsilon: float = 0.25
+    # --- parallel self-play ---
+    parallel_self_play: bool = False
+    num_workers: int = 8
+    inference_batch_size: int = 64
+    # --- env geometry (needed by parallel workers to rebuild env) ---
+    board_size: int = 5
+    max_walls_per_player: int = 3
+    max_turns: int = 300
 
 
 class ReplayBufferMP:
@@ -115,18 +123,36 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         # --- 1. self-play ---
         print(f"[iter {it+1}/{cfg.num_iterations}] self-play: 0/{cfg.games_per_iteration} games...",
               end="", flush=True)
-        sp_mcts = _mcts(model, env, cfg)
-        wins = {}
-        for g in range(cfg.games_per_iteration):
-            samples, w = play_one_game(env, sp_mcts, cfg.num_players,
-                                       max_moves=cfg.max_game_moves,
-                                       discount=cfg.discount,
-                                       explore_moves=cfg.explore_moves)
-            buffer.add(samples)
-            wins[w] = wins.get(w, 0) + 1
-            if (g + 1) % 10 == 0:
-                print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {g+1}/{cfg.games_per_iteration} games...",
+
+        if cfg.parallel_self_play:
+            # GPU-batched parallel self-play
+            def _on_progress(done, total, w):
+                print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...",
                       end="", flush=True)
+            sp_samples, wins = generate_parallel_self_play_mp(
+                model, cfg,
+                num_workers=cfg.num_workers,
+                total_games=cfg.games_per_iteration,
+                batch_size=cfg.inference_batch_size,
+                on_games_complete=_on_progress,
+                base_seed=it * cfg.num_workers,
+            )
+            buffer.add(sp_samples)
+        else:
+            # Sequential self-play (original path)
+            sp_mcts = _mcts(model, env, cfg)
+            wins = {}
+            for g in range(cfg.games_per_iteration):
+                samples, w = play_one_game(env, sp_mcts, cfg.num_players,
+                                           max_moves=cfg.max_game_moves,
+                                           discount=cfg.discount,
+                                           explore_moves=cfg.explore_moves)
+                buffer.add(samples)
+                wins[w] = wins.get(w, 0) + 1
+                if (g + 1) % 10 == 0:
+                    print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {g+1}/{cfg.games_per_iteration} games...",
+                          end="", flush=True)
+
         sp_secs = time.time() - t0
         print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {cfg.games_per_iteration}/{cfg.games_per_iteration} done ({sp_secs:.0f}s)",
               flush=True)

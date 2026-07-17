@@ -44,8 +44,11 @@ def _inference_worker(model, request_queue, response_queues, batch_size, stop_fl
     Returns when it sees the "STOP" sentinel or on any unhandled exception.
     """
     try:
+        import time
         model.network.eval()
         batches_done = 0
+        evals_done = 0
+        t_start = time.time()
 
         while True:
             batch = []
@@ -83,8 +86,14 @@ def _inference_worker(model, request_queue, response_queues, batch_size, stop_fl
                 response_queues[w_id].put((policies[i], values[i]))
 
             batches_done += 1
-            if batches_done % 500 == 0:
-                print(f"  [GPU] {batches_done} batches processed...", flush=True)
+            evals_done += len(batch)
+            if evals_done % 50_000 < len(batch):
+                elapsed = time.time() - t_start
+                rate = evals_done / elapsed if elapsed > 0 else 0
+                avg_batch = evals_done / batches_done
+                print(f"  [GPU] {evals_done:,} evals ({batches_done} batches, "
+                      f"avg {avg_batch:.0f}/batch, {rate:.0f} evals/s, {elapsed:.0f}s)",
+                      flush=True)
 
             if stop_flag.is_set():
                 return

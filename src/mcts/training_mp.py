@@ -38,6 +38,7 @@ class TrainingConfigMP:
     accept_margin: float = 0.05          # accept if win_rate > fair_share + margin
     discount: float = 0.97
     explore_moves: int = 15
+    mcts_dirichlet_epsilon: float = 0.25
 
 
 class ReplayBufferMP:
@@ -64,7 +65,8 @@ class ReplayBufferMP:
 def _mcts(model, env, cfg):
     return MCTSMaxN(
         config=MCTSConfig(num_simulations=cfg.mcts_simulations,
-                          dirichlet_epsilon=0.25, max_rollout_depth=cfg.max_game_moves),
+                          dirichlet_epsilon=getattr(cfg, 'mcts_dirichlet_epsilon', 0.25),
+                          max_rollout_depth=cfg.max_game_moves),
         evaluate_fn=lambda st: model.predict(env.state_to_tensor(st)),
         num_players=cfg.num_players,
     )

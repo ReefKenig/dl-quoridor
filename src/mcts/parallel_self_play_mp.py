@@ -235,12 +235,14 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     wins = {}
     games_done = 0
     workers_done = 0
+    # Timeout per message: 9×9 with 800 sims can take 10+ min for the first game.
+    queue_timeout = max(600.0, total_games * 30.0)
     try:
         while workers_done < num_workers:
             try:
-                msg = results_queue.get(timeout=60.0)
+                msg = results_queue.get(timeout=queue_timeout)
             except Exception:
-                print(f"[PARALLEL-MP] WARNING: results queue timeout after 60s. "
+                print(f"[PARALLEL-MP] WARNING: results queue timeout after {queue_timeout:.0f}s. "
                       f"Aborting ({workers_done}/{num_workers} workers done, "
                       f"{games_done}/{total_games} games).", flush=True)
                 break

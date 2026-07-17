@@ -9,3 +9,4 @@ stable-baselines3>=2.4.0
 gymnasium>=1.0.0
 shimmy>=1.3.0
 gunicorn==20.1.0
+psutil>=5.9.0

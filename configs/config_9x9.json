@@ -15,7 +15,7 @@
         "num_channels": 128
     },
     "training": {
-        "num_iterations": 100,
+        "num_iterations": 50,
         "games_per_iteration": 50,
         "batch_size": 128,
         "training_epochs": 15,
@@ -25,6 +25,7 @@
         "max_game_moves": 120,
         "win_threshold": 0.55,
         "accept_margin": 0.03,
+        "eval_every": 5,
         "self_play_checkpoint_freq": 10,
         "reward_decay": 0.99
     },

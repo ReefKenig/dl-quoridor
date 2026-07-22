@@ -244,8 +244,9 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     wins = {}
     games_done = 0
     workers_done = 0
-    # Timeout per message: 9×9 with 800 sims can take 10+ min for the first game.
-    queue_timeout = max(600.0, total_games * 30.0)
+    # Timeout per message: scales with players (N=4 games much longer than N=2)
+    # and sims. Untrained N=4 9×9 at 800 sims can take 40+ min for first game.
+    queue_timeout = max(1800.0, total_games * 30.0 * cfg.num_players)
     try:
         while workers_done < num_workers:
             try:

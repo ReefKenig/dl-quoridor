@@ -36,12 +36,14 @@ import traceback
 import torch
 
 
-def _inference_worker(model, request_queue, response_queues, batch_size, stop_flag):
+def _inference_worker(model, request_queue, response_queues, batch_size, stop_flag, log=print):
     """Drain requests, batch them, run one GPU forward pass, scatter replies.
 
     Each request is (worker_id, chw_tensor). Each reply is
     (policy_np (A,), value_vec_np (num_players,)).
     Returns when it sees the "STOP" sentinel or on any unhandled exception.
+    `log` is a callable(msg) used for progress (defaults to print; the training
+    loop passes a disk-backed logger so GPU stats reach games.log too).
     """
     try:
         import time
@@ -91,14 +93,13 @@ def _inference_worker(model, request_queue, response_queues, batch_size, stop_fl
                 elapsed = time.time() - t_start
                 rate = evals_done / elapsed if elapsed > 0 else 0
                 avg_batch = evals_done / batches_done
-                print(f"  [GPU] {evals_done:,} evals ({batches_done} batches, "
-                      f"avg {avg_batch:.0f}/batch, {rate:.0f} evals/s, {elapsed:.0f}s)",
-                      flush=True)
+                log(f"  [GPU] {evals_done:,} evals ({batches_done} batches, "
+                    f"avg {avg_batch:.0f}/batch, {rate:.0f} evals/s, {elapsed:.0f}s)")
 
             if stop_flag.is_set():
                 return
     except Exception as e:
-        print(f"[GPU INFERENCE] CRASHED: {e}\n{traceback.format_exc()}", flush=True)
+        log(f"[GPU INFERENCE] CRASHED: {e}\n{traceback.format_exc()}")
         stop_flag.set()
 
 
@@ -166,7 +167,7 @@ def _game_worker(worker_id, request_queue, response_queue, num_games,
 
 def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
                                    batch_size=64, on_games_complete=None, base_seed=0,
-                                   worker_join_timeout=30.0):
+                                   worker_join_timeout=30.0, log=print):
     """Generate one iteration of self-play data with batched GPU inference.
 
     Args:
@@ -228,14 +229,13 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         p.start()
         processes.append(p)
 
-    print(f"[PARALLEL-MP] {num_workers} workers spawned "
-          f"({total_games} games, sims={cfg.mcts_simulations}), GPU batcher starting...",
-          flush=True)
+    log(f"[PARALLEL-MP] {num_workers} workers spawned "
+        f"({total_games} games, sims={cfg.mcts_simulations}), GPU batcher starting...")
 
     stop_flag = threading.Event()
     inference_thread = threading.Thread(
         target=_inference_worker,
-        args=(model, request_queue, response_queues, batch_size, stop_flag),
+        args=(model, request_queue, response_queues, batch_size, stop_flag, log),
         daemon=True,
     )
     inference_thread.start()
@@ -251,9 +251,9 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
             try:
                 msg = results_queue.get(timeout=queue_timeout)
             except Exception:
-                print(f"[PARALLEL-MP] WARNING: results queue timeout after {queue_timeout:.0f}s. "
-                      f"Aborting ({workers_done}/{num_workers} workers done, "
-                      f"{games_done}/{total_games} games).", flush=True)
+                log(f"[PARALLEL-MP] WARNING: results queue timeout after {queue_timeout:.0f}s. "
+                    f"Aborting ({workers_done}/{num_workers} workers done, "
+                    f"{games_done}/{total_games} games).")
                 break
             if msg[0] == "game":
                 _, _wid, game_samples, winner = msg
@@ -273,25 +273,22 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         for i, p in enumerate(processes):
             p.join(timeout=worker_join_timeout)
             if p.is_alive():
-                print(f"[PARALLEL-MP] Worker {i} did not exit after {worker_join_timeout}s; terminating.",
-                      flush=True)
+                log(f"[PARALLEL-MP] Worker {i} did not exit after {worker_join_timeout}s; terminating.")
                 p.terminate()
                 p.join(timeout=5.0)
                 if p.is_alive():
-                    print(f"[PARALLEL-MP] Worker {i} still alive after terminate; killing.",
-                          flush=True)
+                    log(f"[PARALLEL-MP] Worker {i} still alive after terminate; killing.")
                     p.kill()
                     p.join()
 
         # Wait for inference thread with timeout.
         inference_thread.join(timeout=5.0)
         if inference_thread.is_alive():
-            print("[PARALLEL-MP] WARNING: Inference thread did not exit after 5s "
-                  "(daemon thread will be killed on shutdown).", flush=True)
+            log("[PARALLEL-MP] WARNING: Inference thread did not exit after 5s "
+                "(daemon thread will be killed on shutdown).")
 
     if not samples:
-        print("[PARALLEL-MP] WARNING: no samples generated — workers may have crashed.",
-              flush=True)
+        log("[PARALLEL-MP] WARNING: no samples generated — workers may have crashed.")
 
     return samples, wins
 

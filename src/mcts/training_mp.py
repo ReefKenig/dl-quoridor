@@ -57,6 +57,8 @@ class TrainingConfigMP:
     eval_games: int = 80
     eval_random_games: int = 24
     accept_margin: float = 0.05          # accept if win_rate > fair_share + margin
+    # run eval every N iterations (1 = every iter)
+    eval_every: int = 1
     discount: float = 0.97
     explore_moves: int = 15
     mcts_dirichlet_epsilon: float = 0.25
@@ -219,45 +221,60 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         # Eval uses fewer sims than self-play when eval_simulations is set:
         # eval only measures relative strength, so it doesn't need full search
         # depth. This does NOT weaken the trained model (self-play keeps full sims).
+        # eval_every: skip eval on most iterations to save time (eval is expensive).
+        run_eval = (it + 1) % cfg.eval_every == 0 or (it +
+                                                      1) == cfg.num_iterations
         eval_sims = cfg.eval_simulations or cfg.mcts_simulations
-        t_eval_best = time.time()
-        _log(
-            f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games, {eval_sims} sims)...")
-        cand = mcts_agent_mp(
-            _mcts(model, env, cfg, sims=eval_sims), temperature=0.1)
-        champ = mcts_agent_mp(
-            _mcts(best, env, cfg, sims=eval_sims), temperature=0.1)
+        accepted = False
+        eval_best_secs = 0.0
+        eval_rand_secs = 0.0
+        ev_wr = 0.0
+        evr_wr = 0.0
 
-        def _eval_progress(done, total, r):
-            elapsed = time.time() - t_eval_best
-            _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
-                 f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
+        if run_eval:
+            t_eval_best = time.time()
+            _log(
+                f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games, {eval_sims} sims)...")
+            cand = mcts_agent_mp(
+                _mcts(model, env, cfg, sims=eval_sims), temperature=0.1)
+            champ = mcts_agent_mp(
+                _mcts(best, env, cfg, sims=eval_sims), temperature=0.1)
 
-        ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
-                         max_moves=cfg.max_game_moves, on_progress=_eval_progress)
-        accepted = ev.should_accept(threshold)
-        if accepted:
-            best.copy_weights_from(model)
-        eval_best_secs = time.time() - t_eval_best
-        _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
-             f"{100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'} ({eval_best_secs:.0f}s)")
+            def _eval_progress(done, total, r):
+                elapsed = time.time() - t_eval_best
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
+                     f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
 
-        # --- 4. eval vs random ---
-        t_eval_rand = time.time()
-        _log(
-            f"[iter {it+1}/{cfg.num_iterations}] eval vs random ({cfg.eval_random_games} games, {eval_sims} sims)...")
+            ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
+                             max_moves=cfg.max_game_moves, on_progress=_eval_progress)
+            accepted = ev.should_accept(threshold)
+            if accepted:
+                best.copy_weights_from(model)
+            eval_best_secs = time.time() - t_eval_best
+            ev_wr = ev.candidate_win_rate
+            _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
+                 f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'} ({eval_best_secs:.0f}s)")
 
-        def _eval_rand_progress(done, total, r):
-            elapsed = time.time() - t_eval_rand
-            _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random: "
-                 f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
+            # --- 4. eval vs random ---
+            t_eval_rand = time.time()
+            _log(
+                f"[iter {it+1}/{cfg.num_iterations}] eval vs random ({cfg.eval_random_games} games, {eval_sims} sims)...")
 
-        evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
-                                         max_moves=cfg.max_game_moves,
-                                         on_progress=_eval_rand_progress)
-        eval_rand_secs = time.time() - t_eval_rand
-        _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "
-             f"{100*evr.candidate_win_rate:.1f}% ({eval_rand_secs:.0f}s)")
+            def _eval_rand_progress(done, total, r):
+                elapsed = time.time() - t_eval_rand
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random: "
+                     f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
+
+            evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
+                                             max_moves=cfg.max_game_moves,
+                                             on_progress=_eval_rand_progress)
+            eval_rand_secs = time.time() - t_eval_rand
+            evr_wr = evr.candidate_win_rate
+            _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "
+                 f"{100*evr_wr:.1f}% ({eval_rand_secs:.0f}s)")
+        else:
+            _log(
+                f"[iter {it+1}/{cfg.num_iterations}] eval skipped (eval_every={cfg.eval_every})")
 
         # --- 5. checkpoint ---
         model.save(os.path.join(checkpoint_dir, "latest.pt"))
@@ -265,8 +282,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             best.save(os.path.join(checkpoint_dir, "best.pt"))
 
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
-                   win_vs_best=ev.candidate_win_rate, accepted=accepted,
-                   win_vs_random=evr.candidate_win_rate, fair=fair,
+                   win_vs_best=ev_wr, accepted=accepted,
+                   win_vs_random=evr_wr, fair=fair,
                    secs=time.time() - t0, buffer=len(buffer),
                    sp_secs=sp_secs, train_secs=train_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs)

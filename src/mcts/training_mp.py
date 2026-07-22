@@ -23,6 +23,17 @@ from src.mcts.evaluator_mp import (evaluate_mp, evaluate_against_random_mp,
 logger = logging.getLogger(__name__)
 
 
+def _make_progress_logger(log_path):
+    """Return a log(msg) fn that prints to console AND appends to log_path on
+    disk (timestamped). The disk copy keeps recording even if the Jupyter UI
+    disconnects, so progress can be tailed from a terminal."""
+    def _log(msg):
+        print(msg, flush=True)
+        with open(log_path, "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+    return _log
+
+
 @dataclass
 class TrainingConfigMP:
     num_players: int = 4
@@ -73,7 +84,8 @@ class ReplayBufferMP:
 def _mcts(model, env, cfg):
     return MCTSMaxN(
         config=MCTSConfig(num_simulations=cfg.mcts_simulations,
-                          dirichlet_epsilon=getattr(cfg, 'mcts_dirichlet_epsilon', 0.25),
+                          dirichlet_epsilon=getattr(
+                              cfg, 'mcts_dirichlet_epsilon', 0.25),
                           max_rollout_depth=cfg.max_game_moves),
         evaluate_fn=lambda st: model.predict(env.state_to_tensor(st)),
         num_players=cfg.num_players,
@@ -81,7 +93,7 @@ def _mcts(model, env, cfg):
 
 
 def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
-                     checkpoint_dir="checkpoints_mp", log_every=1):
+                     checkpoint_dir="checkpoints_mp"):
     """
     env   : QuoridorEnvMP (num_players == cfg.num_players)
     model : QuoridorModelMP (the learner)
@@ -95,6 +107,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     fair = 1.0 / cfg.num_players
     threshold = fair + cfg.accept_margin
     history = []
+
+    # Disk log: keeps recording progress even if the Jupyter UI disconnects.
+    _log = _make_progress_logger(os.path.join(checkpoint_dir, "games.log"))
 
     # --- Resume from checkpoint if available ---
     start_iter = 0
@@ -111,24 +126,24 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         else:
             best.copy_weights_from(model)
         history = meta.get("history", [])
-        logger.info("Resumed from iteration %d (checkpoint: %s)",
-                    start_iter, checkpoint_dir)
+        _log(
+            f"Resumed from iteration {start_iter} (checkpoint: {checkpoint_dir})")
     else:
-        print(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
-              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims",
-              flush=True)
+        _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
+             f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")
 
     for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
         # --- 1. self-play ---
-        print(f"[iter {it+1}/{cfg.num_iterations}] self-play: 0/{cfg.games_per_iteration} games...",
-              end="", flush=True)
+        _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
+             f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims)...")
 
         if cfg.parallel_self_play:
             # GPU-batched parallel self-play
             def _on_progress(done, total, w):
-                print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...",
-                      end="", flush=True)
+                if done % 5 == 0 or done == total:
+                    _log(
+                        f"[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...")
             sp_samples, wins = generate_parallel_self_play_mp(
                 model, cfg,
                 num_workers=cfg.num_workers,
@@ -149,18 +164,22 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                                            explore_moves=cfg.explore_moves)
                 buffer.add(samples)
                 wins[w] = wins.get(w, 0) + 1
-                if (g + 1) % 10 == 0:
-                    print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {g+1}/{cfg.games_per_iteration} games...",
-                          end="", flush=True)
+                # Log every 5 games so long iterations don't look stuck.
+                if (g + 1) % 5 == 0 or (g + 1) == cfg.games_per_iteration:
+                    elapsed = time.time() - t0
+                    rate = (g + 1) / elapsed if elapsed > 0 else 0
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] self-play: "
+                         f"{g+1}/{cfg.games_per_iteration} games "
+                         f"({elapsed:.0f}s, {rate*60:.1f} games/min)")
 
         sp_secs = time.time() - t0
-        print(f"\r[iter {it+1}/{cfg.num_iterations}] self-play: {cfg.games_per_iteration}/{cfg.games_per_iteration} done ({sp_secs:.0f}s)",
-              flush=True)
+        _log(f"[iter {it+1}/{cfg.num_iterations}] self-play done: "
+             f"{cfg.games_per_iteration} games ({sp_secs:.0f}s)")
 
         # --- 2. train ---
         t_train = time.time()
-        print(f"[iter {it+1}/{cfg.num_iterations}] training...",
-              end="", flush=True)
+        _log(
+            f"[iter {it+1}/{cfg.num_iterations}] training ({cfg.train_steps_per_iter} steps)...")
         lp = lv = 0.0
         steps = cfg.train_steps_per_iter if len(
             buffer) >= cfg.batch_size else 0
@@ -172,12 +191,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         lp /= max(steps, 1)
         lv /= max(steps, 1)
         train_secs = time.time() - t_train
-        print(f" loss_p={lp:.3f} loss_v={lv:.3f} ({train_secs:.0f}s)", flush=True)
+        _log(f"[iter {it+1}/{cfg.num_iterations}] training done: "
+             f"loss_p={lp:.3f} loss_v={lv:.3f} ({train_secs:.0f}s)")
 
         # --- 3. accept/reject vs best (candidate rotates seats) ---
         t_eval_best = time.time()
-        print(f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games)...",
-              end="", flush=True)
+        _log(
+            f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games)...")
         cand = mcts_agent_mp(_mcts(model, env, cfg), temperature=0.1)
         champ = mcts_agent_mp(_mcts(best, env, cfg), temperature=0.1)
         ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
@@ -186,17 +206,18 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         if accepted:
             best.copy_weights_from(model)
         eval_best_secs = time.time() - t_eval_best
-        print(f" {100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'} ({eval_best_secs:.0f}s)",
-              flush=True)
+        _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
+             f"{100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'} ({eval_best_secs:.0f}s)")
 
         # --- 4. eval vs random ---
         t_eval_rand = time.time()
-        print(f"[iter {it+1}/{cfg.num_iterations}] eval vs random ({cfg.eval_random_games} games)...",
-              end="", flush=True)
+        _log(
+            f"[iter {it+1}/{cfg.num_iterations}] eval vs random ({cfg.eval_random_games} games)...")
         evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
                                          max_moves=cfg.max_game_moves)
         eval_rand_secs = time.time() - t_eval_rand
-        print(f" {100*evr.candidate_win_rate:.1f}% ({eval_rand_secs:.0f}s)", flush=True)
+        _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "
+             f"{100*evr.candidate_win_rate:.1f}% ({eval_rand_secs:.0f}s)")
 
         # --- 5. checkpoint ---
         model.save(os.path.join(checkpoint_dir, "latest.pt"))
@@ -215,8 +236,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         with open(os.path.join(checkpoint_dir, "meta.json"), "w") as f:
             json.dump({"completed_iterations": it + 1, "history": history}, f)
 
-        print(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
-              f"vs_best={100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'} | "
-              f"vs_rand={100*evr.candidate_win_rate:.1f}% | buf={len(buffer)} | {row['secs']:.0f}s",
-              flush=True)
+        _log(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
+             f"vs_best={100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'} | "
+             f"vs_rand={100*evr.candidate_win_rate:.1f}% | buf={len(buffer)} | "
+             f"sp={sp_secs:.0f}s train={train_secs:.0f}s "
+             f"eval_best={eval_best_secs:.0f}s eval_rand={eval_rand_secs:.0f}s | "
+             f"total={row['secs']:.0f}s")
     return history

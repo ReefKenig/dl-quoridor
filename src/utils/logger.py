@@ -44,6 +44,39 @@ from pathlib import Path
 module_logger = logging.getLogger(__name__)
 
 
+# ─── Lightweight progress logger ────────────────────────────────────────────
+# Use this for live heartbeats (every few games) that persist to disk even if
+# the Jupyter UI disconnects. The TrainingLogger class below is for structured
+# end-of-iteration metrics (wandb, CSV, JSON).
+
+def make_progress_logger(log_path):
+    """Return a `log(*parts)` fn: prints to console and appends to `log_path`.
+
+    Accepts one or more strings; multi-line messages (embedded "\\n" or extra
+    positional args) are timestamped per line so the on-disk log stays aligned.
+    Timestamps are in Israel time (Asia/Jerusalem).
+
+    Usage:
+        _log = make_progress_logger("runs/n2_9x9_v1/games.log")
+        _log("iteration 1 started")
+        _log("line1", "line2")  # each timestamped separately
+    """
+    from datetime import datetime, timezone, timedelta
+    IST = timezone(timedelta(hours=3))  # Israel Standard Time (UTC+3 in summer)
+
+    def log(*parts):
+        msg = "\n".join(str(p) for p in parts)
+        print(msg, flush=True)
+        ts = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_path, "a") as f:
+            for line in msg.splitlines() or [""]:
+                f.write(f"{ts} {line}\n")
+    return log
+
+
+# ─── Structured metrics logger ──────────────────────────────────────────────
+
+
 @dataclass
 class IterationMetrics:
     """All metrics recorded for a single training iteration."""

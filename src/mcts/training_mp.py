@@ -24,13 +24,20 @@ logger = logging.getLogger(__name__)
 
 
 def _make_progress_logger(log_path):
-    """Return a log(msg) fn that prints to console AND appends to log_path on
-    disk (timestamped). The disk copy keeps recording even if the Jupyter UI
-    disconnects, so progress can be tailed from a terminal."""
-    def _log(msg):
+    """Return a log(*parts) fn that prints to console AND appends to log_path on
+    disk. The disk copy keeps recording even if the Jupyter UI disconnects, so
+    progress can be tailed from a terminal.
+
+    Accepts one or more strings; multi-line messages (embedded "\\n" or extra
+    positional args) are timestamped per line so the on-disk log stays aligned.
+    """
+    def _log(*parts):
+        msg = "\n".join(str(p) for p in parts)
         print(msg, flush=True)
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
         with open(log_path, "a") as f:
-            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+            for line in msg.splitlines() or [""]:
+                f.write(f"{ts} {line}\n")
     return _log
 
 
@@ -110,6 +117,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
     # Disk log: keeps recording progress even if the Jupyter UI disconnects.
     _log = _make_progress_logger(os.path.join(checkpoint_dir, "games.log"))
+
+    _log(
+        "=" * 70,
+        f"training_loop_mp launched | N={cfg.num_players} board={cfg.board_size}x{cfg.board_size} "
+        f"| sims={cfg.mcts_simulations} games/iter={cfg.games_per_iteration} "
+        f"| parallel={cfg.parallel_self_play} workers={cfg.num_workers}",
+        f"checkpoint_dir={checkpoint_dir} | eval={cfg.eval_games}+{cfg.eval_random_games} "
+        f"| accept_margin={cfg.accept_margin} | buffer={cfg.replay_buffer_size}",
+        "=" * 70,
+    )
 
     # --- Resume from checkpoint if available ---
     start_iter = 0

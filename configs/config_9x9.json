@@ -23,6 +23,7 @@
         "weight_decay": 0.0001,
         "max_game_moves": 120,
         "win_threshold": 0.55,
+        "accept_margin": 0.03,
         "self_play_checkpoint_freq": 10,
         "reward_decay": 0.99
     },
@@ -34,14 +35,14 @@
         "n2": {
             "num_players": 2,
             "max_walls_per_player": 10,
-            "eval_games": 60,
+            "eval_games": 40,
             "eval_random_games": 20
         },
         "n4": {
             "num_players": 4,
             "max_walls_per_player": 5,
-            "eval_games": 80,
-            "eval_random_games": 24
+            "eval_games": 40,
+            "eval_random_games": 20
         }
     }
 }

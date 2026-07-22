@@ -158,6 +158,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
               flush=True)
 
         # --- 2. train ---
+        t_train = time.time()
         print(f"[iter {it+1}/{cfg.num_iterations}] training...",
               end="", flush=True)
         lp = lv = 0.0
@@ -170,9 +171,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             lv += b
         lp /= max(steps, 1)
         lv /= max(steps, 1)
-        print(f" loss_p={lp:.3f} loss_v={lv:.3f}", flush=True)
+        train_secs = time.time() - t_train
+        print(f" loss_p={lp:.3f} loss_v={lv:.3f} ({train_secs:.0f}s)", flush=True)
 
         # --- 3. accept/reject vs best (candidate rotates seats) ---
+        t_eval_best = time.time()
         print(f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games)...",
               end="", flush=True)
         cand = mcts_agent_mp(_mcts(model, env, cfg), temperature=0.1)
@@ -182,15 +185,18 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         accepted = ev.should_accept(threshold)
         if accepted:
             best.copy_weights_from(model)
-        print(f" {100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'}",
+        eval_best_secs = time.time() - t_eval_best
+        print(f" {100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'} ({eval_best_secs:.0f}s)",
               flush=True)
 
         # --- 4. eval vs random ---
+        t_eval_rand = time.time()
         print(f"[iter {it+1}/{cfg.num_iterations}] eval vs random ({cfg.eval_random_games} games)...",
               end="", flush=True)
         evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
                                          max_moves=cfg.max_game_moves)
-        print(f" {100*evr.candidate_win_rate:.1f}%", flush=True)
+        eval_rand_secs = time.time() - t_eval_rand
+        print(f" {100*evr.candidate_win_rate:.1f}% ({eval_rand_secs:.0f}s)", flush=True)
 
         # --- 5. checkpoint ---
         model.save(os.path.join(checkpoint_dir, "latest.pt"))
@@ -200,7 +206,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
                    win_vs_best=ev.candidate_win_rate, accepted=accepted,
                    win_vs_random=evr.candidate_win_rate, fair=fair,
-                   secs=time.time() - t0, buffer=len(buffer))
+                   secs=time.time() - t0, buffer=len(buffer),
+                   sp_secs=sp_secs, train_secs=train_secs,
+                   eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs)
         history.append(row)
 
         # Save resume metadata

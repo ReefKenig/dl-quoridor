@@ -65,8 +65,12 @@ class EvalResultMP:
 
 def evaluate_mp(env, candidate: AgentFn, opponent: AgentFn,
                 num_games: int = 24, max_moves: int = 400,
-                verbose: bool = False) -> EvalResultMP:
-    """Candidate rotates through seats 0..N-1; opponent fills the rest."""
+                verbose: bool = False, on_progress=None) -> EvalResultMP:
+    """Candidate rotates through seats 0..N-1; opponent fills the rest.
+
+    on_progress: optional callback(games_done, total, result) invoked every few
+    games so long eval phases don't look stuck (e.g. write to games.log).
+    """
     N = env.num_players
     res = EvalResultMP(num_players=N)
     for g in range(num_games):
@@ -94,10 +98,14 @@ def evaluate_mp(env, candidate: AgentFn, opponent: AgentFn,
             res.opponent_wins += 1
         if verbose and (g + 1) % max(1, num_games // 4) == 0:
             logger.info("  [%d/%d] %s", g + 1, num_games, res.summary())
+        # Progress heartbeat every 5 games (and on the last one).
+        if on_progress is not None and ((g + 1) % 5 == 0 or (g + 1) == num_games):
+            on_progress(g + 1, num_games, res)
     return res
 
 
 def evaluate_against_random_mp(env, candidate: AgentFn, num_games: int = 24,
-                               max_moves: int = 400) -> EvalResultMP:
+                               max_moves: int = 400, on_progress=None) -> EvalResultMP:
     return evaluate_mp(env, candidate, random_agent(),
-                       num_games=num_games, max_moves=max_moves)
+                       num_games=num_games, max_moves=max_moves,
+                       on_progress=on_progress)

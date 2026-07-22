@@ -3,6 +3,7 @@
     "board_size": 9,
     "mcts": {
         "num_simulations": 800,
+        "eval_simulations": 200,
         "c_puct": 1.41,
         "temperature": 1.0,
         "dirichlet_alpha": 0.15,

@@ -19,6 +19,7 @@ from src.mcts.self_play_mp import play_one_game
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.evaluator_mp import (evaluate_mp, evaluate_against_random_mp,
                                    mcts_agent_mp)
+from src.utils.logger import make_progress_logger
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,8 @@ class TrainingConfigMP:
     batch_size: int = 64
     train_steps_per_iter: int = 200
     mcts_simulations: int = 100
+    # 0 => use mcts_simulations; else lower for faster eval
+    eval_simulations: int = 0
     replay_buffer_size: int = 50_000
     max_game_moves: int = 300
     eval_games: int = 80
@@ -88,9 +91,9 @@ class ReplayBufferMP:
         return len(self.buffer)
 
 
-def _mcts(model, env, cfg):
+def _mcts(model, env, cfg, sims=None):
     return MCTSMaxN(
-        config=MCTSConfig(num_simulations=cfg.mcts_simulations,
+        config=MCTSConfig(num_simulations=sims or cfg.mcts_simulations,
                           dirichlet_epsilon=getattr(
                               cfg, 'mcts_dirichlet_epsilon', 0.25),
                           max_rollout_depth=cfg.max_game_moves),
@@ -116,7 +119,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     history = []
 
     # Disk log: keeps recording progress even if the Jupyter UI disconnects.
-    _log = _make_progress_logger(os.path.join(checkpoint_dir, "games.log"))
+    _log = make_progress_logger(os.path.join(checkpoint_dir, "games.log"))
 
     _log(
         "=" * 70,
@@ -168,6 +171,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 batch_size=cfg.inference_batch_size,
                 on_games_complete=_on_progress,
                 base_seed=it * cfg.num_workers,
+                log=_log,
             )
             buffer.add(sp_samples)
         else:
@@ -212,13 +216,25 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
              f"loss_p={lp:.3f} loss_v={lv:.3f} ({train_secs:.0f}s)")
 
         # --- 3. accept/reject vs best (candidate rotates seats) ---
+        # Eval uses fewer sims than self-play when eval_simulations is set:
+        # eval only measures relative strength, so it doesn't need full search
+        # depth. This does NOT weaken the trained model (self-play keeps full sims).
+        eval_sims = cfg.eval_simulations or cfg.mcts_simulations
         t_eval_best = time.time()
         _log(
-            f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games)...")
-        cand = mcts_agent_mp(_mcts(model, env, cfg), temperature=0.1)
-        champ = mcts_agent_mp(_mcts(best, env, cfg), temperature=0.1)
+            f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games, {eval_sims} sims)...")
+        cand = mcts_agent_mp(
+            _mcts(model, env, cfg, sims=eval_sims), temperature=0.1)
+        champ = mcts_agent_mp(
+            _mcts(best, env, cfg, sims=eval_sims), temperature=0.1)
+
+        def _eval_progress(done, total, r):
+            elapsed = time.time() - t_eval_best
+            _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
+                 f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
+
         ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
-                         max_moves=cfg.max_game_moves)
+                         max_moves=cfg.max_game_moves, on_progress=_eval_progress)
         accepted = ev.should_accept(threshold)
         if accepted:
             best.copy_weights_from(model)
@@ -229,9 +245,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         # --- 4. eval vs random ---
         t_eval_rand = time.time()
         _log(
-            f"[iter {it+1}/{cfg.num_iterations}] eval vs random ({cfg.eval_random_games} games)...")
+            f"[iter {it+1}/{cfg.num_iterations}] eval vs random ({cfg.eval_random_games} games, {eval_sims} sims)...")
+
+        def _eval_rand_progress(done, total, r):
+            elapsed = time.time() - t_eval_rand
+            _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random: "
+                 f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
+
         evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
-                                         max_moves=cfg.max_game_moves)
+                                         max_moves=cfg.max_game_moves,
+                                         on_progress=_eval_rand_progress)
         eval_rand_secs = time.time() - t_eval_rand
         _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "
              f"{100*evr.candidate_win_rate:.1f}% ({eval_rand_secs:.0f}s)")

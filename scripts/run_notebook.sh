@@ -49,7 +49,6 @@ fi
 #   --output : write the executed copy (with outputs) next to the logs
 CMD="$PYTHON -m jupyter nbconvert --to notebook --execute \
   --ExecutePreprocessor.timeout=-1 \
-  --ExecutePreprocessor.cwd='$RUN_DIR' \
   --output '$OUT_NB' \
   '$NOTEBOOK'"
 

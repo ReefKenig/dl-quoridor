@@ -68,7 +68,7 @@ echo "===================================="
 
 case "$MODE" in
   nohup)
-    nohup bash -c "$CMD" >>"$LOG" 2>&1 &
+    setsid bash -c "$CMD" >>"$LOG" 2>&1 &
     PID=$!
     echo "$PID" > "$LOG_DIR/notebook.pid"
     echo "Started (pid $PID). Tail with:  tail -f $LOG"

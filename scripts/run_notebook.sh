@@ -19,14 +19,15 @@
 
 set -euo pipefail
 
-# --- resolve project root (this script lives in scripts/) ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$PROJECT_DIR"
+# --- resolve working directory ---
+# Run from the caller's directory (the workspace root), NOT from the project dir.
+# The project (dl-quoridor/) is expected to be cloned alongside the notebook.
+RUN_DIR="${RUN_DIR:-$(pwd)}"
+cd "$RUN_DIR"
 
 # --- config (env-overridable) ---
 PYTHON="${PYTHON:-python3}"
-NOTEBOOK="${NOTEBOOK:-notebooks/train_9x9_n2.ipynb}"
+NOTEBOOK="${NOTEBOOK:-train_9x9_n2.ipynb}"
 MODE="${MODE:-nohup}"
 # Where logs/executed copy go. Derive a run tag from the notebook name.
 TAG="$(basename "$NOTEBOOK" .ipynb)"
@@ -48,6 +49,7 @@ fi
 #   --output : write the executed copy (with outputs) next to the logs
 CMD="$PYTHON -m jupyter nbconvert --to notebook --execute \
   --ExecutePreprocessor.timeout=-1 \
+  --ExecutePreprocessor.cwd='$RUN_DIR' \
   --output '$OUT_NB' \
   '$NOTEBOOK'"
 

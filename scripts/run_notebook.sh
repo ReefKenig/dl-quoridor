@@ -43,6 +43,89 @@ if [ ! -f "$NOTEBOOK" ]; then
   exit 1
 fi
 
+# --- GPU / orphan pre-flight -------------------------------------------------
+# The parallel self-play stack spawns many worker processes and one GPU-batcher
+# thread. If a previous run was HARD-killed (kernel kill / SIGKILL) mid-self-play
+# its finally: cleanup never ran, so worker processes are orphaned and leak CUDA
+# state. Enough orphans wedge the GPU, and then the very first CUDA call of the
+# next run hangs forever with no exception — which silently burns a full 5-hour
+# training slot. Catch that here, before we launch.
+#
+#   PREFLIGHT=on   (default) abort if a wedged GPU / leftover procs are detected
+#   PREFLIGHT=warn           print the warning but launch anyway
+#   PREFLIGHT=off            skip the check entirely
+#   PREFLIGHT_KILL=1         actively kill leftover GPU python procs, then continue
+PREFLIGHT="${PREFLIGHT:-on}"
+PREFLIGHT_KILL="${PREFLIGHT_KILL:-0}"
+
+preflight() {
+  [ "$PREFLIGHT" = "off" ] && return 0
+  command -v nvidia-smi >/dev/null 2>&1 || { echo "  [preflight] no nvidia-smi (CPU host?) — skipping GPU check"; return 0; }
+
+  echo "=== GPU pre-flight ==="
+  # Memory summary (used/total across all GPUs).
+  nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu \
+             --format=csv,noheader 2>/dev/null | sed 's/^/  gpu /' || true
+
+  # Leftover compute processes. On a box that runs one training at a time, ANY
+  # python compute process here before we launch is an orphan from a prior run.
+  local apps
+  apps="$(nvidia-smi --query-compute-apps=pid,process_name,used_memory \
+                     --format=csv,noheader 2>/dev/null || true)"
+  local py_pids
+  py_pids="$(echo "$apps" | grep -iE 'python' | awk -F',' '{gsub(/ /,"",$1); print $1}' | grep -E '^[0-9]+$' || true)"
+
+  if [ -z "$py_pids" ]; then
+    echo "  [preflight] no leftover GPU compute processes — clean. OK to launch."
+    echo "======================"
+    return 0
+  fi
+
+  echo "  [preflight] WARNING: leftover GPU compute process(es) detected:"
+  echo "$apps" | grep -iE 'python' | sed 's/^/    /' || true
+
+  if [ "$PREFLIGHT_KILL" = "1" ]; then
+    echo "  [preflight] PREFLIGHT_KILL=1 — terminating leftover PIDs: $py_pids"
+    # shellcheck disable=SC2086
+    kill $py_pids 2>/dev/null || true
+    sleep 5
+    # shellcheck disable=SC2086
+    kill -9 $py_pids 2>/dev/null || true
+    sleep 2
+    echo "  [preflight] done. Continuing launch."
+    echo "======================"
+    return 0
+  fi
+
+  echo "  These are almost certainly orphans from a hard-killed run and will"
+  echo "  wedge the GPU (the next run's first CUDA call hangs with no error)."
+  echo "  Fix, then re-launch:"
+  echo "      kill $py_pids           # or: PREFLIGHT_KILL=1 $0"
+  echo "      # if memory is still held with no owner:  sudo nvidia-smi --gpu-reset -i 0"
+  echo "  Override:  PREFLIGHT=warn $0   (launch anyway)   |   PREFLIGHT=off $0 (skip check)"
+  echo "======================"
+
+  if [ "$PREFLIGHT" = "warn" ]; then
+    echo "  [preflight] PREFLIGHT=warn — launching despite the warning."
+    return 0
+  fi
+  echo "ERROR: aborting launch to avoid burning a training slot on a wedged GPU." >&2
+  exit 1
+}
+
+# Don't double-launch the same notebook: if a previous nohup pid is still alive.
+PID_FILE="$LOG_DIR/notebook.pid"
+if [ -f "$PID_FILE" ]; then
+  OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
+  if [ -n "${OLD_PID:-}" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo "ERROR: a run for '$TAG' is already active (pid $OLD_PID). " >&2
+    echo "       Stop it first:  kill $OLD_PID" >&2
+    exit 1
+  fi
+fi
+
+preflight
+
 # nbconvert execution:
 #   --to notebook --execute : run every cell in order
 #   --ExecutePreprocessor.timeout=-1 : no per-cell timeout (training is long)

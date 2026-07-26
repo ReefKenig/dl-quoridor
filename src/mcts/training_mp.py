@@ -206,8 +206,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                          f"({elapsed:.0f}s, {rate*60:.1f} games/min)")
 
         sp_secs = time.time() - t0
+        # Win distribution across seats (None = draw/timeout). A healthy self-play
+        # iteration is roughly balanced; a lopsided split or all-draws is an early
+        # warning of seat bias or a degenerate policy.
+        win_dist = ", ".join(
+            f"{'draw' if w is None else f'P{w}'}={wins[w]}"
+            for w in sorted(wins, key=lambda k: (k is None, k)))
         _log(f"[iter {it+1}/{cfg.num_iterations}] self-play done: "
-             f"{cfg.games_per_iteration} games ({sp_secs:.0f}s)")
+             f"{cfg.games_per_iteration} games ({sp_secs:.0f}s) | wins: {win_dist}")
 
         # --- 2. train ---
         t_train = time.time()

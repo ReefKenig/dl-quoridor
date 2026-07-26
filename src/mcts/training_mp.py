@@ -175,6 +175,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 base_seed=it * cfg.num_workers,
                 log=_log,
             )
+            if not sp_samples:
+                # A zero-sample iteration means the parallel self-play stalled
+                # (almost always: the GPU inference thread died and workers hung
+                # until the queue timeout). Abort loudly instead of "training" on
+                # an empty buffer and silently advancing completed_iterations —
+                # the run can then be resumed from the last good checkpoint.
+                raise RuntimeError(
+                    f"[iter {it+1}] parallel self-play produced 0 samples — aborting "
+                    f"before empty training. Check {os.path.join(checkpoint_dir, 'games.log')} "
+                    f"for '[GPU INFERENCE] CRASHED' or '[WORKER … ] CRASHED'.")
             buffer.add(sp_samples)
         else:
             # Sequential self-play (original path)
@@ -294,8 +304,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             json.dump({"completed_iterations": it + 1, "history": history}, f)
 
         _log(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
-             f"vs_best={100*ev.candidate_win_rate:.1f}% {'ACCEPT' if accepted else 'reject'} | "
-             f"vs_rand={100*evr.candidate_win_rate:.1f}% | buf={len(buffer)} | "
+             f"vs_best={100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'} | "
+             f"vs_rand={100*evr_wr:.1f}% | buf={len(buffer)} | "
              f"sp={sp_secs:.0f}s train={train_secs:.0f}s "
              f"eval_best={eval_best_secs:.0f}s eval_rand={eval_rand_secs:.0f}s | "
              f"total={row['secs']:.0f}s")

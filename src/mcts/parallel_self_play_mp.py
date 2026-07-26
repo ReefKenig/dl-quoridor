@@ -36,7 +36,8 @@ import traceback
 import torch
 
 
-def _inference_worker(model, request_queue, response_queues, batch_size, stop_flag, log=print):
+def _inference_worker(model, request_queue, response_queues, batch_size, stop_flag,
+                      results_queue=None, log=print):
     """Drain requests, batch them, run one GPU forward pass, scatter replies.
 
     Each request is (worker_id, chw_tensor). Each reply is
@@ -44,6 +45,9 @@ def _inference_worker(model, request_queue, response_queues, batch_size, stop_fl
     Returns when it sees the "STOP" sentinel or on any unhandled exception.
     `log` is a callable(msg) used for progress (defaults to print; the training
     loop passes a disk-backed logger so GPU stats reach games.log too).
+    On any GPU failure it also pushes ("error", msg) onto `results_queue` so the
+    main loop aborts immediately (workers, in separate processes, cannot see
+    `stop_flag`) instead of blocking until the results-queue timeout.
     """
     try:
         import time
@@ -99,12 +103,22 @@ def _inference_worker(model, request_queue, response_queues, batch_size, stop_fl
             if stop_flag.is_set():
                 return
     except Exception as e:
-        log(f"[GPU INFERENCE] CRASHED: {e}\n{traceback.format_exc()}")
+        msg = f"[GPU INFERENCE] CRASHED: {e}\n{traceback.format_exc()}"
+        log(msg)
         stop_flag.set()
+        # Unblock the main loop right away — it is waiting on results_queue and
+        # would otherwise sit until the (multi-thousand-second) timeout, since
+        # the worker processes cannot observe stop_flag.
+        if results_queue is not None:
+            try:
+                results_queue.put(("error", f"GPU inference thread died: {e}"))
+            except Exception:
+                pass
 
 
 def _game_worker(worker_id, request_queue, response_queue, num_games,
-                 config_dict, results_queue, project_dir, seed):
+                 config_dict, results_queue, project_dir, seed,
+                 response_timeout=300.0):
     """Play `num_games` self-play games, deferring every leaf eval to the GPU."""
     try:
         os.chdir(project_dir)
@@ -135,7 +149,16 @@ def _game_worker(worker_id, request_queue, response_queue, num_games,
             # HWC numpy -> CHW float tensor, hand off to the GPU batcher.
             tensor = torch.from_numpy(env.state_to_tensor(state)).float().permute(2, 0, 1)
             request_queue.put((worker_id, tensor))
-            policy, value_vec = response_queue.get()
+            # Bounded wait: a single batched forward pass returns in well under a
+            # second, so any multi-minute stall means the inference thread died.
+            # Without a timeout the worker would block forever and the whole
+            # iteration would burn the full results-queue timeout producing nothing.
+            try:
+                policy, value_vec = response_queue.get(timeout=response_timeout)
+            except Exception:
+                raise RuntimeError(
+                    f"worker {worker_id}: no GPU response within {response_timeout:.0f}s "
+                    f"— inference batcher likely crashed (check games.log).")
             return np.asarray(policy), np.asarray(value_vec)
 
         mcts = MCTSMaxN(
@@ -167,7 +190,8 @@ def _game_worker(worker_id, request_queue, response_queue, num_games,
 
 def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
                                    batch_size=64, on_games_complete=None, base_seed=0,
-                                   worker_join_timeout=30.0, log=print):
+                                   worker_join_timeout=30.0, response_timeout=300.0,
+                                   log=print):
     """Generate one iteration of self-play data with batched GPU inference.
 
     Args:
@@ -185,6 +209,9 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         on_games_complete: optional callback(games_done, total_games, wins_dict).
         base_seed        : worker w is seeded base_seed + w for reproducibility.
         worker_join_timeout: max seconds to wait for each worker to exit (default 30).
+        response_timeout : max seconds a worker waits for a single GPU reply before
+                           treating the inference batcher as dead and crashing out
+                           (default 300). Prevents workers hanging indefinitely.
 
     Returns:
         (samples, wins) where samples is a flat list of (state_hwc, policy,
@@ -224,7 +251,8 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         p = ctx.Process(
             target=_game_worker,
             args=(i, request_queue, response_queues[i], games_for[i],
-                  config_dict, results_queue, project_dir, base_seed + i),
+                  config_dict, results_queue, project_dir, base_seed + i,
+                  response_timeout),
         )
         p.start()
         processes.append(p)
@@ -235,7 +263,8 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     stop_flag = threading.Event()
     inference_thread = threading.Thread(
         target=_inference_worker,
-        args=(model, request_queue, response_queues, batch_size, stop_flag, log),
+        args=(model, request_queue, response_queues, batch_size, stop_flag,
+              results_queue, log),
         daemon=True,
     )
     inference_thread.start()
@@ -244,6 +273,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     wins = {}
     games_done = 0
     workers_done = 0
+    inference_error = None
     # Timeout per message: scales with players (N=4 games much longer than N=2)
     # and sims. Untrained N=4 9×9 at 800 sims can take 40+ min for first game.
     queue_timeout = max(1800.0, total_games * 30.0 * cfg.num_players)
@@ -254,7 +284,9 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
             except Exception:
                 log(f"[PARALLEL-MP] WARNING: results queue timeout after {queue_timeout:.0f}s. "
                     f"Aborting ({workers_done}/{num_workers} workers done, "
-                    f"{games_done}/{total_games} games).")
+                    f"{games_done}/{total_games} games). The GPU inference thread is "
+                    f"likely wedged (no exception, no progress) — check nvidia-smi for "
+                    f"orphaned worker processes from a previously hard-killed run.")
                 break
             if msg[0] == "game":
                 _, _wid, game_samples, winner = msg
@@ -265,6 +297,13 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
                     on_games_complete(games_done, total_games, wins)
             elif msg[0] == "done":
                 workers_done += 1
+            elif msg[0] == "error":
+                # The GPU inference thread crashed and told us directly, so we
+                # don't have to wait out queue_timeout. Abort now and re-raise
+                # below (surfaces to the notebook, not just games.log).
+                inference_error = msg[1]
+                log(f"[PARALLEL-MP] ABORTING: {inference_error}")
+                break
     finally:
         # Graceful shutdown: signal workers to stop.
         request_queue.put("STOP")
@@ -287,6 +326,11 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         if inference_thread.is_alive():
             log("[PARALLEL-MP] WARNING: Inference thread did not exit after 5s "
                 "(daemon thread will be killed on shutdown).")
+
+    # A GPU inference failure is fatal for the whole iteration — re-raise so it
+    # surfaces to the caller/notebook instead of silently returning empty data.
+    if inference_error is not None:
+        raise RuntimeError(f"parallel self-play aborted: {inference_error}")
 
     if not samples:
         log("[PARALLEL-MP] WARNING: no samples generated — workers may have crashed.")

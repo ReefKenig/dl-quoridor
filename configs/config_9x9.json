@@ -31,7 +31,9 @@
     },
     "parallel": {
         "num_workers": 16,
-        "inference_batch_size": 64
+        "inference_batch_size": 64,
+        "parallel_self_play": true,
+        "parallel_eval": true
     },
     "variants": {
         "n2": {

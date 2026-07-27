@@ -8,9 +8,12 @@
 # resume logic (latest.pt + meta.json) means re-running picks up where it left.
 #
 # Usage:
-#   scripts/run_notebook.sh                                  # defaults: N=2
-#   NOTEBOOK=notebooks/train_9x9_n4.ipynb scripts/run_notebook.sh
-#   MODE=tmux scripts/run_notebook.sh                        # inside tmux instead
+#   cd dl-quoridor && git pull && git checkout dev
+#   scripts/run_notebook.sh n2        # N=2 9x9 training
+#   scripts/run_notebook.sh n4        # N=4 9x9 training
+#   MODE=tmux scripts/run_notebook.sh n2      # inside tmux instead of nohup
+#
+# There is NO default variant — you must pass n2 or n4 explicitly.
 #
 # Monitor:
 #   tail -f runs/<run_dir>/notebook.log
@@ -19,15 +22,28 @@
 
 set -euo pipefail
 
-# --- resolve working directory ---
-# Run from the caller's directory (the workspace root), NOT from the project dir.
-# The project (dl-quoridor/) is expected to be cloned alongside the notebook.
-RUN_DIR="${RUN_DIR:-$(pwd)}"
-cd "$RUN_DIR"
+# --- resolve repo root from THIS script's location, then run from there ---
+# Everything (notebooks/, runs/, configs/) is repo-relative — no sibling-clone model.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$REPO_ROOT"
+export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
+# --- required variant selector: n2 | n4 (NO default) ---
+VARIANT="${1:-}"
+case "$VARIANT" in
+  n2) NOTEBOOK="notebooks/train_9x9_n2.ipynb" ;;
+  n4) NOTEBOOK="notebooks/train_9x9_n4.ipynb" ;;
+  *)
+    echo "Usage: scripts/run_notebook.sh {n2|n4}   (no default)" >&2
+    echo "  n2  ->  notebooks/train_9x9_n2.ipynb" >&2
+    echo "  n4  ->  notebooks/train_9x9_n4.ipynb" >&2
+    exit 1
+    ;;
+esac
 
 # --- config (env-overridable) ---
 PYTHON="${PYTHON:-python3}"
-NOTEBOOK="${NOTEBOOK:-train_9x9_n2.ipynb}"
 MODE="${MODE:-nohup}"
 # Where logs/executed copy go. Derive a run tag from the notebook name.
 TAG="$(basename "$NOTEBOOK" .ipynb)"

@@ -51,6 +51,9 @@ class TrainingConfigMP:
     games_per_iteration: int = 40
     batch_size: int = 64
     train_steps_per_iter: int = 200
+    # Skip training until the buffer holds at least this many samples (0 = off).
+    # Guards against overfitting train_steps to a tiny early, mostly-draw buffer.
+    warmup_min_samples: int = 0
     mcts_simulations: int = 100
     # 0 => use mcts_simulations; else lower for faster eval
     eval_simulations: int = 0
@@ -68,6 +71,11 @@ class TrainingConfigMP:
     parallel_self_play: bool = False
     num_workers: int = 8
     inference_batch_size: int = 64
+    # Leaf-parallel MCTS in the spawned self-play/eval workers: leaves collected per
+    # GPU forward (>1 breaks the batch<=num_workers ceiling) + virtual loss to
+    # diversify the concurrent tree walks. leaf_batch=1 keeps the one-leaf path.
+    leaf_batch: int = 1
+    virtual_loss: float = 1.0
     # GPU-batched parallel evaluation (candidate/champion served by one batcher).
     # Reuses num_workers / inference_batch_size. Opt-in; sequential eval otherwise.
     parallel_eval: bool = False
@@ -138,6 +146,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         f"| parallel={cfg.parallel_self_play} workers={cfg.num_workers}",
         f"checkpoint_dir={checkpoint_dir} | eval={cfg.eval_games}+{cfg.eval_random_games} "
         f"| accept_margin={cfg.accept_margin} | buffer={cfg.replay_buffer_size}",
+        f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
+        f"explore_moves={cfg.explore_moves} warmup={cfg.warmup_min_samples} "
+        f"leaf_batch={cfg.leaf_batch} vloss={cfg.virtual_loss}",
         "=" * 70,
     )
 
@@ -194,16 +205,19 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     f"before empty training. Check {os.path.join(checkpoint_dir, 'games.log')} "
                     f"for '[GPU INFERENCE] CRASHED' or '[WORKER … ] CRASHED'.")
             buffer.add(sp_samples)
+            n_new_samples = len(sp_samples)
         else:
             # Sequential self-play (original path)
             sp_mcts = _mcts(model, env, cfg)
             wins = {}
+            n_new_samples = 0
             for g in range(cfg.games_per_iteration):
                 samples, w = play_one_game(env, sp_mcts, cfg.num_players,
                                            max_moves=cfg.max_game_moves,
                                            discount=cfg.discount,
                                            explore_moves=cfg.explore_moves)
                 buffer.add(samples)
+                n_new_samples += len(samples)
                 wins[w] = wins.get(w, 0) + 1
                 # Log every 5 games so long iterations don't look stuck.
                 if (g + 1) % 5 == 0 or (g + 1) == cfg.games_per_iteration:
@@ -220,16 +234,34 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         win_dist = ", ".join(
             f"{'draw' if w is None else f'P{w}'}={wins[w]}"
             for w in sorted(wins, key=lambda k: (k is None, k)))
+        # Quoridor has no true draws — a None winner is a timeout at max_game_moves,
+        # which yields an all-zero value target (weak learning signal). Track the rate
+        # as a watchdog. avg_len divides by 2 because augment_mp doubles each game's
+        # samples (original + mirror).
+        draws = wins.get(None, 0)
+        draw_rate = draws / cfg.games_per_iteration if cfg.games_per_iteration else 0.0
+        avg_len = (n_new_samples / 2.0 / cfg.games_per_iteration
+                   if cfg.games_per_iteration else 0.0)
         _log(f"[iter {it+1}/{cfg.num_iterations}] self-play done: "
-             f"{cfg.games_per_iteration} games ({sp_secs:.0f}s) | wins: {win_dist}")
+             f"{cfg.games_per_iteration} games ({sp_secs:.0f}s) | wins: {win_dist} "
+             f"| draw_rate={100*draw_rate:.0f}% avg_len~{avg_len:.0f}")
+        if draw_rate > 0.20:
+            _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: draw_rate "
+                 f"{100*draw_rate:.0f}% > 20% — games timing out at "
+                 f"max_game_moves={cfg.max_game_moves} (weak value signal).")
 
         # --- 2. train ---
         t_train = time.time()
         _log(
             f"[iter {it+1}/{cfg.num_iterations}] training ({cfg.train_steps_per_iter} steps)...")
         lp = lv = 0.0
-        steps = cfg.train_steps_per_iter if len(
-            buffer) >= cfg.batch_size else 0
+        warmup = max(cfg.batch_size, cfg.warmup_min_samples)
+        if len(buffer) >= warmup:
+            steps = cfg.train_steps_per_iter
+        else:
+            steps = 0
+            _log(f"[iter {it+1}/{cfg.num_iterations}] training skipped — "
+                 f"buffer {len(buffer)} < warmup {warmup} (filling)")
         for _ in range(steps):
             S, P, V = buffer.sample_batch(cfg.batch_size)
             a, b = model.train_step(S, P, V)
@@ -250,7 +282,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         # columns, both updated in place below as eval progresses. An eval-phase
         # interruption therefore costs only that iteration's eval — the ~1h of
         # self-play + training is already durable and resume skips to the next iter.
-        run_eval = (it + 1) % cfg.eval_every == 0 or (it + 1) == cfg.num_iterations
+        run_eval = (it + 1) % cfg.eval_every == 0 or (it +
+                                                      1) == cfg.num_iterations
         eval_sims = cfg.eval_simulations or cfg.mcts_simulations
         accepted = False
         eval_best_secs = 0.0
@@ -270,7 +303,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
         def _write_meta():
             with open(os.path.join(checkpoint_dir, "meta.json"), "w") as f:
-                json.dump({"completed_iterations": it + 1, "history": history}, f)
+                json.dump({"completed_iterations": it +
+                          1, "history": history}, f)
 
         _write_meta()  # durable resume point: self-play + training now survive a crash
 
@@ -288,6 +322,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),
                 "eval_simulations": eval_sims,
                 "max_game_moves": cfg.max_game_moves,
+                "leaf_batch": cfg.leaf_batch,
+                "virtual_loss": cfg.virtual_loss,
             }
             t_eval_best = time.time()
             _log(
@@ -359,7 +395,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
         _log(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
              f"vs_best={100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'} | "
-             f"vs_rand={100*evr_wr:.1f}% | buf={len(buffer)} | "
+             f"vs_rand={100*evr_wr:.1f}% | draw={100*draw_rate:.0f}% | buf={len(buffer)} | "
              f"sp={sp_secs:.0f}s train={train_secs:.0f}s "
              f"eval_best={eval_best_secs:.0f}s eval_rand={eval_rand_secs:.0f}s | "
              f"total={row['secs']:.0f}s")

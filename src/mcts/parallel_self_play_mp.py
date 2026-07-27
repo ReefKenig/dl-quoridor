@@ -1,4 +1,4 @@
-"""
+﻿"""
 Batched parallel self-play for the vector-maxⁿ (_mp) stack.
 
 Motivation — GPU starvation
@@ -21,6 +21,7 @@ import sys
 import traceback
 
 from src.mcts.batched_inference_mp import (make_batched_evaluate,
+                                           make_batched_evaluate_many,
                                            run_batched_inference)
 
 
@@ -56,16 +57,26 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
             max_turns=config_dict["max_turns"],
             max_walls_per_player=config_dict["max_walls_per_player"],
         )
-        batched_evaluate = make_batched_evaluate(
-            worker_id, request_queue, response_queue, env, response_timeout)
+        # leaf_batch>1 => collect several leaves per MCTS wave and ship them in one
+        # message (make_batched_evaluate_many); leaf_batch=1 keeps the one-leaf path.
+        leaf_batch = int(config_dict.get("leaf_batch", 1))
+        virtual_loss = float(config_dict.get("virtual_loss", 1.0))
+        if leaf_batch > 1:
+            evaluate_fn = make_batched_evaluate_many(
+                worker_id, request_queue, response_queue, env, response_timeout)
+        else:
+            evaluate_fn = make_batched_evaluate(
+                worker_id, request_queue, response_queue, env, response_timeout)
 
         mcts = MCTSMaxN(
             config=MCTSConfig(
                 num_simulations=config_dict["mcts_simulations"],
                 dirichlet_epsilon=config_dict.get("mcts_dirichlet_epsilon", 0.25),
                 max_rollout_depth=config_dict["max_game_moves"],
+                leaf_batch=leaf_batch,
+                virtual_loss=virtual_loss,
             ),
-            evaluate_fn=batched_evaluate,  # model_id defaults to 0
+            evaluate_fn=evaluate_fn,  # model_id defaults to 0
             num_players=N,
         )
 
@@ -132,6 +143,8 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         "discount": cfg.discount,
         "explore_moves": cfg.explore_moves,
         "max_game_moves": cfg.max_game_moves,
+        "leaf_batch": getattr(cfg, "leaf_batch", 1),
+        "virtual_loss": getattr(cfg, "virtual_loss", 1.0),
     }
     payloads = [(games_for[i], config_dict, base_seed + i) for i in range(n_workers)]
 

@@ -49,6 +49,7 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
             m.network.eval()
         batches_done = 0
         evals_done = 0
+        messages_done = 0
         t_start = time.time()
 
         while True:
@@ -75,30 +76,60 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
                     break
                 batch.append(req)
 
-            # Bucket rows by model_id so each model runs a single forward pass,
-            # then scatter replies back in the workers' original positions.
+            # Each request carries a numpy array: a single (C,H,W) leaf or a stacked
+            # (b,C,H,W) batch of leaves from one worker (leaf-parallel). Sending numpy
+            # (not torch tensors) keeps queue pickling plain — no torch shared-memory
+            # IPC (torch_shm_manager), which is both fragile and slower. Expand every
+            # request into rows, run one forward per model_id, then regroup per request.
+            rows = []                 # (model_id, chw_numpy)
+            n_rows_per_req = []       # leaves contributed by each request
+            for (_w_id, model_id, arr) in batch:
+                if arr.ndim == 4:
+                    for k in range(arr.shape[0]):
+                        rows.append((model_id, arr[k]))
+                    n_rows_per_req.append(arr.shape[0])
+                else:
+                    rows.append((model_id, arr))
+                    n_rows_per_req.append(1)
+
             by_model = {}
-            for pos, (_w_id, model_id, tensor) in enumerate(batch):
-                by_model.setdefault(model_id, []).append((pos, tensor))
-            replies = [None] * len(batch)
-            for model_id, rows in by_model.items():
-                stacked = torch.stack([t for (_pos, t) in rows]).to(models[model_id].device)
-                policies, values = models[model_id].predict_batch(stacked)  # (b,A),(b,N)
+            for pos, (model_id, t) in enumerate(rows):
+                by_model.setdefault(model_id, []).append((pos, t))
+            row_replies = [None] * len(rows)
+            for model_id, mrows in by_model.items():
+                stacked = torch.from_numpy(
+                    np.stack([t for (_pos, t) in mrows])).to(models[model_id].device)
+                policies, values = models[model_id].predict_batch(
+                    stacked)  # (b,A),(b,N)
                 policies = policies.cpu().numpy()
                 values = values.cpu().numpy()
-                for j, (pos, _t) in enumerate(rows):
-                    replies[pos] = (policies[j], values[j])
-            for pos, (w_id, _model_id, _tensor) in enumerate(batch):
-                response_queues[w_id].put(replies[pos])
+                for j, (pos, _t) in enumerate(mrows):
+                    row_replies[pos] = (policies[j], values[j])
+
+            # Regroup rows back to their originating request; a stacked (4-dim)
+            # request gets a single LIST reply, a single request gets one tuple.
+            cursor = 0
+            for req_i, (w_id, _model_id, arr) in enumerate(batch):
+                n = n_rows_per_req[req_i]
+                if arr.ndim == 4:
+                    response_queues[w_id].put(row_replies[cursor:cursor + n])
+                else:
+                    response_queues[w_id].put(row_replies[cursor])
+                cursor += n
 
             batches_done += 1
-            evals_done += len(batch)
-            if evals_done % 50_000 < len(batch):
+            n_leaves = len(rows)
+            evals_done += n_leaves
+            messages_done += len(batch)
+            if evals_done % 50_000 < n_leaves:
                 elapsed = time.time() - t_start
                 rate = evals_done / elapsed if elapsed > 0 else 0
+                msg_rate = messages_done / elapsed if elapsed > 0 else 0
                 avg_batch = evals_done / batches_done
+                leaves_per_msg = evals_done / messages_done if messages_done else 0
                 log(f"  [GPU] {evals_done:,} evals ({batches_done} batches, "
-                    f"avg {avg_batch:.0f}/batch, {rate:.0f} evals/s, {elapsed:.0f}s)")
+                    f"avg {avg_batch:.0f}/batch, {rate:.0f} evals/s, "
+                    f"{msg_rate:.0f} msg/s, {leaves_per_msg:.1f} leaves/msg, {elapsed:.0f}s)")
 
             if stop_flag.is_set():
                 return
@@ -126,8 +157,9 @@ def make_batched_evaluate(worker_id, request_queue, response_queue, env,
     and burning the whole results-queue timeout.
     """
     def batched_evaluate(state, model_id=0):
-        tensor = torch.from_numpy(env.state_to_tensor(state)).float().permute(2, 0, 1)
-        request_queue.put((worker_id, model_id, tensor))
+        chw = np.ascontiguousarray(
+            env.state_to_tensor(state).transpose(2, 0, 1), dtype=np.float32)
+        request_queue.put((worker_id, model_id, chw))
         try:
             policy, value_vec = response_queue.get(timeout=response_timeout)
         except Exception:
@@ -136,6 +168,30 @@ def make_batched_evaluate(worker_id, request_queue, response_queue, env,
                 f"— inference batcher likely crashed (check games.log).")
         return np.asarray(policy), np.asarray(value_vec)
     return batched_evaluate
+
+
+def make_batched_evaluate_many(worker_id, request_queue, response_queue, env,
+                               response_timeout=300.0):
+    """Build the leaf-parallel `evaluate_many(states, model_id=0)` a worker hands to
+    its MCTS. Stacks a LIST of states into one (b, C, H, W) request, ships it as a
+    single queue message, and blocks (bounded) for the batcher's list reply. Used
+    when leaf_batch > 1: each MCTS wave submits its leaves in one round-trip instead
+    of one per leaf, which is what actually fills the GPU.
+    """
+    def evaluate_many(states, model_id=0):
+        stacked = np.ascontiguousarray(
+            np.stack([env.state_to_tensor(s).transpose(2, 0, 1) for s in states]),
+            dtype=np.float32)   # (b, C, H, W)
+        request_queue.put((worker_id, model_id, stacked))
+        try:
+            replies = response_queue.get(
+                timeout=response_timeout)  # list of (p, v)
+        except Exception:
+            raise RuntimeError(
+                f"worker {worker_id}: no GPU response within {response_timeout:.0f}s "
+                f"— inference batcher likely crashed (check games.log).")
+        return [(np.asarray(p), np.asarray(v)) for (p, v) in replies]
+    return evaluate_many
 
 
 def run_batched_inference(models, worker_target, per_worker_payloads, batch_size,
@@ -167,7 +223,8 @@ def run_batched_inference(models, worker_target, per_worker_payloads, batch_size
     project_dir = os.getcwd()
     existing = os.environ.get("PYTHONPATH", "")
     if project_dir not in existing:
-        os.environ["PYTHONPATH"] = project_dir + (os.pathsep + existing if existing else "")
+        os.environ["PYTHONPATH"] = project_dir + \
+            (os.pathsep + existing if existing else "")
 
     ctx = mp.get_context("spawn")
     request_queue = ctx.Queue()

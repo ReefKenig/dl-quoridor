@@ -23,6 +23,7 @@ import traceback
 from functools import partial
 
 from src.mcts.batched_inference_mp import (make_batched_evaluate,
+                                           make_batched_evaluate_many,
                                            run_batched_inference)
 from src.mcts.evaluator_mp import EvalResultMP
 
@@ -52,8 +53,16 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
             max_turns=config_dict["max_turns"],
             max_walls_per_player=config_dict["max_walls_per_player"],
         )
-        batched_evaluate = make_batched_evaluate(
-            worker_id, request_queue, response_queue, env, response_timeout)
+        # leaf_batch>1 => leaf-parallel eval (waves of leaves per GPU forward); the
+        # candidate (model_id 0) and champion (model_id 1) share one batcher.
+        leaf_batch = int(config_dict.get("leaf_batch", 1))
+        virtual_loss = float(config_dict.get("virtual_loss", 1.0))
+        if leaf_batch > 1:
+            evaluate_fn = make_batched_evaluate_many(
+                worker_id, request_queue, response_queue, env, response_timeout)
+        else:
+            evaluate_fn = make_batched_evaluate(
+                worker_id, request_queue, response_queue, env, response_timeout)
 
         def _make_mcts(model_id):
             return MCTSMaxN(
@@ -61,8 +70,10 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
                     num_simulations=config_dict["eval_simulations"],
                     dirichlet_epsilon=0.0,  # deterministic eval — no exploration noise
                     max_rollout_depth=config_dict["max_game_moves"],
+                    leaf_batch=leaf_batch,
+                    virtual_loss=virtual_loss,
                 ),
-                evaluate_fn=partial(batched_evaluate, model_id=model_id),
+                evaluate_fn=partial(evaluate_fn, model_id=model_id),
                 num_players=N,
             )
 

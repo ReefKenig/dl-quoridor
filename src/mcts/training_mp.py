@@ -233,13 +233,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         _log(f"[iter {it+1}/{cfg.num_iterations}] training done: "
              f"loss_p={lp:.3f} loss_v={lv:.3f} ({train_secs:.0f}s)")
 
-        # --- 3. accept/reject vs best (candidate rotates seats) ---
-        # Eval uses fewer sims than self-play when eval_simulations is set:
-        # eval only measures relative strength, so it doesn't need full search
-        # depth. This does NOT weaken the trained model (self-play keeps full sims).
-        # eval_every: skip eval on most iterations to save time (eval is expensive).
-        run_eval = (it + 1) % cfg.eval_every == 0 or (it +
-                                                      1) == cfg.num_iterations
+        # --- 2b. Checkpoint immediately after training, BEFORE eval. ---
+        # Eval is a long (~hours), sequential, best-effort phase. If the process
+        # dies during it we must NOT lose the self-play + training work, so we
+        # persist the trained weights and advance completed_iterations here. The
+        # model is not modified during eval, so latest.pt saved now == saved after
+        # eval. Eval only affects best.pt (the gating champion) and this row's eval
+        # columns, both updated in place below as eval progresses. An eval-phase
+        # interruption therefore costs only that iteration's eval — the ~1h of
+        # self-play + training is already durable and resume skips to the next iter.
+        run_eval = (it + 1) % cfg.eval_every == 0 or (it + 1) == cfg.num_iterations
         eval_sims = cfg.eval_simulations or cfg.mcts_simulations
         accepted = False
         eval_best_secs = 0.0
@@ -247,6 +250,27 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         ev_wr = 0.0
         evr_wr = 0.0
 
+        model.save(os.path.join(checkpoint_dir, "latest.pt"))
+        row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
+                   win_vs_best=ev_wr, accepted=accepted,
+                   win_vs_random=evr_wr, fair=fair,
+                   secs=time.time() - t0, buffer=len(buffer),
+                   sp_secs=sp_secs, train_secs=train_secs,
+                   eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,
+                   eval_done=not run_eval)
+        history.append(row)
+
+        def _write_meta():
+            with open(os.path.join(checkpoint_dir, "meta.json"), "w") as f:
+                json.dump({"completed_iterations": it + 1, "history": history}, f)
+
+        _write_meta()  # durable resume point: self-play + training now survive a crash
+
+        # --- 3. accept/reject vs best (candidate rotates seats) — best-effort ---
+        # Eval uses fewer sims than self-play when eval_simulations is set:
+        # eval only measures relative strength, so it doesn't need full search
+        # depth. This does NOT weaken the trained model (self-play keeps full sims).
+        # eval_every: skip eval on most iterations to save time (eval is expensive).
         if run_eval:
             t_eval_best = time.time()
             _log(
@@ -264,12 +288,18 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
                              max_moves=cfg.max_game_moves, on_progress=_eval_progress)
             accepted = ev.should_accept(threshold)
-            if accepted:
-                best.copy_weights_from(model)
             eval_best_secs = time.time() - t_eval_best
             ev_wr = ev.candidate_win_rate
+            if accepted:
+                best.copy_weights_from(model)
+                best.save(os.path.join(checkpoint_dir, "best.pt"))
             _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
                  f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'} ({eval_best_secs:.0f}s)")
+            # Persist the accept/reject before eval-vs-random, so best.pt and the
+            # row's `accepted` stay consistent even if the next phase is interrupted.
+            row.update(win_vs_best=ev_wr, accepted=accepted,
+                       eval_best_secs=eval_best_secs, secs=time.time() - t0)
+            _write_meta()
 
             # --- 4. eval vs random ---
             t_eval_rand = time.time()
@@ -288,26 +318,12 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             evr_wr = evr.candidate_win_rate
             _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "
                  f"{100*evr_wr:.1f}% ({eval_rand_secs:.0f}s)")
+            row.update(win_vs_random=evr_wr, eval_rand_secs=eval_rand_secs,
+                       secs=time.time() - t0, eval_done=True)
+            _write_meta()
         else:
             _log(
                 f"[iter {it+1}/{cfg.num_iterations}] eval skipped (eval_every={cfg.eval_every})")
-
-        # --- 5. checkpoint ---
-        model.save(os.path.join(checkpoint_dir, "latest.pt"))
-        if accepted:
-            best.save(os.path.join(checkpoint_dir, "best.pt"))
-
-        row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
-                   win_vs_best=ev_wr, accepted=accepted,
-                   win_vs_random=evr_wr, fair=fair,
-                   secs=time.time() - t0, buffer=len(buffer),
-                   sp_secs=sp_secs, train_secs=train_secs,
-                   eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs)
-        history.append(row)
-
-        # Save resume metadata
-        with open(os.path.join(checkpoint_dir, "meta.json"), "w") as f:
-            json.dump({"completed_iterations": it + 1, "history": history}, f)
 
         _log(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
              f"vs_best={100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'} | "

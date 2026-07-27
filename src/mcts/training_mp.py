@@ -17,6 +17,7 @@ import numpy as np
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
+from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
 from src.mcts.evaluator_mp import (evaluate_mp, evaluate_against_random_mp,
                                    mcts_agent_mp)
 from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
@@ -67,6 +68,17 @@ class TrainingConfigMP:
     discount: float = 0.97
     explore_moves: int = 15
     mcts_dirichlet_epsilon: float = 0.25
+    # --- self-play engine selector ---
+    # "auto" (default) => derive from parallel_self_play (back-compat: parallel if
+    # True else sequential). Explicit values override:
+    #   "sequential" — one game at a time, no batching.
+    #   "parallel"   — K worker processes + shared GPU batcher (leaf-parallel).
+    #   "vectorized" — in-process, G games share one predict_batch (Option B;
+    #                  exact sequential MCTS per game, no straggler tail).
+    self_play_mode: str = "auto"
+    # Games run concurrently by the vectorized engine (GPU batch width).
+    # 0 => driver default (min(games_per_iteration, 64)).
+    vec_games: int = 0
     # --- parallel self-play ---
     parallel_self_play: bool = False
     num_workers: int = 8
@@ -139,11 +151,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     # Disk log: keeps recording progress even if the Jupyter UI disconnects.
     _log = make_progress_logger(os.path.join(checkpoint_dir, "games.log"))
 
+    _sp_mode = getattr(cfg, "self_play_mode", "auto")
+    if _sp_mode == "auto":
+        _sp_mode = "parallel" if cfg.parallel_self_play else "sequential"
     _log(
         "=" * 70,
         f"training_loop_mp launched | N={cfg.num_players} board={cfg.board_size}x{cfg.board_size} "
         f"| sims={cfg.mcts_simulations} games/iter={cfg.games_per_iteration} "
-        f"| parallel={cfg.parallel_self_play} workers={cfg.num_workers}",
+        f"| self_play={_sp_mode} workers={cfg.num_workers} vec_games={cfg.vec_games}",
         f"checkpoint_dir={checkpoint_dir} | eval={cfg.eval_games}+{cfg.eval_random_games} "
         f"| accept_margin={cfg.accept_margin} | buffer={cfg.replay_buffer_size}",
         f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
@@ -179,12 +194,36 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
              f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims)...")
 
-        if cfg.parallel_self_play:
+        # Resolve the self-play engine. "auto" preserves the old bool behaviour.
+        sp_mode = getattr(cfg, "self_play_mode", "auto")
+        if sp_mode == "auto":
+            sp_mode = "parallel" if cfg.parallel_self_play else "sequential"
+
+        def _on_progress(done, total, w):
+            if done % 5 == 0 or done == total:
+                _log(
+                    f"[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...")
+
+        if sp_mode == "vectorized":
+            # In-process vectorized self-play (Option B): G games share one
+            # predict_batch; exact sequential MCTS per game.
+            sp_samples, wins = generate_vectorized_self_play_mp(
+                model, cfg,
+                total_games=cfg.games_per_iteration,
+                vec_games=(cfg.vec_games or None),
+                batch_size=cfg.inference_batch_size,
+                on_games_complete=_on_progress,
+                base_seed=it * cfg.games_per_iteration,
+                log=_log,
+            )
+            if not sp_samples:
+                raise RuntimeError(
+                    f"[iter {it+1}] vectorized self-play produced 0 samples — "
+                    f"aborting before empty training.")
+            buffer.add(sp_samples)
+            n_new_samples = len(sp_samples)
+        elif sp_mode == "parallel":
             # GPU-batched parallel self-play
-            def _on_progress(done, total, w):
-                if done % 5 == 0 or done == total:
-                    _log(
-                        f"[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...")
             sp_samples, wins = generate_parallel_self_play_mp(
                 model, cfg,
                 num_workers=cfg.num_workers,

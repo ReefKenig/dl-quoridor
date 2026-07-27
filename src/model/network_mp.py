@@ -5,6 +5,7 @@ NO sign-flipping anywhere. Reduces to the scalar 2p net only in interpretation,
 not in shape: at num_players=2 the head outputs 2 numbers, not 1.
 """
 import logging
+from contextlib import nullcontext
 from typing import Tuple
 
 import numpy as np
@@ -14,6 +15,17 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 logger = logging.getLogger(__name__)
+
+# Blackwell / Ampere+: TF32 matmul+conv is a large speedup over strict fp32 with
+# negligible accuracy loss, and is batch-size agnostic. Enabled once at import,
+# guarded so CPU-only hosts / non-CUDA builds are unaffected.
+# NOTE: torch.backends.cudnn.benchmark is intentionally left OFF. Leaf-parallel
+# self-play feeds VARIABLE batch sizes (wave sizes shrink on collisions), which
+# would make benchmark re-autotune kernels on nearly every forward — a net loss,
+# unlike the batch-size-agnostic TF32 flags.
+if torch.cuda.is_available():
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
 
 
 class ResidualBlock(nn.Module):
@@ -93,15 +105,24 @@ class QuoridorModelMP:
         self.board_size = board_size
         self.action_space_size = action_space_size
 
+    def _autocast(self):
+        """bf16 autocast on CUDA, no-op on CPU. Only the network forward is wrapped;
+        outputs are cast back to fp32 before leaving the model. log_softmax runs in
+        fp32 under autocast automatically, so policy precision is preserved."""
+        if self.device.type == "cuda":
+            return torch.autocast("cuda", dtype=torch.bfloat16)
+        return nullcontext()
+
     def predict(self, state_tensor: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Returns (policy (A,), value (num_players,))."""
         self.network.eval()
         with torch.no_grad():
             x = torch.from_numpy(state_tensor).float().permute(
                 2, 0, 1).unsqueeze(0).to(self.device)
-            log_policy, value = self.network(x)
-            policy = torch.exp(log_policy).squeeze(0).cpu().numpy()
-            value_vec = value.squeeze(0).cpu().numpy()   # (num_players,)
+            with self._autocast():
+                log_policy, value = self.network(x)
+            policy = torch.exp(log_policy.float()).squeeze(0).cpu().numpy()
+            value_vec = value.float().squeeze(0).cpu().numpy()   # (num_players,)
         return policy, value_vec
 
     def train_step(self, states, target_policies, target_values):
@@ -125,8 +146,9 @@ class QuoridorModelMP:
         """batch_tensor: (B, C, H, W) on device -> (policies (B,A), values (B,N))."""
         self.network.eval()
         with torch.no_grad():
-            log_policy, value = self.network(batch_tensor)
-            return torch.exp(log_policy), value
+            with self._autocast():
+                log_policy, value = self.network(batch_tensor)
+            return torch.exp(log_policy.float()), value.float()
 
     def save(self, path):
         torch.save({"network_state": self.network.state_dict(),

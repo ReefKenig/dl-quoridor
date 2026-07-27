@@ -191,7 +191,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 total_games=cfg.games_per_iteration,
                 batch_size=cfg.inference_batch_size,
                 on_games_complete=_on_progress,
-                base_seed=it * cfg.num_workers,
+                # Seeds are per-game (base_seed + game_index, index in
+                # [0, games_per_iteration)); stride by games_per_iteration so
+                # iterations never reuse each other's seeds.
+                base_seed=it * cfg.games_per_iteration,
                 log=_log,
             )
             if not sp_samples:

@@ -158,7 +158,10 @@ class MCTSMaxN:
             node = node.parent
 
     def _add_dirichlet_noise(self, root):
-        if not root.children:
+        # epsilon <= 0 disables exploration noise entirely (used during eval so
+        # strength is measured deterministically at true best-play). Short-circuit
+        # so we don't even draw from the RNG — the mix below would be a no-op anyway.
+        if self.config.dirichlet_epsilon <= 0 or not root.children:
             return
         actions = list(root.children.keys())
         noise = np.random.dirichlet(

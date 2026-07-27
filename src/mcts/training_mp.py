@@ -19,6 +19,8 @@ from src.mcts.self_play_mp import play_one_game
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.evaluator_mp import (evaluate_mp, evaluate_against_random_mp,
                                    mcts_agent_mp)
+from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
+                                       evaluate_against_random_parallel_mp)
 from src.utils.logger import make_progress_logger
 
 logger = logging.getLogger(__name__)
@@ -66,6 +68,9 @@ class TrainingConfigMP:
     parallel_self_play: bool = False
     num_workers: int = 8
     inference_batch_size: int = 64
+    # GPU-batched parallel evaluation (candidate/champion served by one batcher).
+    # Reuses num_workers / inference_batch_size. Opt-in; sequential eval otherwise.
+    parallel_eval: bool = False
     # --- env geometry (needed by parallel workers to rebuild env) ---
     board_size: int = 5
     max_walls_per_player: int = 3
@@ -93,11 +98,14 @@ class ReplayBufferMP:
         return len(self.buffer)
 
 
-def _mcts(model, env, cfg, sims=None):
+def _mcts(model, env, cfg, sims=None, dirichlet_epsilon=None):
+    # dirichlet_epsilon override: pass 0.0 for eval (deterministic best-play, no
+    # exploration noise); leave None for self-play to use the cfg default.
+    eps = (dirichlet_epsilon if dirichlet_epsilon is not None
+           else getattr(cfg, 'mcts_dirichlet_epsilon', 0.25))
     return MCTSMaxN(
         config=MCTSConfig(num_simulations=sims or cfg.mcts_simulations,
-                          dirichlet_epsilon=getattr(
-                              cfg, 'mcts_dirichlet_epsilon', 0.25),
+                          dirichlet_epsilon=eps,
                           max_rollout_depth=cfg.max_game_moves),
         evaluate_fn=lambda st: model.predict(env.state_to_tensor(st)),
         num_players=cfg.num_players,
@@ -272,21 +280,38 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         # depth. This does NOT weaken the trained model (self-play keeps full sims).
         # eval_every: skip eval on most iterations to save time (eval is expensive).
         if run_eval:
+            # Geometry + sims for the parallel eval workers (spawned processes).
+            eval_config_dict = {
+                "num_players": cfg.num_players,
+                "board_size": getattr(cfg, "board_size", None) or model.board_size,
+                "max_walls_per_player": getattr(cfg, "max_walls_per_player", 3),
+                "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),
+                "eval_simulations": eval_sims,
+                "max_game_moves": cfg.max_game_moves,
+            }
             t_eval_best = time.time()
             _log(
                 f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games, {eval_sims} sims)...")
-            cand = mcts_agent_mp(
-                _mcts(model, env, cfg, sims=eval_sims), temperature=0.1)
-            champ = mcts_agent_mp(
-                _mcts(best, env, cfg, sims=eval_sims), temperature=0.1)
 
             def _eval_progress(done, total, r):
                 elapsed = time.time() - t_eval_best
                 _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
                      f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
 
-            ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
-                             max_moves=cfg.max_game_moves, on_progress=_eval_progress)
+            if cfg.parallel_eval:
+                ev = evaluate_parallel_mp(
+                    model, best, eval_config_dict, num_games=cfg.eval_games,
+                    num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
+                    on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
+            else:
+                # dirichlet_epsilon=0 → deterministic best-play eval (matches the
+                # parallel path, which also disables exploration noise).
+                cand = mcts_agent_mp(
+                    _mcts(model, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0), temperature=0.1)
+                champ = mcts_agent_mp(
+                    _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0), temperature=0.1)
+                ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
+                                 max_moves=cfg.max_game_moves, on_progress=_eval_progress)
             accepted = ev.should_accept(threshold)
             eval_best_secs = time.time() - t_eval_best
             ev_wr = ev.candidate_win_rate
@@ -311,9 +336,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random: "
                      f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
 
-            evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
-                                             max_moves=cfg.max_game_moves,
-                                             on_progress=_eval_rand_progress)
+            if cfg.parallel_eval:
+                evr = evaluate_against_random_parallel_mp(
+                    model, eval_config_dict, num_games=cfg.eval_random_games,
+                    num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
+                    on_progress=_eval_rand_progress, base_seed=it * 100_003 + 50_000,
+                    log=_log)
+            else:
+                evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
+                                                 max_moves=cfg.max_game_moves,
+                                                 on_progress=_eval_rand_progress)
             eval_rand_secs = time.time() - t_eval_rand
             evr_wr = evr.candidate_win_rate
             _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "

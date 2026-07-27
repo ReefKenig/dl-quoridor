@@ -76,19 +76,20 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
                     break
                 batch.append(req)
 
-            # Each request carries EITHER a single (C,H,W) tensor or a stacked
-            # (b,C,H,W) batch of leaves from one worker (leaf-parallel). Expand every
-            # request into individual rows, run one forward per model_id, then regroup
-            # replies per request so a stacked request gets a single list reply.
-            rows = []                 # (model_id, tensor_chw)
+            # Each request carries a numpy array: a single (C,H,W) leaf or a stacked
+            # (b,C,H,W) batch of leaves from one worker (leaf-parallel). Sending numpy
+            # (not torch tensors) keeps queue pickling plain — no torch shared-memory
+            # IPC (torch_shm_manager), which is both fragile and slower. Expand every
+            # request into rows, run one forward per model_id, then regroup per request.
+            rows = []                 # (model_id, chw_numpy)
             n_rows_per_req = []       # leaves contributed by each request
-            for (_w_id, model_id, tensor) in batch:
-                if tensor.dim() == 4:
-                    for k in range(tensor.shape[0]):
-                        rows.append((model_id, tensor[k]))
-                    n_rows_per_req.append(tensor.shape[0])
+            for (_w_id, model_id, arr) in batch:
+                if arr.ndim == 4:
+                    for k in range(arr.shape[0]):
+                        rows.append((model_id, arr[k]))
+                    n_rows_per_req.append(arr.shape[0])
                 else:
-                    rows.append((model_id, tensor))
+                    rows.append((model_id, arr))
                     n_rows_per_req.append(1)
 
             by_model = {}
@@ -96,8 +97,8 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
                 by_model.setdefault(model_id, []).append((pos, t))
             row_replies = [None] * len(rows)
             for model_id, mrows in by_model.items():
-                stacked = torch.stack([t for (_pos, t) in mrows]).to(
-                    models[model_id].device)
+                stacked = torch.from_numpy(
+                    np.stack([t for (_pos, t) in mrows])).to(models[model_id].device)
                 policies, values = models[model_id].predict_batch(
                     stacked)  # (b,A),(b,N)
                 policies = policies.cpu().numpy()
@@ -108,9 +109,9 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
             # Regroup rows back to their originating request; a stacked (4-dim)
             # request gets a single LIST reply, a single request gets one tuple.
             cursor = 0
-            for req_i, (w_id, _model_id, tensor) in enumerate(batch):
+            for req_i, (w_id, _model_id, arr) in enumerate(batch):
                 n = n_rows_per_req[req_i]
-                if tensor.dim() == 4:
+                if arr.ndim == 4:
                     response_queues[w_id].put(row_replies[cursor:cursor + n])
                 else:
                     response_queues[w_id].put(row_replies[cursor])
@@ -156,9 +157,9 @@ def make_batched_evaluate(worker_id, request_queue, response_queue, env,
     and burning the whole results-queue timeout.
     """
     def batched_evaluate(state, model_id=0):
-        tensor = torch.from_numpy(
-            env.state_to_tensor(state)).float().permute(2, 0, 1)
-        request_queue.put((worker_id, model_id, tensor))
+        chw = np.ascontiguousarray(
+            env.state_to_tensor(state).transpose(2, 0, 1), dtype=np.float32)
+        request_queue.put((worker_id, model_id, chw))
         try:
             policy, value_vec = response_queue.get(timeout=response_timeout)
         except Exception:
@@ -178,9 +179,9 @@ def make_batched_evaluate_many(worker_id, request_queue, response_queue, env,
     of one per leaf, which is what actually fills the GPU.
     """
     def evaluate_many(states, model_id=0):
-        chw = [torch.from_numpy(env.state_to_tensor(s)).float().permute(2, 0, 1)
-               for s in states]
-        stacked = torch.stack(chw)   # (b, C, H, W)
+        stacked = np.ascontiguousarray(
+            np.stack([env.state_to_tensor(s).transpose(2, 0, 1) for s in states]),
+            dtype=np.float32)   # (b, C, H, W)
         request_queue.put((worker_id, model_id, stacked))
         try:
             replies = response_queue.get(

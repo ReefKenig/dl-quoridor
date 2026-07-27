@@ -71,6 +71,11 @@ class TrainingConfigMP:
     parallel_self_play: bool = False
     num_workers: int = 8
     inference_batch_size: int = 64
+    # Leaf-parallel MCTS in the spawned self-play/eval workers: leaves collected per
+    # GPU forward (>1 breaks the batch<=num_workers ceiling) + virtual loss to
+    # diversify the concurrent tree walks. leaf_batch=1 keeps the one-leaf path.
+    leaf_batch: int = 1
+    virtual_loss: float = 1.0
     # GPU-batched parallel evaluation (candidate/champion served by one batcher).
     # Reuses num_workers / inference_batch_size. Opt-in; sequential eval otherwise.
     parallel_eval: bool = False
@@ -142,7 +147,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         f"checkpoint_dir={checkpoint_dir} | eval={cfg.eval_games}+{cfg.eval_random_games} "
         f"| accept_margin={cfg.accept_margin} | buffer={cfg.replay_buffer_size}",
         f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
-        f"explore_moves={cfg.explore_moves} warmup={cfg.warmup_min_samples}",
+        f"explore_moves={cfg.explore_moves} warmup={cfg.warmup_min_samples} "
+        f"leaf_batch={cfg.leaf_batch} vloss={cfg.virtual_loss}",
         "=" * 70,
     )
 
@@ -316,6 +322,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),
                 "eval_simulations": eval_sims,
                 "max_game_moves": cfg.max_game_moves,
+                "leaf_batch": cfg.leaf_batch,
+                "virtual_loss": cfg.virtual_loss,
             }
             t_eval_best = time.time()
             _log(

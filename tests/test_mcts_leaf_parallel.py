@@ -154,9 +154,9 @@ def test_batcher_expands_stacked_request_and_preserves_order():
     response_qs = {0: queuemod.Queue(), 1: queuemod.Queue()}
     stop = threading.Event()
 
-    stacked = torch.arange(
-        3 * C * H * W, dtype=torch.float32).reshape(3, C, H, W)
-    single = torch.ones(C, H, W)
+    stacked = np.arange(
+        3 * C * H * W, dtype=np.float32).reshape(3, C, H, W)
+    single = np.ones((C, H, W), dtype=np.float32)
     request_q.put((0, 0, stacked))   # worker 0: 3 leaves in one message
     request_q.put((1, 0, single))    # worker 1: one leaf
 

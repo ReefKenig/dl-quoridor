@@ -262,7 +262,8 @@ def test_vectorized_parity_with_dirichlet_seeded():
     env = _env()
     state = env.reset()
     ev = _state_dep_eval(env)
-    cfg = MCTSConfig(num_simulations=SIMS, dirichlet_epsilon=0.25, leaf_batch=1)
+    cfg = MCTSConfig(num_simulations=SIMS,
+                     dirichlet_epsilon=0.25, leaf_batch=1)
 
     seq = MCTSMaxN(config=cfg, evaluate_fn=ev, num_players=N_PLAYERS)
     np.random.seed(1234)

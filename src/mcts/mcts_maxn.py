@@ -444,4 +444,3 @@ class VectorizedSearch:
     def action_probs(self, temperature):
         return self.mcts._action_probabilities(
             self.root, self.env.action_space_size, temperature)
-

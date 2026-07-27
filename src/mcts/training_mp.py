@@ -336,7 +336,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         model.save(os.path.join(checkpoint_dir, "latest.pt"))
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
                    win_vs_best=ev_wr, accepted=accepted,
-                   win_vs_random=evr_wr, fair=fair,
+                   win_vs_random=evr_wr, fair=fair, draw_rate=draw_rate,
                    secs=time.time() - t0, buffer=len(buffer),
                    sp_secs=sp_secs, train_secs=train_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,

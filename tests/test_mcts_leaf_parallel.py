@@ -179,3 +179,96 @@ def test_batcher_expands_stacked_request_and_preserves_order():
     for i in range(3):
         assert abs(float(r0[i][0][0]) - float(stacked[i].sum())) < 1e-3
     assert abs(float(r1[0][0]) - float(single.sum())) < 1e-3
+
+
+# --------------------------------------------------------------------------
+# VectorizedSearch parity: the step-by-step coordinator (Option B) must reproduce
+# the sequential search bit-for-bit — it is the correctness anchor for building
+# vectorized self-play on top of it.
+# --------------------------------------------------------------------------
+
+def _state_dep_eval(env, num_players=N_PLAYERS):
+    """Deterministic but state-DEPENDENT eval: distinct priors/values per leaf so a
+    mis-wired coordinator (wrong node, policy, or backprop) breaks parity."""
+    A = env.action_space_size
+
+    def ev(state):
+        t = env.state_to_tensor(state).ravel().astype(np.float64)
+        s = float(t.sum())
+        idx = np.arange(1, A + 1, dtype=np.float64)
+        pol = np.abs(np.sin(s * 0.123 + idx)) + 1e-3
+        pol = (pol / pol.sum()).astype(np.float32)
+        val = np.tanh(np.array([s * (k + 1) * 0.01
+                                for k in range(num_players)])).astype(np.float32)
+        return pol, val
+    return ev
+
+
+def _drive(vs, ev):
+    while not vs.done():
+        leaf = vs.collect()
+        if leaf is not None:
+            pol, val = ev(leaf)
+            vs.apply(pol, val)
+    return vs
+
+
+def test_vectorized_parity_matches_sequential():
+    """Coordinator visit distribution is BIT-IDENTICAL to MCTSMaxN.search (eps=0)."""
+    from src.mcts.mcts_maxn import VectorizedSearch
+
+    env = _env()
+    state = env.reset()
+    ev = _state_dep_eval(env)
+    cfg = MCTSConfig(num_simulations=SIMS, dirichlet_epsilon=0.0, leaf_batch=1)
+
+    seq = MCTSMaxN(config=cfg, evaluate_fn=ev, num_players=N_PLAYERS)
+    p_seq = seq.search(env, state, temperature=1.0)
+
+    coord = MCTSMaxN(config=cfg, evaluate_fn=None, num_players=N_PLAYERS)
+    vs = _drive(VectorizedSearch(coord, env, state), ev)
+    p_vec = vs.action_probs(1.0)
+
+    assert np.array_equal(p_seq, p_vec)
+    assert vs.root.visit_count == SIMS
+    assert sum(c.visit_count for c in vs.root.children.values()) == SIMS
+    valid = set(env.get_valid_actions(state))
+    assert all(p_vec[a] == 0.0 for a in range(len(p_vec)) if a not in valid)
+
+
+def test_vectorized_parity_n4():
+    """Parity also holds at N=4 (vector value head, max^n backprop)."""
+    from src.mcts.mcts_maxn import VectorizedSearch
+
+    env = QuoridorEnvMP(board_size=5, num_players=4,
+                        max_turns=300, max_walls_per_player=3)
+    state = env.reset()
+    ev = _state_dep_eval(env, num_players=4)
+    cfg = MCTSConfig(num_simulations=SIMS, dirichlet_epsilon=0.0, leaf_batch=1)
+
+    seq = MCTSMaxN(config=cfg, evaluate_fn=ev, num_players=4)
+    p_seq = seq.search(env, state, temperature=1.0)
+
+    coord = MCTSMaxN(config=cfg, evaluate_fn=None, num_players=4)
+    vs = _drive(VectorizedSearch(coord, env, state), ev)
+    assert np.array_equal(p_seq, vs.action_probs(1.0))
+
+
+def test_vectorized_parity_with_dirichlet_seeded():
+    """With exploration noise on, parity holds when the RNG is seeded identically
+    (Dirichlet is the only RNG draw; both search and coordinator draw it once)."""
+    from src.mcts.mcts_maxn import VectorizedSearch
+
+    env = _env()
+    state = env.reset()
+    ev = _state_dep_eval(env)
+    cfg = MCTSConfig(num_simulations=SIMS, dirichlet_epsilon=0.25, leaf_batch=1)
+
+    seq = MCTSMaxN(config=cfg, evaluate_fn=ev, num_players=N_PLAYERS)
+    np.random.seed(1234)
+    p_seq = seq.search(env, state, temperature=1.0)
+
+    coord = MCTSMaxN(config=cfg, evaluate_fn=None, num_players=N_PLAYERS)
+    np.random.seed(1234)
+    vs = _drive(VectorizedSearch(coord, env, state), ev)
+    assert np.array_equal(p_seq, vs.action_probs(1.0))

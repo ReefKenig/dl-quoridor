@@ -146,13 +146,16 @@ class QuoridorEnvMP(QuoridorEnvInterface):
         if state.walls_remaining[cp] > 0:
             W = self.board_size - 1
             h_off, v_off = 12, 12 + W ** 2
+            blockers = self._player_blockers(state, h, v)
             for r in range(W):
                 for c in range(W):
                     if self._valid_h(r, c, h, v):
-                        if self._all_paths(state, h | {(r, c)}, v):
+                        if self._paths_survive(state, blockers, True, r, c,
+                                               h | {(r, c)}, v):
                             valid.append(h_off + r * W + c)
                     if self._valid_v(r, c, h, v):
-                        if self._all_paths(state, h, v | {(r, c)}):
+                        if self._paths_survive(state, blockers, False, r, c,
+                                               h, v | {(r, c)}):
                             valid.append(v_off + r * W + c)
         return np.array(valid, dtype=np.int64)
 
@@ -270,6 +273,76 @@ class QuoridorEnvMP(QuoridorEnvInterface):
             return False
         if (r, c) in v or (r - 1, c) in v or (r + 1, c) in v:
             return False
+        return True
+
+    def _shortest_path(self, start, goal, h, v):
+        """BFS route from `start` to its goal as a list of cells, or None."""
+        N = self.board_size
+        if self._at_goal(start, goal):
+            return [start]
+        prev = {start: None}
+        q = deque([start])
+        while q:
+            cur = q.popleft()
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = cur[0] + dr, cur[1] + dc
+                nx = (nr, nc)
+                if not (0 <= nr < N and 0 <= nc < N) or nx in prev:
+                    continue
+                if not self._can_move(cur, nx, h, v):
+                    continue
+                prev[nx] = cur
+                if self._at_goal(nx, goal):
+                    path = [nx]
+                    while prev[path[-1]] is not None:
+                        path.append(prev[path[-1]])
+                    return path
+                q.append(nx)
+        return None
+
+    def _path_blockers(self, path):
+        """Wall slots that would cut `path`, as (h_slots, v_slots).
+
+        Inverse of _can_move: a vertical step at column c is cut by an h-wall at
+        (r, c) or (r, c-1); a horizontal step at row r by a v-wall at (r, c) or
+        (r-1, c).
+        """
+        hb, vb = set(), set()
+        for a, b in zip(path, path[1:]):
+            if a[1] == b[1]:
+                rm, c = min(a[0], b[0]), a[1]
+                hb.add((rm, c))
+                hb.add((rm, c - 1))
+            else:
+                r, cm = a[0], min(a[1], b[1])
+                vb.add((r, cm))
+                vb.add((r - 1, cm))
+        return hb, vb
+
+    def _player_blockers(self, state, h, v):
+        """Per-player path-cutting wall slots, or None if any player is already
+        walled in (callers then fall back to the exhaustive check)."""
+        out = []
+        for i in range(state.num_players):
+            path = self._shortest_path(state.positions[i], state.goals[i], h, v)
+            if path is None:
+                return None
+            out.append(self._path_blockers(path))
+        return out
+
+    def _paths_survive(self, state, blockers, is_h, r, c, h, v):
+        """Would every player still reach their goal with this wall placed?
+
+        A wall that misses a player's stored path leaves that path intact, so
+        only the players it actually cuts need a fresh BFS. That is what makes
+        wall enumeration cheap in the opening, where nothing is walled in yet.
+        """
+        if blockers is None:
+            return self._all_paths(state, h, v)
+        for i, (hb, vb) in enumerate(blockers):
+            if (r, c) in (hb if is_h else vb):
+                if not self._has_path(state.positions[i], state.goals[i], h, v):
+                    return False
         return True
 
     def _all_paths(self, state, h, v):

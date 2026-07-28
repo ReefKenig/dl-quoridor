@@ -42,6 +42,23 @@ def test_ply_budget_per_player_is_equal_across_variants(cfg9):
         f"scale with num_players.")
 
 
+def test_explore_moves_per_player_is_equal_across_variants(cfg9):
+    """explore_moves counts plies too, so sharing it starves N=4 the same way.
+
+    Temperature sampling runs for the first `explore_moves` plies. A shared 20
+    is ~10 exploratory turns each at N=2 but only 5 at N=4 — a quarter of the
+    self-play diversity, on the harder problem.
+    """
+    n2 = resolve_run_config(cfg9, "n2")
+    n4 = resolve_run_config(cfg9, "n4")
+    per_player = (n2["explore_moves"] / n2["num_players"],
+                  n4["explore_moves"] / n4["num_players"])
+
+    assert per_player[0] == per_player[1], (
+        f"per-player exploration differs: n2={per_player[0]}, n4={per_player[1]}. "
+        f"explore_moves must scale with num_players.")
+
+
 def test_n4_cap_is_not_the_old_shared_value(cfg9):
     """Pins the regression: 160 at N=4 is the setting that caused the collapse."""
     assert resolve_variant(cfg9, "n4")["max_game_moves"] != 160

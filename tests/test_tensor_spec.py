@@ -9,7 +9,6 @@ that verifies his output matches build_tensor() for the same state.
 """
 
 import numpy as np
-import pytest
 
 from src.env.tensor_spec import build_tensor, validate_tensor_spec
 

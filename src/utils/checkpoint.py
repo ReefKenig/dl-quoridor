@@ -38,7 +38,6 @@ import json
 import pickle
 import shutil
 import logging
-from dataclasses import dataclass
 from typing import Optional, Any, Dict, List
 from pathlib import Path
 
@@ -239,7 +238,7 @@ class CheckpointManager:
 
     def _load_replay_buffer(self, path: Path, max_size: int = 50_000):
         """Deserialize replay buffer."""
-        from src.mcts.self_play import ReplayBuffer, TrainingSample  # noqa: F811
+        from src.mcts.self_play import ReplayBuffer  # noqa: F811
 
         if not path.exists():
             logger.warning("Replay buffer file not found: %s", path)

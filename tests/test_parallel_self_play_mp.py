@@ -11,10 +11,7 @@ Tests batched GPU inference and multiprocessing supervision:
 
 import os
 import pytest
-import tempfile
-from unittest.mock import Mock, patch
 
-from src.env.quoridor_env_mp import QuoridorEnvMP
 from src.model.network_mp import QuoridorModelMP
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 

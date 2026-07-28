@@ -220,7 +220,7 @@ def main():
         print("     game can run exact leaf_batch=1 search AND fill the GPU.")
     else:
         print("VERDICT: MIXED — fidelity drop present but strength CIs overlap.")
-        print(f"  -> Borderline. Consider lowering leaf_batch (e.g. 4) or building")
+        print("  -> Borderline. Consider lowering leaf_batch (e.g. 4) or building")
         print("     Option B if you want both exact search and full batches.")
     print("=" * 68)
 

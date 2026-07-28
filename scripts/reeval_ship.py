@@ -11,8 +11,6 @@ from src.mcts.evaluator_mp import evaluate_against_random_mp, mcts_agent_mp
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.model.network_mp import QuoridorModelMP
 from src.env.quoridor_env_mp import QuoridorEnvMP
-import torch
-import numpy as np
 import json
 import sys
 import time

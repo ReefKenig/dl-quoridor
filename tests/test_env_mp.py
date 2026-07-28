@@ -3,7 +3,6 @@ MP engine tests: jump edge cases and tensor parity (N=2 MP vs 2p).
 Run: pytest tests/test_env_mp.py -v
 """
 import numpy as np
-import pytest
 
 from src.env.quoridor_env_mp import QuoridorEnvMP
 from src.env.tensor_spec import build_tensor

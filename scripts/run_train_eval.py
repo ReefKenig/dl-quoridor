@@ -1,7 +1,6 @@
 """Smoke test: evaluator harness + tiny N=4 training loop + checkpoint reload."""
 from src.mcts.training_mp import TrainingConfigMP, training_loop_mp
-from src.mcts.evaluator_mp import evaluate_mp, evaluate_against_random_mp, mcts_agent_mp, random_agent
-from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
+from src.mcts.evaluator_mp import evaluate_mp, random_agent
 from src.model.network_mp import QuoridorModelMP
 from src.env.quoridor_env_mp import QuoridorEnvMP
 import logging

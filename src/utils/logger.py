@@ -37,7 +37,7 @@ import csv
 import json
 import time
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 

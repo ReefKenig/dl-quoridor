@@ -13,7 +13,6 @@ Outputs:
 from pathlib import Path
 import matplotlib.pyplot as plt
 import json
-import sys
 import numpy as np
 import matplotlib
 from src.utils.history import eval_series
@@ -282,8 +281,9 @@ def plot_comparison(n4_history, metrics_2p, output_path):
 
     # Add result annotations
     if metrics_2p:
-        best_2p = max(m["win_rate_vs_random"] for m in metrics_2p) * 100
-        axes[0].annotate(f"Eval: 95% ± 3%\n(240 games)",
+        # The 95% figure is the shipped 240-game full-sim eval, not the training
+        # curve's max, so it is deliberately a literal rather than derived.
+        axes[0].annotate("Eval: 95% ± 3%\n(240 games)",
                          xy=(iters_2p[-1], wr_2p[-1]),
                          xytext=(iters_2p[-1]-15, 60),
                          fontsize=10, fontweight="bold",
@@ -291,7 +291,7 @@ def plot_comparison(n4_history, metrics_2p, output_path):
                                    facecolor="lightblue", alpha=0.8),
                          arrowprops=dict(arrowstyle="->"))
 
-    axes[1].annotate(f"Eval: 84.2% ± 4.6%\n(240 games, fair=25%)",
+    axes[1].annotate("Eval: 84.2% ± 4.6%\n(240 games, fair=25%)",
                      xy=(iters_4p[-1], wr_4p[-1]),
                      xytext=(iters_4p[-1]-30, 40),
                      fontsize=10, fontweight="bold",

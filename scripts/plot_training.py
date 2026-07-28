@@ -10,7 +10,6 @@ Usage:
 
 import json
 import sys
-import numpy as np
 import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend (no GUI needed)
 import matplotlib.pyplot as plt
@@ -77,14 +76,20 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
     ax2 = axes[0, 1]
     colors_wr = ["#4CAF50" if a else "#F44336" for a in accepted]
     ax2.bar(iters, [w * 100 for w in wr_best],
-            color=colors_wr, alpha=0.7, width=0.8)
+            color=colors_wr, alpha=0.7, width=0.8,
+            label="vs best (gate)")
+    # vs_random was extracted here but never drawn. It is the strength signal —
+    # vs_best only says "better than the current champion", which is uninformative
+    # when the champion moves or stalls — so the dashboard needs both curves.
+    ax2.plot(iters, [w * 100 for w in wr_random], "b-o", markersize=3,
+             linewidth=1.5, label="vs random (strength)")
     ax2.axhline(y=55, color="orange", linestyle="--",
                 linewidth=2, label="Acceptance threshold (55%)")
     ax2.axhline(y=50, color="gray", linestyle=":",
                 alpha=0.5, label="Even (50%)")
     ax2.set_xlabel("Iteration")
-    ax2.set_ylabel("Win Rate vs Best (%)")
-    ax2.set_title("Model Accept/Reject Gate")
+    ax2.set_ylabel("Win Rate (%)")
+    ax2.set_title("Model Accept/Reject Gate + Strength")
     ax2.set_ylim(0, 105)
     ax2.legend(fontsize=8)
     ax2.grid(True, alpha=0.2, axis="y")

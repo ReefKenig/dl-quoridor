@@ -108,7 +108,12 @@ for N in (2, 4):
                 wins[info.get("winner")] = wins.get(info.get("winner"), 0)+1
                 break
     decided = sum(c for w, c in wins.items() if w is not None)
-    print(f"  N={N}: {decided}/15 games had a winner | win dist={{k: v for k, v in sorted(wins.items(), key=lambda x: (x[0] is None, x[0]))} } | jump-moves seen={jumps}")
+    # Built outside the f-string: a dict comprehension inside one needs its
+    # braces un-doubled, and doubling them made this file fail to parse at all.
+    win_dist = {k: v for k, v in sorted(
+        wins.items(), key=lambda x: (x[0] is None, x[0]))}
+    print(f"  N={N}: {decided}/15 games had a winner | win dist={win_dist} "
+          f"| jump-moves seen={jumps}")
 print("  (random play; just checking termination + path-legality across N seats)")
 
 # ---------- TEST 4: max^n search runs on N=4 ----------

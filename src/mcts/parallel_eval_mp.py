@@ -11,11 +11,17 @@ opponent never touches the GPU.
 
 The observable behaviour is identical to `evaluate_mp`: the candidate rotates
 through seats by game index (`cand_seat = g % N`), the same opponent fills the
-other seats, and results are aggregated into the same `EvalResultMP` with the
-same tally rules and `on_progress` cadence. Dirichlet noise is disabled
-(`dirichlet_epsilon=0`) so strength is measured deterministically at true
-best-play; combined with a per-game seed this makes eval reproducible and lets
-the parallel path be validated against the sequential one exactly.
+other seats, and results are aggregated into the same `EvalResultMP`. Both paths
+now share `play_eval_game`/`tally_game`/`eval_rng` from `evaluator_mp`, so the
+game loop and bookkeeping exist once and the parallel path can be validated
+against the sequential one exactly.
+
+Dirichlet noise is disabled (`dirichlet_epsilon=0`) so strength is measured at
+true best-play, but the first `eval_opening_plies` moves are sampled from the
+search's own visit distribution using a per-game RNG. Without that, argmax over
+an ε=0 search is a deterministic function of the position and every game sharing
+a seat assignment replayed identically — a 40-game gating eval was measuring 2
+distinct games at N=2 and 4 at N=4.
 """
 import os
 import sys
@@ -25,7 +31,7 @@ from functools import partial
 from src.mcts.batched_inference_mp import (make_batched_evaluate,
                                            make_batched_evaluate_many,
                                            run_batched_inference)
-from src.mcts.evaluator_mp import EvalResultMP
+from src.mcts.evaluator_mp import EvalResultMP, tally_game
 
 
 def _eval_worker(worker_id, request_queue, response_queue, results_queue,
@@ -42,8 +48,10 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
         if project_dir not in sys.path:
             sys.path.insert(0, project_dir)
 
-        import numpy as np
         from src.env.quoridor_env_mp import QuoridorEnvMP
+        from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, eval_rng,
+                                           mcts_agent_mp, play_eval_game,
+                                           random_agent)
         from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 
         N = config_dict["num_players"]
@@ -77,42 +85,29 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
                 num_players=N,
             )
 
-        # Agents mirror evaluator_mp.mcts_agent_mp / random_agent: argmax over the
-        # search's visit-count probabilities (temperature=0.1). MCTS trees are
-        # stateless per search, so build once per worker.
-        cand_mcts = _make_mcts(0)
-
-        def cand_agent(env, state):
-            probs = cand_mcts.search(env, state, temperature=0.1)
-            return int(np.argmax(probs))
-
+        # Agents come from evaluator_mp so the sequential path, this worker and
+        # the test reference cannot drift apart. MCTS trees are stateless per
+        # search, so build once per worker.
+        opening_plies = int(config_dict.get(
+            "eval_opening_plies", DEFAULT_EVAL_OPENING_PLIES))
+        cand_agent = mcts_agent_mp(_make_mcts(0), temperature=0.1,
+                                   opening_plies=opening_plies)
         if mode == "vs_best":
-            champ_mcts = _make_mcts(1)
-
-            def opp_agent(env, state):
-                probs = champ_mcts.search(env, state, temperature=0.1)
-                return int(np.argmax(probs))
+            opp_agent = mcts_agent_mp(_make_mcts(1), temperature=0.1,
+                                      opening_plies=opening_plies)
         else:  # vs_random
-            def opp_agent(env, state):
-                return int(np.random.choice(env.get_valid_actions(state)))
+            opp_agent = random_agent()
 
         for g in game_indices:
             cand_seat = g % N
-            # Per-game seed → reproducible games (matters for the random opponent;
-            # the eps=0 candidate/champion are already deterministic). Distribution
-            # across workers therefore cannot change any game's outcome.
-            np.random.seed(base_seed + g)
+            # Per-game RNG → reproducible games that differ from one another. It
+            # drives the random opponent and the sampled opening, and is keyed on
+            # the game index alone, so distribution across workers cannot change
+            # any game's outcome.
             agents = {s: (cand_agent if s == cand_seat else opp_agent)
                       for s in range(N)}
-            state = env.reset()
-            winner = None
-            for _ in range(config_dict["max_game_moves"]):
-                cp = env.get_current_player(state)
-                action = agents[cp](env, state)
-                state, _, done, info = env.step(state, action)
-                if done:
-                    winner = info.get("winner")
-                    break
+            winner = play_eval_game(env, agents, config_dict["max_game_moves"],
+                                    rng=eval_rng(base_seed, g))
             results_queue.put(("game", worker_id, g, cand_seat, winner))
 
         results_queue.put(("done", worker_id))
@@ -140,15 +135,7 @@ def _run_eval(models, mode, config_dict, num_games, num_workers, batch_size,
     def on_result(msg):
         nonlocal done
         _, _wid, _g, cand_seat, winner = msg  # ("game", wid, g, cand_seat, winner)
-        res.num_games += 1
-        res.games_per_seat[cand_seat] = res.games_per_seat.get(cand_seat, 0) + 1
-        if winner is None:
-            res.draws += 1
-        elif winner == cand_seat:
-            res.candidate_wins += 1
-            res.seat_wins[cand_seat] = res.seat_wins.get(cand_seat, 0) + 1
-        else:
-            res.opponent_wins += 1
+        tally_game(res, cand_seat, winner)
         done += 1
         # Heartbeat every 5 games and on the last one, matching evaluate_mp.
         if on_progress is not None and (done % 5 == 0 or done == num_games):

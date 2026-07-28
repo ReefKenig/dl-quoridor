@@ -26,7 +26,9 @@ import numpy as np
 import pytest
 
 from src.env.quoridor_env_mp import QuoridorEnvMP
-from src.mcts.evaluator_mp import EvalResultMP, evaluate_mp, mcts_agent_mp
+from src.mcts.evaluator_mp import (EvalResultMP, eval_rng, evaluate_mp,
+                                   mcts_agent_mp, play_eval_game, random_agent,
+                                   tally_game)
 from src.mcts.mcts_maxn import MCTSConfig, MCTSMaxN
 from src.mcts.parallel_eval_mp import (evaluate_against_random_parallel_mp,
                                        evaluate_parallel_mp)
@@ -46,6 +48,7 @@ EVAL_SIMS = 12       # small for test speed; strength is irrelevant, only equiva
 MAX_MOVES = 40
 NUM_GAMES = 8        # ≥ N so every candidate seat (g % N) is exercised
 BASE_SEED = 12345
+OPENING_PLIES = 2    # sampled opening; must match between worker and reference
 
 
 def _have(spec):
@@ -71,7 +74,8 @@ def _make_env(spec):
 def _config_dict(spec):
     return {"num_players": spec["num_players"], "board_size": GEOM["board_size"],
             "max_walls_per_player": spec["walls"], "max_turns": 300,
-            "eval_simulations": EVAL_SIMS, "max_game_moves": MAX_MOVES}
+            "eval_simulations": EVAL_SIMS, "max_game_moves": MAX_MOVES,
+            "eval_opening_plies": OPENING_PLIES}
 
 
 def _predict_batch_evaluate_fn(model, env):
@@ -90,43 +94,30 @@ def _pb_agent(model, env, N):
         config=MCTSConfig(num_simulations=EVAL_SIMS, dirichlet_epsilon=0.0,
                           max_rollout_depth=MAX_MOVES),
         evaluate_fn=_predict_batch_evaluate_fn(model, env), num_players=N)
-    return mcts_agent_mp(mcts, temperature=0.1)
+    return mcts_agent_mp(mcts, temperature=0.1, opening_plies=OPENING_PLIES)
 
 
 def _reference(env, spec, cand, champ_or_none, mode, base_seed):
-    """In-process reference mirroring _eval_worker exactly (ε=0 predict_batch MCTS,
-    seat rotation g%N, per-game seed, evaluate_mp tally)."""
+    """In-process reference mirroring _eval_worker (ε=0 predict_batch MCTS, seat
+    rotation g%N, per-game RNG, shared game loop and tally).
+
+    Deliberately built from the same `play_eval_game`/`tally_game`/`eval_rng`
+    helpers the worker uses: if the opening-diversity logic ever lands in one
+    path only, these exactness tests are what catches it.
+    """
     N = spec["num_players"]
     cand_agent = _pb_agent(cand, env, N)
-    if mode == "vs_best":
-        opp_agent = _pb_agent(champ_or_none, env, N)
-    else:
-        def opp_agent(env, state):
-            return int(np.random.choice(env.get_valid_actions(state)))
+    opp_agent = (_pb_agent(champ_or_none, env, N) if mode == "vs_best"
+                 else random_agent())
 
     res = EvalResultMP(num_players=N)
     for g in range(NUM_GAMES):
         cand_seat = g % N
-        np.random.seed(base_seed + g)
-        agents = {s: (cand_agent if s == cand_seat else opp_agent) for s in range(N)}
-        state = env.reset()
-        winner = None
-        for _ in range(MAX_MOVES):
-            cp = env.get_current_player(state)
-            action = agents[cp](env, state)
-            state, _, done, info = env.step(state, action)
-            if done:
-                winner = info.get("winner")
-                break
-        res.num_games += 1
-        res.games_per_seat[cand_seat] = res.games_per_seat.get(cand_seat, 0) + 1
-        if winner is None:
-            res.draws += 1
-        elif winner == cand_seat:
-            res.candidate_wins += 1
-            res.seat_wins[cand_seat] = res.seat_wins.get(cand_seat, 0) + 1
-        else:
-            res.opponent_wins += 1
+        agents = {s: (cand_agent if s == cand_seat else opp_agent)
+                  for s in range(N)}
+        winner = play_eval_game(env, agents, MAX_MOVES,
+                                rng=eval_rng(base_seed, g))
+        tally_game(res, cand_seat, winner)
     return res
 
 
@@ -214,10 +205,13 @@ def test_parallel_matches_sequential_evaluate_mp():
                               max_rollout_depth=MAX_MOVES),
             evaluate_fn=lambda st: model.predict(env.state_to_tensor(st)),
             num_players=spec["num_players"])
-        return mcts_agent_mp(mcts, temperature=0.1)
+        return mcts_agent_mp(mcts, temperature=0.1, opening_plies=OPENING_PLIES)
 
+    # Both sides must sample the same opening from the same per-game seeds;
+    # comparing a diversified run against a deterministic one measures nothing.
     seq = evaluate_mp(env, _predict_agent(cand), _predict_agent(champ),
-                      num_games=NUM_GAMES, max_moves=MAX_MOVES)
+                      num_games=NUM_GAMES, max_moves=MAX_MOVES,
+                      base_seed=BASE_SEED)
     par = evaluate_parallel_mp(cand, champ, _config_dict(spec), num_games=NUM_GAMES,
                                num_workers=2, batch_size=8, base_seed=BASE_SEED,
                                log=lambda *a: None)

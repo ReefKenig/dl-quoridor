@@ -18,8 +18,8 @@ from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
-from src.mcts.evaluator_mp import (evaluate_mp, evaluate_against_random_mp,
-                                   mcts_agent_mp)
+from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
+                                   evaluate_against_random_mp, mcts_agent_mp)
 from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
                                        evaluate_against_random_parallel_mp)
 from src.utils.logger import make_progress_logger
@@ -63,6 +63,10 @@ class TrainingConfigMP:
     eval_games: int = 80
     eval_random_games: int = 24
     accept_margin: float = 0.05          # accept if win_rate > fair_share + margin
+    # Opening moves sampled from the visit distribution during eval. 0 makes
+    # every eval game with the same seat assignment a replay of the same game,
+    # which is how a 40-game gate came to measure 2 distinct games at N=2.
+    eval_opening_plies: int = DEFAULT_EVAL_OPENING_PLIES
     # run eval every N iterations (1 = every iter)
     eval_every: int = 1
     discount: float = 0.97
@@ -415,6 +419,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "max_game_moves": cfg.max_game_moves,
                 "leaf_batch": cfg.leaf_batch,
                 "virtual_loss": cfg.virtual_loss,
+                "eval_opening_plies": cfg.eval_opening_plies,
             }
             t_eval_best = time.time()
             _log(
@@ -431,14 +436,18 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
                     on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
             else:
-                # dirichlet_epsilon=0 → deterministic best-play eval (matches the
-                # parallel path, which also disables exploration noise).
+                # dirichlet_epsilon=0 → best-play eval (matches the parallel path,
+                # which also disables exploration noise). Game diversity comes from
+                # the sampled opening, not from search noise.
                 cand = mcts_agent_mp(
-                    _mcts(model, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0), temperature=0.1)
+                    _mcts(model, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
+                    temperature=0.1, opening_plies=cfg.eval_opening_plies)
                 champ = mcts_agent_mp(
-                    _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0), temperature=0.1)
+                    _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
+                    temperature=0.1, opening_plies=cfg.eval_opening_plies)
                 ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
-                                 max_moves=cfg.max_game_moves, on_progress=_eval_progress)
+                                 max_moves=cfg.max_game_moves, on_progress=_eval_progress,
+                                 base_seed=it * 100_003)
             accepted = ev.should_accept(threshold)
             eval_best_secs = time.time() - t_eval_best
             ev_wr = ev.candidate_win_rate
@@ -481,7 +490,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             else:
                 evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
                                                  max_moves=cfg.max_game_moves,
-                                                 on_progress=_eval_rand_progress)
+                                                 on_progress=_eval_rand_progress,
+                                                 base_seed=it * 100_003 + 50_000)
             eval_rand_secs = time.time() - t_eval_rand
             evr_wr = evr.candidate_win_rate
             _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "

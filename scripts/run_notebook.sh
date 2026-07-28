@@ -9,8 +9,8 @@
 #
 # Usage:
 #   cd dl-quoridor && git pull && git checkout dev
-#   scripts/run_notebook.sh n2        # N=2 9x9 training
-#   scripts/run_notebook.sh n4        # N=4 9x9 training
+#   scripts/run_notebook.sh n2        # N=2 9x9 training (run dir from notebook)
+#   scripts/run_notebook.sh n4        # N=4 9x9 training (run dir from notebook)
 #   MODE=tmux scripts/run_notebook.sh n2      # inside tmux instead of nohup
 #
 # There is NO default variant — you must pass n2 or n4 explicitly.
@@ -38,15 +38,23 @@ case "$VARIANT" in
     echo "Usage: scripts/run_notebook.sh {n2|n4}   (no default)" >&2
     echo "  n2  ->  notebooks/train_9x9_n2.ipynb" >&2
     echo "  n4  ->  notebooks/train_9x9_n4.ipynb" >&2
+    echo "  (run dir is read from RUN_DIR in the notebook)" >&2
     exit 1
     ;;
 esac
 
+# --- extract RUN_DIR name from the notebook itself ---
+# The notebook defines: RUN_DIR = os.path.join(REPO_DIR, "runs", "<tag>")
+# We parse that tag so the script always stays in sync with what the notebook uses.
+TAG="$(sed -n 's/.*\\\"runs\\\", \\\"\([^\\]*\)\\\".*/\1/p' "$NOTEBOOK")"
+if [ -z "$TAG" ]; then
+  echo "ERROR: could not extract RUN_DIR tag from $NOTEBOOK" >&2
+  exit 1
+fi
+
 # --- config (env-overridable) ---
 PYTHON="${PYTHON:-python3}"
 MODE="${MODE:-nohup}"
-# Where logs/executed copy go. Derive a run tag from the notebook name.
-TAG="$(basename "$NOTEBOOK" .ipynb)"
 LOG_DIR="${LOG_DIR:-runs/${TAG}}"
 SESSION="${SESSION:-quoridor_${TAG}}"
 

@@ -261,7 +261,7 @@ def main():
                          "autotunes on batch shapes, which sims do not affect")
     ap.add_argument("--warmup-max-moves", type=int,
                     default=DEFAULTS["warmup_max_moves"],
-                    help="ply cap during warmup"
+                    help="ply cap during warmup")
     ap.add_argument("--order", default=DEFAULTS["order"],
                     help="comma-separated engine order. Run it both ways if the "
                          "margin is close — ordering effects are real")

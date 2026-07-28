@@ -16,6 +16,7 @@ import numpy as np
 
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
+from src.utils.schedule import lr_at
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
 from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
@@ -63,6 +64,11 @@ class TrainingConfigMP:
     eval_games: int = 80
     eval_random_games: int = 24
     accept_margin: float = 0.05          # accept if win_rate > fair_share + margin
+    # LR schedule over the run. Defaults to "constant" so existing scripts are
+    # unaffected; the 9x9 config opts into cosine, where a constant 1e-3 across
+    # 100 iterations keeps the net chasing the newest self-play data.
+    lr_schedule: str = "constant"
+    lr_final_frac: float = 0.1           # cosine end point, as a fraction of base_lr
     # Opening moves sampled from the visit distribution during eval. 0 makes
     # every eval game with the same seat assignment a replay of the same game,
     # which is how a 40-game gate came to measure 2 distinct games at N=2.
@@ -366,8 +372,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
         # --- 2. train ---
         t_train = time.time()
+        # Pure function of the iteration index, so a resumed run picks up the
+        # right rate with no scheduler state to persist.
+        cur_lr = lr_at(cfg.lr_schedule, model.base_lr, it, cfg.num_iterations,
+                       cfg.lr_final_frac)
+        model.set_lr(cur_lr)
         _log(
-            f"[iter {it+1}/{cfg.num_iterations}] training ({cfg.train_steps_per_iter} steps)...")
+            f"[iter {it+1}/{cfg.num_iterations}] training ({cfg.train_steps_per_iter} steps, "
+            f"lr={cur_lr:.2e})...")
         lp = lv = 0.0
         warmup = max(cfg.batch_size, cfg.warmup_min_samples)
         if len(buffer) >= warmup:

@@ -102,8 +102,19 @@ class QuoridorModelMP:
         ).to(self.device)
         self.optimizer = optim.Adam(
             self.network.parameters(), lr=lr, weight_decay=weight_decay)
+        # Retained so a schedule can be expressed relative to the configured
+        # starting rate without the caller having to thread it through.
+        self.base_lr = lr
         self.board_size = board_size
         self.action_space_size = action_space_size
+
+    @property
+    def lr(self) -> float:
+        return self.optimizer.param_groups[0]["lr"]
+
+    def set_lr(self, lr: float) -> None:
+        for group in self.optimizer.param_groups:
+            group["lr"] = lr
 
     def _autocast(self):
         """bf16 autocast on CUDA, no-op on CPU. Only the network forward is wrapped;

@@ -21,6 +21,8 @@
         "training_epochs": 400,
         "replay_buffer_size": 200000,
         "learning_rate": 0.001,
+        "lr_schedule": "cosine",
+        "lr_final_frac": 0.1,
         "weight_decay": 0.0001,
         "_max_game_moves_note": "counts plies, not rounds — set per variant so each player gets the same budget; see variants.n2/n4",
         "explore_moves": 20,

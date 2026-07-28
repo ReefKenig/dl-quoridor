@@ -113,10 +113,38 @@ def resolve_variant(raw: Dict[str, Any], variant: str) -> Dict[str, Any]:
     return merged
 
 
-def variant_setting(raw: Dict[str, Any], variant: str, key: str,
-                    default: Any = None) -> Any:
-    """One setting, preferring the variant's override over the shared default."""
-    return resolve_variant(raw, variant).get(key, default)
+RUN_SECTIONS = ("mcts", "network", "training", "parallel")
+
+
+
+def resolve_run_config(raw: Dict[str, Any], variant: str) -> Dict[str, Any]:
+    """Every setting for one run, flattened into a single dict.
+
+    The sections organise the JSON; they are not meaningful to a caller, which
+    wants `num_simulations` and `num_iterations` from the same place. Reading
+    some settings per-section and others through the variant merge is what let
+    the 9x9 notebooks silently ignore half the config. Variant overrides are
+    applied last, so per-player-count settings win.
+
+    Keys starting with "_" are notes and are dropped. A key defined in two
+    sections raises: it would otherwise resolve by section order, and quietly
+    depend on it.
+    """
+    out = {k: v for k, v in raw.items() if not isinstance(v, dict)}
+    origin = {k: "<top level>" for k in out}
+    for section in RUN_SECTIONS:
+        for key, value in raw.get(section, {}).items():
+            if key.startswith("_"):
+                continue
+            if key in origin:
+                raise ValueError(
+                    f"{key!r} is defined in both {origin[key]} and {section!r}; "
+                    "a flattened run config cannot resolve it unambiguously.")
+            origin[key] = section
+            out[key] = value
+    out.update({k: v for k, v in raw.get("variants", {}).get(variant, {}).items()
+                if not k.startswith("_")})
+    return out
 
 
 def ply_budget_per_player(raw: Dict[str, Any], variant: str) -> float:

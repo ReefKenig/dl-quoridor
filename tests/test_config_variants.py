@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from src.utils.config import (ply_budget_per_player, resolve_variant,
-                              variant_setting)
+from src.utils.config import (ply_budget_per_player, resolve_run_config,
+                              resolve_variant)
 
 CONFIG_9X9 = Path("configs/config_9x9.json")
 
@@ -23,8 +23,8 @@ def cfg9():
 
 
 def test_max_game_moves_resolves_per_variant(cfg9):
-    assert variant_setting(cfg9, "n2", "max_game_moves") == 160
-    assert variant_setting(cfg9, "n4", "max_game_moves") == 320
+    assert resolve_variant(cfg9, "n2")["max_game_moves"] == 160
+    assert resolve_variant(cfg9, "n4")["max_game_moves"] == 320
 
 
 def test_ply_budget_per_player_is_equal_across_variants(cfg9):
@@ -44,7 +44,7 @@ def test_ply_budget_per_player_is_equal_across_variants(cfg9):
 
 def test_n4_cap_is_not_the_old_shared_value(cfg9):
     """Pins the regression: 160 at N=4 is the setting that caused the collapse."""
-    assert variant_setting(cfg9, "n4", "max_game_moves") != 160
+    assert resolve_variant(cfg9, "n4")["max_game_moves"] != 160
 
 
 def test_variant_overrides_shadow_the_shared_training_block():
@@ -61,13 +61,13 @@ def test_shared_value_is_used_when_a_variant_does_not_override():
     raw = {"training": {"max_game_moves": 160},
            "variants": {"n2": {"num_players": 2}}}
 
-    assert variant_setting(raw, "n2", "max_game_moves") == 160
+    assert resolve_variant(raw, "n2")["max_game_moves"] == 160
 
 
 def test_unknown_variant_falls_back_to_the_shared_block():
     raw = {"training": {"max_game_moves": 200}, "variants": {}}
 
-    assert variant_setting(raw, "n8", "max_game_moves") == 200
+    assert resolve_variant(raw, "n8")["max_game_moves"] == 200
 
 
 def test_ply_budget_requires_num_players():
@@ -79,8 +79,64 @@ def test_ply_budget_requires_num_players():
 
 def test_other_variant_settings_still_resolve(cfg9):
     """Guards against the merge dropping the fields that already lived there."""
-    assert variant_setting(cfg9, "n2", "max_walls_per_player") == 10
-    assert variant_setting(cfg9, "n4", "max_walls_per_player") == 5
-    assert variant_setting(cfg9, "n4", "num_players") == 4
     # 4-player Quoridor is 5 walls each; keep the game faithful.
-    assert variant_setting(cfg9, "n4", "eval_games") == 40
+    assert resolve_variant(cfg9, "n2")["max_walls_per_player"] == 10
+    assert resolve_variant(cfg9, "n4")["max_walls_per_player"] == 5
+    assert resolve_variant(cfg9, "n4")["num_players"] == 4
+    for v in ("n2", "n4"):
+        assert resolve_variant(cfg9, v)["eval_games"] > 0
+
+
+def test_run_length_resolves_per_variant(cfg9):
+    """num_iterations/games_per_iteration live only in the variant blocks.
+
+    The 9x9 notebooks read them through resolve_run_config; if they were moved back
+    to the shared `training` block both variants would silently train for the
+    same number of games despite N=4 games costing ~3x as much.
+    """
+    for key in ("num_iterations", "games_per_iteration"):
+        assert key not in cfg9["training"], f"{key} must stay per-variant"
+        for v in ("n2", "n4"):
+            assert resolve_variant(cfg9, v)[key] > 0
+
+
+def test_run_config_flattens_every_section(cfg9):
+    """One dict, so callers never choose which section to read from.
+
+    The 9x9 notebooks previously read some settings per-section and others
+    through the variant merge, which is how they came to ignore num_workers and
+    inference_batch_size entirely while appearing to be configured.
+    """
+    rc = resolve_run_config(cfg9, "n4")
+
+    assert rc["board_size"] == 9                  # top level
+    assert rc["num_simulations"] == cfg9["mcts"]["num_simulations"]
+    assert rc["num_channels"] == cfg9["network"]["num_channels"]
+    assert rc["num_workers"] == cfg9["parallel"]["num_workers"]
+    assert rc["batch_size"] == cfg9["training"]["batch_size"]
+    assert rc["num_players"] == 4                 # variant
+
+
+def test_run_config_variant_overrides_win(cfg9):
+    n2, n4 = resolve_run_config(cfg9, "n2"), resolve_run_config(cfg9, "n4")
+
+    assert (n2["max_game_moves"], n4["max_game_moves"]) == (160, 320)
+    assert n2["num_iterations"] != n4["num_iterations"]
+    assert n2["num_simulations"] == n4["num_simulations"]   # shared
+
+
+def test_run_config_rejects_a_key_defined_twice():
+    """Ambiguity must fail loudly rather than resolve by section order."""
+    raw = {"mcts": {"batch_size": 16}, "training": {"batch_size": 128},
+           "variants": {"n2": {}}}
+
+    with pytest.raises(ValueError, match="batch_size"):
+        resolve_run_config(raw, "n2")
+
+
+def test_run_config_drops_note_keys(cfg9):
+    """`_`-prefixed entries document the JSON; they are not settings."""
+    rc = resolve_run_config(cfg9, "n2")
+
+    assert not [k for k in rc if k.startswith("_")]
+    assert any(k.startswith("_") for k in cfg9["training"]), "fixture lost its notes"

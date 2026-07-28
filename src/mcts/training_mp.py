@@ -383,8 +383,12 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         accepted = False
         eval_best_secs = 0.0
         eval_rand_secs = 0.0
-        ev_wr = 0.0
-        evr_wr = 0.0
+        # None, not 0.0: on a skipped-eval iteration nothing was measured. Zeros
+        # here are indistinguishable from a real 0% and were persisted into
+        # meta.json for 44 of the 51 rows across the two 9x9 runs, then plotted
+        # as if they were results.
+        ev_wr = None
+        evr_wr = None
 
         model.save(os.path.join(checkpoint_dir, "latest.pt"))
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
@@ -393,7 +397,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    secs=time.time() - t0, buffer=len(buffer),
                    sp_secs=sp_secs, train_secs=train_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,
-                   eval_done=not run_eval)
+                   eval_ran=run_eval)
         history.append(row)
 
         def _write_meta():
@@ -497,15 +501,21 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "
                  f"{100*evr_wr:.1f}% ({eval_rand_secs:.0f}s)")
             row.update(win_vs_random=evr_wr, eval_rand_secs=eval_rand_secs,
-                       secs=time.time() - t0, eval_done=True)
+                       secs=time.time() - t0, eval_ran=True)
             _write_meta()
         else:
             _log(
                 f"[iter {it+1}/{cfg.num_iterations}] eval skipped (eval_every={cfg.eval_every})")
 
+        # "n/a" rather than 0.0%: the summary line is the thing most often read
+        # at a glance, and a skipped eval printing "vs_best=0.0% reject" is what
+        # made both 9x9 runs look like total failures for 44 of 51 iterations.
+        vs_best_txt = (f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'}"
+                       if ev_wr is not None else "n/a (not evaluated)")
+        vs_rand_txt = f"{100*evr_wr:.1f}%" if evr_wr is not None else "n/a"
         _log(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
-             f"vs_best={100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'} | "
-             f"vs_rand={100*evr_wr:.1f}% | draw={100*draw_rate:.0f}% | buf={len(buffer)} | "
+             f"vs_best={vs_best_txt} | "
+             f"vs_rand={vs_rand_txt} | draw={100*draw_rate:.0f}% | buf={len(buffer)} | "
              f"sp={sp_secs:.0f}s train={train_secs:.0f}s "
              f"eval_best={eval_best_secs:.0f}s eval_rand={eval_rand_secs:.0f}s | "
              f"total={row['secs']:.0f}s")

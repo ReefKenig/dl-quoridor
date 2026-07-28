@@ -152,6 +152,26 @@ def resolve_self_play_mode(cfg):
     return mode
 
 
+def zero_sample_reason(it, engine, wins, games_per_iteration, checkpoint_dir):
+    """Diagnose an iteration that produced no training samples.
+
+    Unresolved games now contribute no samples at all, so "0 samples" has two
+    very different causes and they need different fixes. Pointing at a GPU crash
+    when every game simply timed out would send the reader to the wrong place.
+    """
+    if wins.get(None, 0) >= games_per_iteration:
+        return (
+            f"[iter {it}] all {games_per_iteration} games timed out at "
+            f"max_game_moves, so self-play produced no training samples. This is "
+            f"a game-length problem, not a crash: raise max_game_moves for this "
+            f"variant. It counts plies rather than rounds, so N=4 needs roughly "
+            f"twice the N=2 value to give each player the same budget.")
+    return (
+        f"[iter {it}] {engine} self-play produced 0 samples — aborting before "
+        f"empty training. Check {os.path.join(checkpoint_dir, 'games.log')} for "
+        f"'[GPU INFERENCE] CRASHED' or '[WORKER … ] CRASHED'.")
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion at run start and make it durable on disk.
 
@@ -270,9 +290,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 log=_log,
             )
             if not sp_samples:
-                raise RuntimeError(
-                    f"[iter {it+1}] vectorized self-play produced 0 samples — "
-                    f"aborting before empty training.")
+                raise RuntimeError(zero_sample_reason(
+                    it + 1, "vectorized", wins, cfg.games_per_iteration,
+                    checkpoint_dir))
             buffer.add(sp_samples)
             n_new_samples = len(sp_samples)
         elif sp_mode == "parallel":
@@ -290,15 +310,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 log=_log,
             )
             if not sp_samples:
-                # A zero-sample iteration means the parallel self-play stalled
-                # (almost always: the GPU inference thread died and workers hung
-                # until the queue timeout). Abort loudly instead of "training" on
-                # an empty buffer and silently advancing completed_iterations —
-                # the run can then be resumed from the last good checkpoint.
-                raise RuntimeError(
-                    f"[iter {it+1}] parallel self-play produced 0 samples — aborting "
-                    f"before empty training. Check {os.path.join(checkpoint_dir, 'games.log')} "
-                    f"for '[GPU INFERENCE] CRASHED' or '[WORKER … ] CRASHED'.")
+                # Either self-play stalled (usually: the GPU inference thread died
+                # and workers hung until the queue timeout) or every game timed
+                # out. Abort loudly instead of "training" on an empty buffer and
+                # silently advancing completed_iterations — the run can then be
+                # resumed from the last good checkpoint.
+                raise RuntimeError(zero_sample_reason(
+                    it + 1, "parallel", wins, cfg.games_per_iteration,
+                    checkpoint_dir))
             buffer.add(sp_samples)
             n_new_samples = len(sp_samples)
         else:

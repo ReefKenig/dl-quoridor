@@ -132,6 +132,26 @@ def _mcts(model, env, cfg, sims=None, dirichlet_epsilon=None):
     )
 
 
+SELF_PLAY_MODES = ("sequential", "parallel", "vectorized")
+
+
+def resolve_self_play_mode(cfg):
+    """Resolve cfg.self_play_mode to a concrete engine name.
+
+    Validates rather than falling through: an unrecognised value used to land
+    silently in the sequential branch, which looks like a working run and costs
+    a night of training at a fraction of the intended throughput.
+    """
+    mode = getattr(cfg, "self_play_mode", "auto")
+    if mode == "auto":
+        return "parallel" if cfg.parallel_self_play else "sequential"
+    if mode not in SELF_PLAY_MODES:
+        raise ValueError(
+            f"self_play_mode={mode!r} is not recognised — expected 'auto' or one "
+            f"of {SELF_PLAY_MODES}.")
+    return mode
+
+
 def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                      checkpoint_dir="checkpoints_mp"):
     """
@@ -151,14 +171,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     # Disk log: keeps recording progress even if the Jupyter UI disconnects.
     _log = make_progress_logger(os.path.join(checkpoint_dir, "games.log"))
 
-    _sp_mode = getattr(cfg, "self_play_mode", "auto")
-    if _sp_mode == "auto":
-        _sp_mode = "parallel" if cfg.parallel_self_play else "sequential"
+    # Resolved once, up front: validates the config before any work is done, and
+    # the banner then reports exactly what the loop will run.
+    sp_mode = resolve_self_play_mode(cfg)
     _log(
         "=" * 70,
         f"training_loop_mp launched | N={cfg.num_players} board={cfg.board_size}x{cfg.board_size} "
         f"| sims={cfg.mcts_simulations} games/iter={cfg.games_per_iteration} "
-        f"| self_play={_sp_mode} workers={cfg.num_workers} vec_games={cfg.vec_games}",
+        f"| self_play={sp_mode} workers={cfg.num_workers} vec_games={cfg.vec_games}",
         f"checkpoint_dir={checkpoint_dir} | eval={cfg.eval_games}+{cfg.eval_random_games} "
         f"| accept_margin={cfg.accept_margin} | buffer={cfg.replay_buffer_size}",
         f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
@@ -193,11 +213,6 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         # --- 1. self-play ---
         _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
              f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims)...")
-
-        # Resolve the self-play engine. "auto" preserves the old bool behaviour.
-        sp_mode = getattr(cfg, "self_play_mode", "auto")
-        if sp_mode == "auto":
-            sp_mode = "parallel" if cfg.parallel_self_play else "sequential"
 
         def _on_progress(done, total, w):
             if done % 5 == 0 or done == total:

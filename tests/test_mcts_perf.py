@@ -18,7 +18,7 @@ SIM_COUNTS = [100, 200, 400, 800]
 
 def _bench(num_simulations: int) -> list[float]:
     """Return a list of per-search durations (seconds)."""
-    env = QuoridorEnv(is_poc=True)
+    env = QuoridorEnv(board_size=5)
     env.max_walls_per_player = 0
 
     state = env.reset()

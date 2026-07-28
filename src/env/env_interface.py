@@ -54,9 +54,9 @@ class QuoridorEnvInterface(ABC):
         """
         Convert game state to the observation tensor for the neural network.
 
-        Shape: (board_size, board_size, 10) — HWC format.
-            5×5 POC (is_poc=True):  (5, 5, 10)
-            9×9 full (is_poc=False): (9, 9, 10)
+        Shape: (board_size, board_size, OBS_CHANNELS) — HWC format.
+            5×5 board: (5, 5, 11)
+            9×9 board: (9, 9, 11)
 
         All values normalized to [0, 1].
         See tensor_spec.py for channel breakdown and reference implementation.

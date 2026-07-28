@@ -46,7 +46,7 @@ def augment_mp(tensor, policy, value_vec, num_players, board_size):
     """Left-right mirror augmentation for the MP tensor.
     Flips columns, permutes seat-grouped channels via π=[0,1,3,2],
     mirrors the policy, and permutes the value vector."""
-    N, bs, W = num_players, board_size, board_size - 1
+    N, W = num_players, board_size - 1
     pi = _seat_perm(N)
     t = tensor[:, ::-1, :].copy()          # flip columns
     out = t.copy()
@@ -78,6 +78,29 @@ def augment_mp(tensor, policy, value_vec, num_players, board_size):
     return out, fp, fv
 
 
+def game_seed(base_seed, game_index):
+    """Seed for game `game_index`, hashed rather than added so neighbouring games
+    get uncorrelated exploration noise. Deterministic per (base_seed, index)."""
+    seq = np.random.SeedSequence([int(base_seed), int(game_index)])
+    return int(seq.generate_state(1, dtype=np.uint32)[0])
+
+
+def normalize_action_probs(probs, env=None, state=None):
+    """Renormalize visit counts. A zero sum means the root had no children, so
+    fall back to uniform over valid actions rather than dividing into NaN."""
+    total = probs.sum()
+    if total > 0:
+        return probs / total
+    valid = env.get_valid_actions(state) if env is not None else []
+    if len(valid) > 0:
+        fallback = np.zeros_like(probs)
+        fallback[valid] = 1.0 / len(valid)
+        return fallback
+    raise RuntimeError(
+        "MCTS produced an all-zero action distribution and the position has no "
+        "valid actions — the search root is a dead end.")
+
+
 def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
                   temp_explore=1.0, explore_moves=15):
     state = env.reset()
@@ -90,7 +113,7 @@ def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
             break
         temp = temp_explore if move_count < explore_moves else 0.3
         probs = mcts.search(env, state, temperature=temp)
-        probs = probs / probs.sum()   # renormalize for fp precision
+        probs = normalize_action_probs(probs, env, state)
         mover = env.get_current_player(state)
         trajectory.append((env.state_to_tensor(state), probs, mover))
         action = int(np.random.choice(len(probs), p=probs))

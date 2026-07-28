@@ -55,7 +55,7 @@ def test_replay_buffer_overflow():
 @pytest.mark.slow
 def test_mcts_vs_random_real_env(num_games: int = 20, num_sims: int = 200):
     """MCTS (random rollouts) vs random agent on real 5x5 QuoridorEnv."""
-    env = QuoridorEnv(is_poc=True)
+    env = QuoridorEnv(board_size=5)
     mcts = MCTS(config=MCTSConfig(num_simulations=num_sims))
 
     wins = 0

@@ -5,9 +5,12 @@ This file defines the EXACT tensor layout and provides a reference
 implementation for computing each channel. Reef must produce identical
 output from his QuoridorEnv.state_to_tensor().
 
-Tensor shape: (board_size, board_size, 10)
+Tensor shape: (board_size, board_size, 10) for build_tensor() below.
 All values normalized to [0, 1].
 Indexed as tensor[row, col, channel].
+
+NOTE: these 10 are the BASE channels; state_to_tensor() appends ch 10
+(side-to-move), so the network sees 11. Size against OBS_CHANNELS below.
 
 Channel Breakdown
 -----------------
@@ -21,6 +24,8 @@ Ch 6: Player 0 walls remaining  — uniform plane, value = remaining / max_walls
 Ch 7: Player 1 walls remaining  — uniform plane, value = remaining / max_walls
 Ch 8: Player 0 distance map     — BFS distance from each cell to P0's goal row, normalized by max possible distance
 Ch 9: Player 1 distance map     — BFS distance from each cell to P1's goal row, normalized by max possible distance
+Ch 10: Side to move             — uniform plane, value = current_player (added by
+                                  QuoridorEnv.state_to_tensor, not by build_tensor)
 
 Design Rationale
 -----------------
@@ -47,6 +52,12 @@ This keeps the spatial structure — convolutions can "see" wall extent.
 import numpy as np
 from collections import deque
 from typing import List, Tuple, Set
+
+
+# Single source of truth for the network's input width: build_tensor() emits the
+# base planes (ch 0-9), state_to_tensor() appends side-to-move (ch 10).
+BASE_CHANNELS = 10
+OBS_CHANNELS = BASE_CHANNELS + 1
 
 
 # Wall grid size = board_size - 1

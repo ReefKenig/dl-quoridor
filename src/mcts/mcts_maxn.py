@@ -293,14 +293,18 @@ class MCTSMaxN:
             node.value_sum += value
             node = node.parent
 
-    def _add_dirichlet_noise(self, root):
+    def _add_dirichlet_noise(self, root, rng=None):
         # epsilon <= 0 disables exploration noise entirely (used during eval so
         # strength is measured deterministically at true best-play). Short-circuit
         # so we don't even draw from the RNG — the mix below would be a no-op anyway.
+        #
+        # `rng`: callers stepping several searches at once must pass their own,
+        # or interleaved draws off the global stream couple their noise together.
         if self.config.dirichlet_epsilon <= 0 or not root.children:
             return
+        rng = rng if rng is not None else np.random
         actions = list(root.children.keys())
-        noise = np.random.dirichlet(
+        noise = rng.dirichlet(
             [self.config.dirichlet_alpha] * len(actions))
         eps = self.config.dirichlet_epsilon
         for i, a in enumerate(actions):
@@ -324,3 +328,126 @@ class MCTSMaxN:
             probs[a] = 1.0
         t = probs.sum()
         return probs / t if t > 0 else probs
+
+
+class VectorizedSearch:
+    """One game's max^n search, driven step-by-step so a caller can batch the leaf
+    evaluations of MANY concurrent searches into a single GPU forward pass.
+
+    This is EXACT sequential MCTS — no virtual loss, at most one pending leaf per
+    tree at a time — stepped instead of run to completion. The sequence of
+    simulations is identical to `MCTSMaxN.search` with leaf_batch=1, so the final
+    visit distribution is bit-for-bit identical to the sequential path (verified by
+    the parity test). The only difference is *when* the network is called: instead
+    of the search calling `evaluate_fn` itself, it hands the leaf state to the
+    driver, which stacks it with leaves from other games and calls
+    `model.predict_batch` once.
+
+    Protocol:
+        vs = VectorizedSearch(mcts, env, state)
+        while not vs.done():
+            leaf = vs.collect()            # a state needing eval, or None
+            if leaf is not None:
+                policy, value = <eval leaf>
+                vs.apply(policy, value)
+        probs = vs.action_probs(temperature)
+
+    `collect()` returns None exactly when the sim budget is spent, which always
+    coincides with `done()` — so None means "advance this game", not "retry".
+
+    `rng` supplies the root's Dirichlet noise; a driver stepping several searches
+    at once must give each its own. None = the global stream.
+    """
+
+    def __init__(self, mcts, env, state, rng=None):
+        self.mcts = mcts
+        self.env = env
+        self.state = env.clone_state(state)
+        self.num_players = mcts.num_players
+        self.rng = rng
+        self.root = Node(num_players=self.num_players)
+        self.remaining = mcts.config.num_simulations
+        self._root_ready = False
+        self._pending_node = None
+        self._pending_is_root = False
+        self._pending_valids = None
+
+    def collect(self):
+        """Advance until this search either needs one leaf evaluated (return that
+        state) or has no network work to do this step (return None)."""
+        if self._pending_node is not None or self.remaining <= 0:
+            return None
+        mcts, env = self.mcts, self.env
+
+        # Root must be expanded (one eval) before any simulation runs. This mirrors
+        # MCTSMaxN.search: expand root, add Dirichlet, THEN run num_simulations sims.
+        if not self._root_ready:
+            valids = mcts._expand_valids(self.root, env, self.state)
+            if len(valids) == 0:
+                self.root.is_expanded = True
+                self._root_ready = True
+                self.remaining = 0
+                return None
+            self._pending_node = self.root
+            self._pending_is_root = True
+            return self.state
+
+        # One simulation: descend root->leaf (no virtual loss), resolving any
+        # terminal / no-move leaves inline (no network needed) until a real leaf
+        # that requires evaluation is found or the sim budget is spent.
+        while self.remaining > 0:
+            node = self.root
+            scratch = env.clone_state(self.state)
+            done = False
+            info = {}
+            while node.is_expanded and node.children:
+                node = mcts._select_child(node)
+                scratch, _, done, info = env.step(scratch, node.action)
+                if done:
+                    break
+            if done:
+                mcts._backpropagate(node, mcts._terminal_value(info))
+                self.remaining -= 1
+                continue
+            valids = mcts._expand_valids(node, env, scratch)
+            if len(valids) == 0:
+                node.is_expanded = True
+                mcts._backpropagate(node, np.zeros(self.num_players))
+                self.remaining -= 1
+                continue
+            self._pending_node = node
+            self._pending_is_root = False
+            self._pending_valids = valids
+            return scratch
+        return None
+
+    def apply(self, policy, value):
+        """Apply the network result for the leaf returned by the last collect()."""
+        mcts, env = self.mcts, self.env
+        node = self._pending_node
+        if node is None:
+            return
+        if self._pending_is_root:
+            mcts._set_children_from_policy(
+                node, env, node.valid_actions, policy, value)
+            node.is_expanded = True
+            mcts._add_dirichlet_noise(self.root, rng=self.rng)
+            self._root_ready = True
+            self._pending_node = None
+            self._pending_is_root = False
+            # Root expansion consumes NO simulation (matches sequential search).
+        else:
+            val = mcts._set_children_from_policy(
+                node, env, self._pending_valids, policy, value)
+            node.is_expanded = True
+            mcts._backpropagate(node, val)
+            self.remaining -= 1
+            self._pending_node = None
+            self._pending_valids = None
+
+    def done(self):
+        return self.remaining <= 0 and self._pending_node is None
+
+    def action_probs(self, temperature):
+        return self.mcts._action_probabilities(
+            self.root, self.env.action_space_size, temperature)

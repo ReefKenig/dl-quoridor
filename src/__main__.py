@@ -59,7 +59,10 @@ def main():
     from src.model.network import QuoridorModel
     from src.mcts.self_play import training_loop
 
-    env = QuoridorEnv(is_poc=cfg.is_poc,
+    # QuoridorEnv takes board_size, not the old is_poc flag. cfg.board_size
+    # already derives from is_poc when the config doesn't set it explicitly, and
+    # honours an explicit board_size when it does.
+    env = QuoridorEnv(board_size=cfg.board_size,
                       max_walls_per_player=cfg.max_walls_per_player)
     net_cfg = cfg.network_config()
 

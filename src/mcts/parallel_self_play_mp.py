@@ -16,6 +16,7 @@ uses a single model (`model_id` 0). Value-target assignment, augmentation and th
 maxⁿ search are unchanged — workers reuse `play_one_game` from `self_play_mp.py`,
 so samples are bit-for-bit identical to the sequential path.
 """
+import multiprocessing as mp
 import os
 import sys
 import traceback
@@ -27,11 +28,18 @@ from src.mcts.batched_inference_mp import (make_batched_evaluate,
 
 def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                       payload, project_dir, response_timeout=300.0):
-    """Play the assigned self-play games, deferring every leaf eval to the GPU.
+    """Play self-play games claimed from a shared counter, deferring every leaf
+    eval to the GPU.
 
-    `payload` is `(num_games, config_dict, seed)`.
+    `payload` is `(game_counter, total_games, config_dict, base_seed)`. Instead of
+    a fixed per-worker quota, every worker pulls the next game index from
+    `game_counter` (an atomic shared Value) until it is exhausted. A fast worker
+    keeps grabbing games rather than going idle while a slow worker finishes its
+    last one, so GPU-batch concurrency stays high through the end of the iteration
+    (no straggler tail — the failure mode where the last few games run alone at a
+    fraction of steady-state throughput).
     """
-    num_games, config_dict, seed = payload
+    game_counter, total_games, config_dict, base_seed = payload
     try:
         os.chdir(project_dir)
         if project_dir not in sys.path:
@@ -42,13 +50,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         import torch
         from src.env.quoridor_env_mp import QuoridorEnvMP
         from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
-        from src.mcts.self_play_mp import play_one_game
-
-        # Deterministic, distinct per-worker seed so parallel runs are
-        # reproducible and workers don't play identical games.
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
+        from src.mcts.self_play_mp import play_one_game, game_seed
 
         N = config_dict["num_players"]
         env = QuoridorEnvMP(
@@ -71,7 +73,8 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         mcts = MCTSMaxN(
             config=MCTSConfig(
                 num_simulations=config_dict["mcts_simulations"],
-                dirichlet_epsilon=config_dict.get("mcts_dirichlet_epsilon", 0.25),
+                dirichlet_epsilon=config_dict.get(
+                    "mcts_dirichlet_epsilon", 0.25),
                 max_rollout_depth=config_dict["max_game_moves"],
                 leaf_batch=leaf_batch,
                 virtual_loss=virtual_loss,
@@ -81,7 +84,23 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         )
 
         produced = 0
-        for _ in range(num_games):
+        while True:
+            # Claim the next game index atomically. game_index is unique across all
+            # workers, so its seed is deterministic regardless of who plays it.
+            with game_counter.get_lock():
+                remaining = game_counter.value
+                if remaining <= 0:
+                    break
+                game_counter.value = remaining - 1
+            game_index = total_games - remaining
+
+            # Seed per game, not per worker: ties the sample stream to the game
+            # index rather than to whichever worker claimed it.
+            seed = game_seed(base_seed, game_index)
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+
             samples, winner = play_one_game(
                 env, mcts, N,
                 max_moves=config_dict["max_game_moves"],
@@ -93,7 +112,8 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
 
         results_queue.put(("done", worker_id, produced))
     except Exception as e:
-        print(f"[WORKER {worker_id}] CRASHED: {e}\n{traceback.format_exc()}", flush=True)
+        print(
+            f"[WORKER {worker_id}] CRASHED: {e}\n{traceback.format_exc()}", flush=True)
         results_queue.put(("done", worker_id, 0))
 
 
@@ -116,7 +136,10 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
                            factors against num_workers.
         batch_size       : max leaves batched per GPU forward pass.
         on_games_complete: optional callback(games_done, total_games, wins_dict).
-        base_seed        : worker w is seeded base_seed + w for reproducibility.
+        base_seed        : game g (0-based, across all workers) is seeded
+                           game_seed(base_seed, g), so the data is reproducible
+                           even though game-to-worker assignment is dynamic
+                           (work-stealing).
         worker_join_timeout: max seconds to wait for each worker to exit (default 30).
         response_timeout : max seconds a worker waits for a single GPU reply before
                            treating the inference batcher as dead and crashing out
@@ -127,11 +150,12 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         value_vec) tuples (already augmented) and wins maps winner -> count
         (None key = draw/timeout).
     """
-    # Distribute games exactly. If total < num_workers, spawn only as many
-    # workers as there are games (idle workers would just add spawn overhead).
+    # Spawn at most one worker per game (idle workers would only add spawn
+    # overhead). Games are NOT pre-divided: workers pull from a shared atomic
+    # counter (work-stealing), so a fast worker keeps claiming games instead of
+    # sitting idle while a slow worker finishes — this keeps the GPU batch full
+    # right up to the last game and removes the end-of-iteration throughput tail.
     n_workers = max(1, min(num_workers, total_games))
-    base, rem = divmod(total_games, n_workers)
-    games_for = [base + (1 if i < rem else 0) for i in range(n_workers)]
 
     config_dict = {
         "num_players": cfg.num_players,
@@ -146,7 +170,12 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         "leaf_batch": getattr(cfg, "leaf_batch", 1),
         "virtual_loss": getattr(cfg, "virtual_loss", 1.0),
     }
-    payloads = [(games_for[i], config_dict, base_seed + i) for i in range(n_workers)]
+    # Shared work-stealing counter (spawn context matches run_batched_inference,
+    # which returns the same singleton SpawnContext). All workers share this one
+    # Value; each atomically decrements it to claim the next game index.
+    game_counter = mp.get_context("spawn").Value("i", total_games)
+    payloads = [(game_counter, total_games, config_dict, base_seed)
+                for _ in range(n_workers)]
 
     samples = []
     wins = {}
@@ -154,7 +183,8 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
 
     def on_result(msg):
         nonlocal games_done
-        _, _wid, game_samples, winner = msg  # ("game", worker_id, samples, winner)
+        # ("game", worker_id, samples, winner)
+        _, _wid, game_samples, winner = msg
         samples.extend(game_samples)
         wins[winner] = wins.get(winner, 0) + 1
         games_done += 1

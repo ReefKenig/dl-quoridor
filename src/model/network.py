@@ -2,7 +2,8 @@
 Dual-Headed Neural Network (Policy + Value)
 =============================================
 AlphaZero-style CNN/ResNet:
-    Input:  (batch, board_h, board_w, 10) — 10-channel board tensor
+    Input:  (batch, board_h, board_w, OBS_CHANNELS) — board tensor as produced by
+            QuoridorEnv.state_to_tensor (see src/env/tensor_spec.py)
     Output: policy (batch, action_space_size) — move probabilities
             value  (batch, 1)               — win probability [-1, 1]
 
@@ -26,6 +27,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+
+from src.env.tensor_spec import OBS_CHANNELS
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +66,7 @@ class QuoridorNetwork(nn.Module):
     def __init__(
         self,
         board_size: int = 5,
-        in_channels: int = 10,
+        in_channels: int = OBS_CHANNELS,
         num_channels: int = 64,
         num_res_blocks: int = 4,
         action_space_size: int = 44,
@@ -140,7 +143,7 @@ class QuoridorModel:
         lr: float = 0.001,
         weight_decay: float = 1e-4,
         device: str = "auto",
-        in_channels: int = 11,
+        in_channels: int = OBS_CHANNELS,
     ):
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -35,7 +35,9 @@
         "leaf_batch": 8,
         "virtual_loss": 1.0,
         "parallel_self_play": true,
-        "parallel_eval": true
+        "parallel_eval": true,
+        "self_play_mode": "auto",
+        "vec_games": 0
     },
     "variants": {
         "n2": {

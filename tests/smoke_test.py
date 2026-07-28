@@ -16,7 +16,7 @@ from src.mcts.self_play import play_one_game
 
 @pytest.fixture
 def env():
-    return QuoridorEnv(is_poc=True)
+    return QuoridorEnv(board_size=5)
 
 
 @pytest.fixture

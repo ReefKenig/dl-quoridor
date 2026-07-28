@@ -148,6 +148,46 @@ def resolve_self_play_mode(cfg):
     return mode
 
 
+def init_champion(best, model, checkpoint_dir, log=print):
+    """Establish the gating champion at run start and make it durable on disk.
+
+    `best.pt` used to be written only on acceptance. A run that never accepted
+    therefore never created it, and `load_champion` below would then silently
+    re-anchor the champion to the current learner on every restart — candidate vs
+    an identical copy of itself, which splits seats exactly and scores 1/N, below
+    any `fair + margin` threshold. That is a closed loop: never accept -> never
+    write best.pt -> next restart resets the champion -> never accept. Writing it
+    up front breaks the loop at its only entry point.
+    """
+    best.copy_weights_from(model)
+    best_path = os.path.join(checkpoint_dir, "best.pt")
+    if not os.path.exists(best_path):
+        best.save(best_path)
+        log(f"Champion initialised from the starting model -> {best_path}")
+    return best_path
+
+
+def load_champion(best, model, checkpoint_dir, log=print):
+    """Restore the gating champion on resume. Returns True if loaded from disk.
+
+    A missing `best.pt` is not a normal state once `init_champion` has run, so it
+    is reported loudly rather than papered over: falling back to the current
+    learner makes the gate compare the candidate against itself, which looks like
+    a working eval while measuring nothing.
+    """
+    best_path = os.path.join(checkpoint_dir, "best.pt")
+    if os.path.exists(best_path):
+        best.load(best_path)
+        return True
+    best.copy_weights_from(model)
+    best.save(best_path)
+    log(f"WARNING: {best_path} is missing on resume — the gating champion has "
+        f"been re-seeded from the current model and saved. Until a candidate is "
+        f"accepted, eval-vs-best compares the model against an identical copy of "
+        f"itself and cannot exceed the accept threshold.")
+    return False
+
+
 def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                      checkpoint_dir="checkpoints_mp"):
     """
@@ -159,7 +199,6 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     os.makedirs(checkpoint_dir, exist_ok=True)
     buffer = ReplayBufferMP(cfg.replay_buffer_size)
     best = make_model()
-    best.copy_weights_from(model)
     fair = 1.0 / cfg.num_players
     threshold = fair + cfg.accept_margin
     history = []
@@ -187,20 +226,19 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     start_iter = 0
     meta_path = os.path.join(checkpoint_dir, "meta.json")
     latest_path = os.path.join(checkpoint_dir, "latest.pt")
-    best_path = os.path.join(checkpoint_dir, "best.pt")
     if os.path.exists(meta_path) and os.path.exists(latest_path):
         with open(meta_path) as f:
             meta = json.load(f)
         start_iter = meta.get("completed_iterations", 0)
         model.load(latest_path)
-        if os.path.exists(best_path):
-            best.load(best_path)
-        else:
-            best.copy_weights_from(model)
+        load_champion(best, model, checkpoint_dir, log=_log)
         history = meta.get("history", [])
         _log(
             f"Resumed from iteration {start_iter} (checkpoint: {checkpoint_dir})")
     else:
+        # Durable champion from iteration 0, so the gate has a real opponent even
+        # if nothing is ever accepted.
+        init_champion(best, model, checkpoint_dir, log=_log)
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")
 

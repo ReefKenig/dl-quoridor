@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 @pytest.mark.slow
 def test_mcts_vs_random():
     """MCTS agent should beat random agent with >80% win rate."""
-    env = QuoridorEnv(is_poc=True)
+    env = QuoridorEnv(board_size=5)
     mcts = MCTS(config=MCTSConfig(num_simulations=400))
     agent_a = mcts_agent(mcts, temperature=0.1)
 
@@ -35,7 +35,7 @@ def test_mcts_vs_random():
 @pytest.mark.slow
 def test_strong_vs_weak_mcts():
     """More simulations should beat fewer simulations."""
-    env = QuoridorEnv(is_poc=True)
+    env = QuoridorEnv(board_size=5)
     strong = mcts_agent(MCTS(config=MCTSConfig(num_simulations=400)), temperature=0.1)
     weak = mcts_agent(MCTS(config=MCTSConfig(num_simulations=50)), temperature=0.1)
 
@@ -46,7 +46,7 @@ def test_strong_vs_weak_mcts():
 @pytest.mark.slow
 def test_side_alternation():
     """Agent A should play as both player 0 and player 1."""
-    env = QuoridorEnv(is_poc=True)
+    env = QuoridorEnv(board_size=5)
     agent = mcts_agent(MCTS(config=MCTSConfig(num_simulations=100)), temperature=0.1)
 
     result = evaluate(
@@ -69,7 +69,7 @@ def test_should_accept():
 @pytest.mark.slow
 def test_mcts_vs_random_real_env():
     """MCTS agent should beat random on real 5x5 QuoridorEnv."""
-    env = QuoridorEnv(is_poc=True)
+    env = QuoridorEnv(board_size=5)
     mcts = MCTS(config=MCTSConfig(num_simulations=200))
     agent_a = mcts_agent(mcts, temperature=0.1)
 

@@ -9,7 +9,7 @@ from src.env.quoridor_env import QuoridorEnv
 class SB3Wrapper(gym.Env):
     def __init__(self, board_size=5):
         super().__init__()
-        self.env = QuoridorEnv(is_poc=(board_size <= 5))
+        self.env = QuoridorEnv(board_size=board_size)
         self.board_size = self.env.board_size
 
         self.action_space = spaces.Discrete(self.env.action_space_size)

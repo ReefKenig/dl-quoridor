@@ -11,11 +11,15 @@ that matters is measured here, not assumed).
 Usage (local 5x5 smoke):
     PYTHONPATH=. python scripts/bench_self_play.py --games 12
 
-Each engine gets untimed warmup games before it is timed (`--warmup-games`), so
-CUDA context init, cuDNN autotune and worker spawn don't land entirely on
-whichever engine happens to run first. `--repeat` reports best-of-N, and
-`--order` lets you swap which engine goes first — if the margin is within ~10%,
-run it both ways before trusting it.
+Each engine gets untimed warmup games before it is timed, so CUDA context init,
+cuDNN autotune and worker spawn don't land entirely on whichever engine happens
+to run first. Warmup defaults to *enough games to spawn the engine's full pool*
+(both engines derive their concurrency from the game count, so a 2-game warmup
+of a 32-worker run would spawn 2 workers) at reduced sims and game length, which
+keeps it to seconds rather than tens of minutes.
+
+`--repeat` reports best-of-N, and `--order` lets you swap which engine goes
+first — if the margin is within ~10%, run it both ways before trusting it.
 
 Usage (9x9 realistic):
     PYTHONPATH=. python scripts/bench_self_play.py \
@@ -32,6 +36,8 @@ from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
 
 
+ENGINES = ("parallel", "vectorized")
+
 # Every knob the bench takes, with its default. The CLI turns each into a
 # --flag and run_bench() accepts the same names as keywords, so the notebook and
 # the command line drive one implementation rather than two.
@@ -39,8 +45,8 @@ DEFAULTS = dict(
     board_size=5, num_players=2, walls=3, num_channels=64, num_res_blocks=4,
     sims=100, games=12, vec_games=0, num_workers=8, batch_size=128,
     leaf_batch=8, explore_moves=10, max_moves=160, device="auto",
-    repeat=1, warmup_games=2, order="parallel,vectorized",
-    skip_parallel=False, skip_vectorized=False,
+    repeat=1, warmup_games=None, warmup_sims=25, warmup_max_moves=60,
+    order="parallel,vectorized", skip_parallel=False, skip_vectorized=False,
 )
 
 
@@ -115,9 +121,14 @@ def run_bench(**kwargs):
     o = {**DEFAULTS, **kwargs}
 
     N = o["num_players"]
-    cfg = _Cfg(num_players=N, board_size=o["board_size"], walls=o["walls"],
-               sims=o["sims"], explore_moves=o["explore_moves"],
-               max_moves=o["max_moves"], leaf_batch=o["leaf_batch"])
+
+    def make_cfg(sims, max_moves):
+        return _Cfg(num_players=N, board_size=o["board_size"], walls=o["walls"],
+                    sims=sims, explore_moves=o["explore_moves"],
+                    max_moves=max_moves, leaf_batch=o["leaf_batch"])
+
+    cfg = make_cfg(o["sims"], o["max_moves"])
+    warm_cfg = make_cfg(o["warmup_sims"], o["warmup_max_moves"])
     model = QuoridorModelMP(
         board_size=o["board_size"],
         action_space_size=compute_action_space_size(o["board_size"]),
@@ -125,21 +136,30 @@ def run_bench(**kwargs):
         num_res_blocks=o["num_res_blocks"], num_players=N, device=o["device"],
     )
 
-    quiet = {"log": lambda *x: None}
-    engines = {
-        "parallel": lambda games: generate_parallel_self_play_mp(
-            model, cfg, num_workers=o["num_workers"], total_games=games,
-            batch_size=o["batch_size"], **quiet),
-        "vectorized": lambda games: generate_vectorized_self_play_mp(
-            model, cfg, total_games=games, vec_games=(o["vec_games"] or None),
-            batch_size=o["batch_size"], **quiet),
-    }
+    def engine(name, use_cfg):
+        if name == "parallel":
+            return lambda games: generate_parallel_self_play_mp(
+                model, use_cfg, num_workers=o["num_workers"], total_games=games,
+                batch_size=o["batch_size"], log=lambda *x: None)
+        return lambda games: generate_vectorized_self_play_mp(
+            model, use_cfg, total_games=games,
+            vec_games=(o["vec_games"] or None),
+            batch_size=o["batch_size"], log=lambda *x: None)
+
+    # How wide each engine runs. Both size their concurrency by the game count
+    # (`n_workers = min(num_workers, total_games)`, `G = min(vec_games,
+    # total_games)`), so a warmup with fewer games than this spawns a fraction of
+    # the pool — it would neither warm up the real configuration nor finish
+    # quickly, since every game still costs full sims x full length.
+    width = {"parallel": o["num_workers"],
+             "vectorized": o["vec_games"] or min(o["games"], 64)}
+
     skipped = {"parallel": o["skip_parallel"], "vectorized": o["skip_vectorized"]}
     order = [e.strip() for e in o["order"].split(",") if e.strip()]
-    unknown = [e for e in order if e not in engines]
+    unknown = [e for e in order if e not in ENGINES]
     if unknown:
         raise ValueError(f"unknown engine(s) in order: {unknown}; "
-                         f"expected from {list(engines)}")
+                         f"expected from {list(ENGINES)}")
 
     print("=" * 60)
     print(f"Bench | board={o['board_size']} N={N} sims={o['sims']} "
@@ -147,17 +167,21 @@ def run_bench(**kwargs):
           f"workers={o['num_workers']} batch={o['batch_size']} "
           f"leaf_batch={o['leaf_batch']}")
     print(f"order={'>'.join(order)} repeat={o['repeat']} "
-          f"warmup={o['warmup_games']}")
+          f"warmup={o['warmup_games'] if o['warmup_games'] is not None else 'auto'}"
+          f" @ {o['warmup_sims']} sims/{o['warmup_max_moves']} plies")
     print("=" * 60)
 
     results = {}
     for name in order:
         if skipped[name]:
             continue
-        run = engines[name]
-        if o["warmup_games"] > 0:
-            print(f"\n[{name}] warmup ({o['warmup_games']} games, untimed)...")
-            run(o["warmup_games"])
+        warm_games = (o["warmup_games"] if o["warmup_games"] is not None
+                      else max(1, width[name]))
+        if warm_games > 0:
+            print(f"\n[{name}] warmup ({warm_games} games @ {o['warmup_sims']} "
+                  f"sims, untimed)...")
+            engine(name, warm_cfg)(warm_games)
+        run = engine(name, cfg)
         results[name] = _time(name, lambda: run(o["games"]), repeat=o["repeat"])
 
     if "parallel" in results and "vectorized" in results:
@@ -193,9 +217,21 @@ def main():
                     help="timed runs per engine; reports best-of")
     ap.add_argument("--warmup-games", type=int, default=DEFAULTS["warmup_games"],
                     help="untimed games per engine before timing (0 disables). "
-                         "Absorbs CUDA context init, cuDNN autotune and worker "
+                         "Default: auto — enough to spawn the engine's full "
+                         "pool, since both size concurrency by game count and a "
+                         "smaller warmup would run at a fraction of the real "
+                         "width. Absorbs CUDA init, cuDNN autotune and worker "
                          "spawn, which otherwise land entirely on whichever "
                          "engine runs first")
+    ap.add_argument("--warmup-sims", type=int, default=DEFAULTS["warmup_sims"],
+                    help="MCTS sims during warmup. Low by default: batch shapes "
+                         "(what cuDNN autotunes on) are set by worker/leaf "
+                         "count, not sims, so warmup stays cheap without "
+                         "changing what gets warmed")
+    ap.add_argument("--warmup-max-moves", type=int,
+                    default=DEFAULTS["warmup_max_moves"],
+                    help="ply cap during warmup; short games are enough to "
+                         "spawn workers and prime the GPU")
     ap.add_argument("--order", default=DEFAULTS["order"],
                     help="comma-separated engine order. Run it both ways if the "
                          "margin is close — ordering effects are real")

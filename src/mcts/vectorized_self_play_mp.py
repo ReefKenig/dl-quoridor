@@ -15,7 +15,6 @@ the quota is exhausted and slots start retiring without replacement; that tail i
 bounded by G rather than by the whole straggler spread, which is the improvement
 over the worker-pool path.
 
-
 Correctness: because each game runs `VectorizedSearch` (bit-identical to
 `MCTSMaxN.search` with leaf_batch=1), the per-move visit distributions are exact
 sequential MCTS — no virtual-loss approximation. Value-target assignment and
@@ -55,22 +54,37 @@ class _GameSlot:
         self.rng = None
 
 
-def _batched_eval(model, env, leaf_states):
-    """One GPU forward over all pending leaves; returns list of (policy, value)."""
+def _submit(model, env, chunk):
+    """Launch one forward over `chunk`'s leaves WITHOUT reading the result back.
+
+    On CUDA the kernels are queued asynchronously, so this returns while the GPU
+    is still working and the caller can descend more trees on the CPU meanwhile.
+    Returns an opaque handle for `_apply`.
+    """
     stacked = torch.from_numpy(
         np.ascontiguousarray(
-            np.stack([env.state_to_tensor(s).transpose(2, 0, 1)
-                      for s in leaf_states]),
+            np.stack([env.state_to_tensor(leaf).transpose(2, 0, 1)
+                      for _slot, leaf in chunk]),
             dtype=np.float32)
     ).to(model.device)
     policies, values = model.predict_batch(stacked)
-    return policies.cpu().numpy(), values.cpu().numpy()
+    return chunk, policies, values
+
+
+def _apply(inflight):
+    """Read back a `_submit` handle (this is the GPU sync point) and scatter the
+    policies/values into the searches that asked for them."""
+    chunk, policies, values = inflight
+    pols = policies.cpu().numpy()
+    vals = values.cpu().numpy()
+    for j, (slot, _leaf) in enumerate(chunk):
+        slot.search.apply(pols[j], vals[j])
 
 
 def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
                                      batch_size=None, on_games_complete=None,
                                      base_seed=0, explore_temp=1.0, final_temp=0.3,
-                                     log=print):
+                                     pipeline_groups=None, log=print):
     """Generate one iteration of self-play data via in-process vectorized MCTS.
 
     Args:
@@ -90,6 +104,10 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
                       vec_games or on which games ran alongside it.
         explore_temp/final_temp : action-sampling temperature before/after
                       cfg.explore_moves (defaults match play_one_game: 1.0 then 0.3).
+        pipeline_groups : how many sub-batches to split each round into so CPU
+                      tree-descent overlaps GPU compute (see the loop below).
+                      Defaults to 2 on CUDA, 1 elsewhere (on CPU the forward is
+                      synchronous, so splitting only shrinks the batch).
 
     Returns:
         (samples, wins) — samples is a flat list of (state_hwc, policy, value_vec)
@@ -111,6 +129,9 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
     G = max(1, min(G, total_games))
     if batch_size is None:
         batch_size = G
+    if pipeline_groups is None:
+        pipeline_groups = 2 if model.device.type == "cuda" else 1
+    pipeline_groups = max(1, int(pipeline_groups))
 
     def _new_mcts():
         return MCTSMaxN(
@@ -148,16 +169,24 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
     slots = [_start_slot(None) for _ in range(min(G, total_games))]
 
     while slots:
-        # 1. Gather one pending leaf from every active game.
-        pending = [(slot, slot.search.collect()) for slot in slots]
-        pending = [(slot, leaf) for slot, leaf in pending if leaf is not None]
-
-        # 2. One (chunked) GPU forward over all pending leaves; scatter back.
-        for i in range(0, len(pending), batch_size):
-            chunk = pending[i:i + batch_size]
-            pols, vals = _batched_eval(model, env, [leaf for _, leaf in chunk])
-            for j, (slot, _leaf) in enumerate(chunk):
-                slot.search.apply(pols[j], vals[j])
+        # 1+2. Descend trees and evaluate leaves, pipelined: split the active
+        # slots into `pipeline_groups` and keep one forward in flight while the
+        # next group's tree-walks run. Without this the round is strictly
+        # serial — GPU idle during the (Python, single-core, and at 9x9/800 sims
+        # dominant) descents, CPU idle during the forward. With k groups, k-1 of
+        # the k forwards overlap CPU work. k=1 restores the plain behaviour.
+        per_group = -(-len(slots) // pipeline_groups)   # ceil
+        inflight = None
+        for gs in range(0, len(slots), per_group):
+            group = slots[gs:gs + per_group]
+            pending = [(slot, slot.search.collect()) for slot in group]
+            pending = [(slot, leaf) for slot, leaf in pending if leaf is not None]
+            for i in range(0, len(pending), batch_size):
+                if inflight is not None:
+                    _apply(inflight)
+                inflight = _submit(model, env, pending[i:i + batch_size])
+        if inflight is not None:
+            _apply(inflight)
 
         # 3. Advance any game whose search is complete: pick a move, step the env,
         #    and finalize + refill (or retire) on game end.

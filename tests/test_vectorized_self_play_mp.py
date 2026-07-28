@@ -168,6 +168,17 @@ def test_vectorized_refill_does_not_disturb_inflight_games():
     _assert_samples_equal(refilled, one_at_a_time)
 
 
+def test_vectorized_pipeline_groups_do_not_change_results():
+    """Pipelining is a scheduling change only — splitting a round into k sub-batches
+    must not alter the data (exactly so on CPU; GPU differs only in the last ulp)."""
+    cfg = _Cfg(num_players=2, eps=0.25)
+    model = _model(2)
+    kw = dict(total_games=3, vec_games=3, base_seed=5)
+    plain, _ = generate_vectorized_self_play_mp(model, cfg, pipeline_groups=1, **kw)
+    piped, _ = generate_vectorized_self_play_mp(model, cfg, pipeline_groups=3, **kw)
+    _assert_samples_equal(plain, piped)
+
+
 def test_vectorized_exact_game_count_uneven():
     """Return contract: plays exactly total_games even when it isn't a multiple of
     vec_games, and the progress callback fires total_games times."""

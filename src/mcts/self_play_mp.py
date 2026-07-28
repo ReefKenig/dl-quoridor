@@ -78,6 +78,22 @@ def augment_mp(tensor, policy, value_vec, num_players, board_size):
     return out, fp, fv
 
 
+def game_seed(base_seed, game_index):
+    """Derive game `game_index`'s seed from `base_seed`.
+
+    Consecutive game indices must give *uncorrelated* streams: self-play draws
+    Dirichlet noise and samples actions, and neighbouring games sharing structure
+    in their exploration noise would quietly cut sample diversity. SeedSequence
+    hashes (base_seed, game_index) into well-scattered entropy, which
+    `base_seed + game_index` does not guarantee.
+
+    Deterministic: the same (base_seed, game_index) always yields the same seed,
+    regardless of which worker or slot happens to play the game.
+    """
+    seq = np.random.SeedSequence([int(base_seed), int(game_index)])
+    return int(seq.generate_state(1, dtype=np.uint32)[0])
+
+
 def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
                   temp_explore=1.0, explore_moves=15):
     state = env.reset()

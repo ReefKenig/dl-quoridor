@@ -50,7 +50,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         import torch
         from src.env.quoridor_env_mp import QuoridorEnvMP
         from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
-        from src.mcts.self_play_mp import play_one_game
+        from src.mcts.self_play_mp import play_one_game, game_seed
 
         N = config_dict["num_players"]
         env = QuoridorEnvMP(
@@ -97,7 +97,9 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
             # Seed per game (not once per worker): the sample stream is tied to the
             # game index, not to which worker happened to grab it, so the data is
             # reproducible even though game-to-worker assignment is now dynamic.
-            seed = base_seed + game_index
+            # game_seed hashes (base_seed, index) rather than adding them, so
+            # neighbouring games get uncorrelated exploration noise.
+            seed = game_seed(base_seed, game_index)
             random.seed(seed)
             np.random.seed(seed)
             torch.manual_seed(seed)
@@ -138,8 +140,9 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         batch_size       : max leaves batched per GPU forward pass.
         on_games_complete: optional callback(games_done, total_games, wins_dict).
         base_seed        : game g (0-based, across all workers) is seeded
-                           base_seed + g, so the data is reproducible even though
-                           game-to-worker assignment is dynamic (work-stealing).
+                           game_seed(base_seed, g), so the data is reproducible
+                           even though game-to-worker assignment is dynamic
+                           (work-stealing).
         worker_join_timeout: max seconds to wait for each worker to exit (default 30).
         response_timeout : max seconds a worker waits for a single GPU reply before
                            treating the inference batcher as dead and crashing out

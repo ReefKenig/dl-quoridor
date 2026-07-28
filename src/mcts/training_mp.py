@@ -16,10 +16,12 @@ import numpy as np
 
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
+from src.utils.schedule import lr_at
+from src.mcts.batched_inference_mp import DEFAULT_BATCH_WAIT_MS
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
-from src.mcts.evaluator_mp import (evaluate_mp, evaluate_against_random_mp,
-                                   mcts_agent_mp)
+from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
+                                   evaluate_against_random_mp, mcts_agent_mp)
 from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
                                        evaluate_against_random_parallel_mp)
 from src.utils.logger import make_progress_logger
@@ -63,6 +65,13 @@ class TrainingConfigMP:
     eval_games: int = 80
     eval_random_games: int = 24
     accept_margin: float = 0.05          # accept if win_rate > fair_share + margin
+    # "constant" keeps existing scripts unchanged; 9x9 opts into cosine.
+    lr_schedule: str = "constant"
+    lr_final_frac: float = 0.1           # cosine end point, as a fraction of base_lr
+    # Batcher accumulation window; 0 restores the old no-wait draining.
+    batch_wait_ms: float = DEFAULT_BATCH_WAIT_MS
+    # Sampled opening plies in eval; 0 makes same-seat games identical replays.
+    eval_opening_plies: int = DEFAULT_EVAL_OPENING_PLIES
     # run eval every N iterations (1 = every iter)
     eval_every: int = 1
     discount: float = 0.97
@@ -148,6 +157,53 @@ def resolve_self_play_mode(cfg):
     return mode
 
 
+def zero_sample_reason(it, engine, wins, games_per_iteration, checkpoint_dir):
+    """Diagnose a zero-sample iteration: all-timeout vs a stalled batcher."""
+    if wins.get(None, 0) >= games_per_iteration:
+        return (
+            f"[iter {it}] all {games_per_iteration} games timed out at "
+            f"max_game_moves, so self-play produced no training samples. This is "
+            f"a game-length problem, not a crash: raise max_game_moves for this "
+            f"variant. It counts plies rather than rounds, so N=4 needs roughly "
+            f"twice the N=2 value to give each player the same budget.")
+    return (
+        f"[iter {it}] {engine} self-play produced 0 samples — aborting before "
+        f"empty training. Check {os.path.join(checkpoint_dir, 'games.log')} for "
+        f"'[GPU INFERENCE] CRASHED' or '[WORKER … ] CRASHED'.")
+
+
+def init_champion(best, model, checkpoint_dir, log=print):
+    """Establish the gating champion and make it durable from iteration 0.
+
+    Written up front so a run that never accepts still has a real opponent.
+    """
+    best.copy_weights_from(model)
+    best_path = os.path.join(checkpoint_dir, "best.pt")
+    if not os.path.exists(best_path):
+        best.save(best_path)
+        log(f"Champion initialised from the starting model -> {best_path}")
+    return best_path
+
+
+def load_champion(best, model, checkpoint_dir, log=print):
+    """Restore the gating champion on resume. Returns True if loaded from disk.
+
+    A missing best.pt warns loudly: falling back to the learner makes the gate
+    compare the model against itself and measure nothing.
+    """
+    best_path = os.path.join(checkpoint_dir, "best.pt")
+    if os.path.exists(best_path):
+        best.load(best_path)
+        return True
+    best.copy_weights_from(model)
+    best.save(best_path)
+    log(f"WARNING: {best_path} is missing on resume — the gating champion has "
+        f"been re-seeded from the current model and saved. Until a candidate is "
+        f"accepted, eval-vs-best compares the model against an identical copy of "
+        f"itself and cannot exceed the accept threshold.")
+    return False
+
+
 def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                      checkpoint_dir="checkpoints_mp"):
     """
@@ -159,7 +215,6 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     os.makedirs(checkpoint_dir, exist_ok=True)
     buffer = ReplayBufferMP(cfg.replay_buffer_size)
     best = make_model()
-    best.copy_weights_from(model)
     fair = 1.0 / cfg.num_players
     threshold = fair + cfg.accept_margin
     history = []
@@ -187,20 +242,17 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     start_iter = 0
     meta_path = os.path.join(checkpoint_dir, "meta.json")
     latest_path = os.path.join(checkpoint_dir, "latest.pt")
-    best_path = os.path.join(checkpoint_dir, "best.pt")
     if os.path.exists(meta_path) and os.path.exists(latest_path):
         with open(meta_path) as f:
             meta = json.load(f)
         start_iter = meta.get("completed_iterations", 0)
         model.load(latest_path)
-        if os.path.exists(best_path):
-            best.load(best_path)
-        else:
-            best.copy_weights_from(model)
+        load_champion(best, model, checkpoint_dir, log=_log)
         history = meta.get("history", [])
         _log(
             f"Resumed from iteration {start_iter} (checkpoint: {checkpoint_dir})")
     else:
+        init_champion(best, model, checkpoint_dir, log=_log)
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")
 
@@ -228,9 +280,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 log=_log,
             )
             if not sp_samples:
-                raise RuntimeError(
-                    f"[iter {it+1}] vectorized self-play produced 0 samples — "
-                    f"aborting before empty training.")
+                raise RuntimeError(zero_sample_reason(
+                    it + 1, "vectorized", wins, cfg.games_per_iteration,
+                    checkpoint_dir))
             buffer.add(sp_samples)
             n_new_samples = len(sp_samples)
         elif sp_mode == "parallel":
@@ -248,15 +300,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 log=_log,
             )
             if not sp_samples:
-                # A zero-sample iteration means the parallel self-play stalled
-                # (almost always: the GPU inference thread died and workers hung
-                # until the queue timeout). Abort loudly instead of "training" on
-                # an empty buffer and silently advancing completed_iterations —
-                # the run can then be resumed from the last good checkpoint.
-                raise RuntimeError(
-                    f"[iter {it+1}] parallel self-play produced 0 samples — aborting "
-                    f"before empty training. Check {os.path.join(checkpoint_dir, 'games.log')} "
-                    f"for '[GPU INFERENCE] CRASHED' or '[WORKER … ] CRASHED'.")
+                # Either self-play stalled (usually: the GPU inference thread died
+                # and workers hung until the queue timeout) or every game timed
+                # out. Abort loudly instead of "training" on an empty buffer and
+                # silently advancing completed_iterations — the run can then be
+                # resumed from the last good checkpoint.
+                raise RuntimeError(zero_sample_reason(
+                    it + 1, "parallel", wins, cfg.games_per_iteration,
+                    checkpoint_dir))
             buffer.add(sp_samples)
             n_new_samples = len(sp_samples)
         else:
@@ -305,8 +356,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
         # --- 2. train ---
         t_train = time.time()
+        # Pure function of the iteration - nothing to persist across resume.
+        cur_lr = lr_at(cfg.lr_schedule, model.base_lr, it, cfg.num_iterations,
+                       cfg.lr_final_frac)
+        model.set_lr(cur_lr)
         _log(
-            f"[iter {it+1}/{cfg.num_iterations}] training ({cfg.train_steps_per_iter} steps)...")
+            f"[iter {it+1}/{cfg.num_iterations}] training ({cfg.train_steps_per_iter} steps, "
+            f"lr={cur_lr:.2e})...")
         lp = lv = 0.0
         warmup = max(cfg.batch_size, cfg.warmup_min_samples)
         if len(buffer) >= warmup:
@@ -341,8 +397,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         accepted = False
         eval_best_secs = 0.0
         eval_rand_secs = 0.0
-        ev_wr = 0.0
-        evr_wr = 0.0
+        # None, not 0.0 - a skipped eval measured nothing, and zeros here are
+        # indistinguishable from a real 0%.
+        ev_wr = None
+        evr_wr = None
 
         model.save(os.path.join(checkpoint_dir, "latest.pt"))
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
@@ -351,7 +409,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    secs=time.time() - t0, buffer=len(buffer),
                    sp_secs=sp_secs, train_secs=train_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,
-                   eval_done=not run_eval)
+                   eval_ran=run_eval)
         history.append(row)
 
         def _write_meta():
@@ -377,6 +435,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "max_game_moves": cfg.max_game_moves,
                 "leaf_batch": cfg.leaf_batch,
                 "virtual_loss": cfg.virtual_loss,
+                "eval_opening_plies": cfg.eval_opening_plies,
+                "batch_wait_ms": cfg.batch_wait_ms,
             }
             t_eval_best = time.time()
             _log(
@@ -393,22 +453,33 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
                     on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
             else:
-                # dirichlet_epsilon=0 → deterministic best-play eval (matches the
-                # parallel path, which also disables exploration noise).
+                # dirichlet_epsilon=0 → best-play eval (matches the parallel path,
+                # which also disables exploration noise). Game diversity comes from
+                # the sampled opening, not from search noise.
                 cand = mcts_agent_mp(
-                    _mcts(model, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0), temperature=0.1)
+                    _mcts(model, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
+                    temperature=0.1, opening_plies=cfg.eval_opening_plies)
                 champ = mcts_agent_mp(
-                    _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0), temperature=0.1)
+                    _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
+                    temperature=0.1, opening_plies=cfg.eval_opening_plies)
                 ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
-                                 max_moves=cfg.max_game_moves, on_progress=_eval_progress)
+                                 max_moves=cfg.max_game_moves, on_progress=_eval_progress,
+                                 base_seed=it * 100_003)
             accepted = ev.should_accept(threshold)
             eval_best_secs = time.time() - t_eval_best
             ev_wr = ev.candidate_win_rate
             if accepted:
                 best.copy_weights_from(model)
                 best.save(os.path.join(checkpoint_dir, "best.pt"))
+            # Distinguish losing the gate from having too little evidence.
+            if not accepted and ev.decided_games < ev.num_games * ev.MIN_DECIDED_FRACTION:
+                verdict = (f"reject (only {ev.decided_games}/{ev.num_games} games "
+                           f"decided — too few to gate on)")
+            else:
+                verdict = "ACCEPT" if accepted else "reject"
             _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
-                 f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'} ({eval_best_secs:.0f}s)")
+                 f"{100*ev_wr:.1f}% of {ev.decided_games} decided {verdict} "
+                 f"({eval_best_secs:.0f}s)")
             # Persist the accept/reject before eval-vs-random, so best.pt and the
             # row's `accepted` stay consistent even if the next phase is interrupted.
             row.update(win_vs_best=ev_wr, accepted=accepted,
@@ -434,21 +505,25 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             else:
                 evr = evaluate_against_random_mp(env, cand, num_games=cfg.eval_random_games,
                                                  max_moves=cfg.max_game_moves,
-                                                 on_progress=_eval_rand_progress)
+                                                 on_progress=_eval_rand_progress,
+                                                 base_seed=it * 100_003 + 50_000)
             eval_rand_secs = time.time() - t_eval_rand
             evr_wr = evr.candidate_win_rate
             _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "
                  f"{100*evr_wr:.1f}% ({eval_rand_secs:.0f}s)")
             row.update(win_vs_random=evr_wr, eval_rand_secs=eval_rand_secs,
-                       secs=time.time() - t0, eval_done=True)
+                       secs=time.time() - t0, eval_ran=True)
             _write_meta()
         else:
             _log(
                 f"[iter {it+1}/{cfg.num_iterations}] eval skipped (eval_every={cfg.eval_every})")
 
+        vs_best_txt = (f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'}"
+                       if ev_wr is not None else "n/a (not evaluated)")
+        vs_rand_txt = f"{100*evr_wr:.1f}%" if evr_wr is not None else "n/a"
         _log(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
-             f"vs_best={100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'} | "
-             f"vs_rand={100*evr_wr:.1f}% | draw={100*draw_rate:.0f}% | buf={len(buffer)} | "
+             f"vs_best={vs_best_txt} | "
+             f"vs_rand={vs_rand_txt} | draw={100*draw_rate:.0f}% | buf={len(buffer)} | "
              f"sp={sp_secs:.0f}s train={train_secs:.0f}s "
              f"eval_best={eval_best_secs:.0f}s eval_rand={eval_rand_secs:.0f}s | "
              f"total={row['secs']:.0f}s")

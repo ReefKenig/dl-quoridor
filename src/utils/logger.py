@@ -37,7 +37,7 @@ import csv
 import json
 import time
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 
@@ -66,9 +66,14 @@ def make_progress_logger(log_path):
 
     def log(*parts):
         msg = "\n".join(str(p) for p in parts)
-        print(msg, flush=True)
+        # Explicit UTF-8: the locale default is ASCII under LC_ALL=C, and log
+        # strings contain em-dashes. A logging crash must not kill a run.
+        try:
+            print(msg, flush=True)
+        except UnicodeEncodeError:
+            print(msg.encode("ascii", "replace").decode("ascii"), flush=True)
         ts = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
-        with open(log_path, "a") as f:
+        with open(log_path, "a", encoding="utf-8", errors="replace") as f:
             for line in msg.splitlines() or [""]:
                 f.write(f"{ts} {line}\n")
     return log

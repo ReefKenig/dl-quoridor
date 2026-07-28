@@ -8,7 +8,7 @@ N-player Quoridor engine (2..4). Decisions baked in:
     so seat 2 (left->right) is the unpaired/advantaged player.
 """
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
 
 import numpy as np

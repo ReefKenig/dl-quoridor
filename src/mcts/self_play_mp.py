@@ -5,7 +5,8 @@ KEY CHANGE vs scalar self_play.py:
   - value_target is a length-N vector, identical for all players' bookkeeping:
         vec[j] = +disc  if j == winner
                  -disc  otherwise
-                 0       if winner is None (draw/timeout)
+    Games that time out (winner is None) yield no samples at all — see
+    assign_vector_targets for why they are dropped rather than labelled 0.
   - The per-position "mover perspective" disappears. The trajectory's
     `player` field is no longer used to sign the target; only `winner` is.
     (This is the simplification the vector design buys.)
@@ -13,9 +14,17 @@ KEY CHANGE vs scalar self_play.py:
 import numpy as np
 
 
-def assign_vector_targets(trajectory, winner, num_players, discount=0.97):
+def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
+                          drop_unresolved=True):
     """trajectory: list of (state_tensor, policy, mover). Returns list of
-    (state_tensor, policy, value_vec)."""
+    (state_tensor, policy, value_vec).
+
+    An unresolved game is a timeout, not a draw. Labelling those positions 0
+    collapsed the value head, so they are dropped instead. drop_unresolved=False
+    restores the old zero-vector labelling for tests.
+    """
+    if winner is None and drop_unresolved:
+        return []
     n = len(trajectory)
     out = []
     for idx, (tensor, policy, _mover) in enumerate(trajectory):

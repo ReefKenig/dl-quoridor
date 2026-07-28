@@ -21,8 +21,10 @@
         "training_epochs": 400,
         "replay_buffer_size": 200000,
         "learning_rate": 0.001,
+        "lr_schedule": "cosine",
+        "lr_final_frac": 0.1,
         "weight_decay": 0.0001,
-        "max_game_moves": 160,
+        "_max_game_moves_note": "counts plies, not rounds — set per variant so each player gets the same budget; see variants.n2/n4",
         "explore_moves": 20,
         "warmup_min_samples": 5000,
         "accept_margin": 0.03,
@@ -43,12 +45,14 @@
         "n2": {
             "num_players": 2,
             "max_walls_per_player": 10,
+            "max_game_moves": 160,
             "eval_games": 40,
             "eval_random_games": 20
         },
         "n4": {
             "num_players": 4,
             "max_walls_per_player": 5,
+            "max_game_moves": 320,
             "eval_games": 40,
             "eval_random_games": 20
         }

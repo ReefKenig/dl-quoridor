@@ -13,9 +13,9 @@ Outputs:
 from pathlib import Path
 import matplotlib.pyplot as plt
 import json
-import sys
 import numpy as np
 import matplotlib
+from src.utils.history import eval_series
 matplotlib.use("Agg")
 
 # Per-run figures live next to that run's metrics; cross-run comparisons
@@ -56,8 +56,9 @@ def load_2p_metrics(path=None):
 # ══════════════════════════════════════════════════════════════
 def plot_n4_curves(history, output_path):
     iters = [h["iter"] for h in history]
-    vs_rand = [h["win_vs_random"] * 100 for h in history]
-    vs_best = [h["win_vs_best"] * 100 for h in history]
+    # Eval columns are sparse (eval_every) — plot only measured points.
+    rand_iters, vs_rand = eval_series(history, "win_vs_random")
+    best_iters, vs_best = eval_series(history, "win_vs_best")
     loss_p = [h["loss_p"] for h in history]
     loss_v = [h["loss_v"] for h in history]
 
@@ -66,7 +67,7 @@ def plot_n4_curves(history, output_path):
                  fontsize=14, fontweight="bold")
 
     # Panel 1: vs_rand
-    axes[0].plot(iters, vs_rand, "g-o", markersize=3, linewidth=1.5)
+    axes[0].plot(rand_iters, vs_rand, "g-o", markersize=3, linewidth=1.5)
     axes[0].axhline(y=25, color="gray", linestyle="--",
                     label="fair share (25%)")
     axes[0].set_title("Win Rate vs Random (strength signal)")
@@ -77,7 +78,7 @@ def plot_n4_curves(history, output_path):
     axes[0].grid(True, alpha=0.3)
 
     # Panel 2: vs_best
-    axes[1].plot(iters, vs_best, "b-o", markersize=3, linewidth=1.5)
+    axes[1].plot(best_iters, vs_best, "b-o", markersize=3, linewidth=1.5)
     axes[1].axhline(y=30, color="orange", linestyle="--",
                     label="accept threshold (30%)")
     axes[1].set_title("Win Rate vs Best (noisy at N=4)")
@@ -117,8 +118,8 @@ def plot_n4_curves(history, output_path):
 # ══════════════════════════════════════════════════════════════
 def plot_n4_dashboard(history, output_path):
     iters = [h["iter"] for h in history]
-    vs_rand = [h["win_vs_random"] * 100 for h in history]
-    vs_best = [h["win_vs_best"] * 100 for h in history]
+    rand_iters, vs_rand = eval_series(history, "win_vs_random")
+    best_iters, vs_best = eval_series(history, "win_vs_best")
     loss_p = [h["loss_p"] for h in history]
     loss_v = [h["loss_v"] for h in history]
     accepted = [h["accepted"] for h in history]
@@ -131,13 +132,14 @@ def plot_n4_dashboard(history, output_path):
 
     # Panel 1: vs_rand with trend
     ax = axes[0, 0]
-    ax.plot(iters, vs_rand, "g-o", markersize=3, linewidth=1.5, alpha=0.7)
-    # Rolling average
-    window = min(5, len(iters))
-    if len(vs_rand) >= window:
+    ax.plot(rand_iters, vs_rand, "g-o", markersize=3, linewidth=1.5, alpha=0.7)
+    # Rolling average over the measured points only — the eval series is sparse,
+    # so it must not be indexed against the full iteration axis.
+    window = min(5, len(rand_iters))
+    if window > 0 and len(vs_rand) >= window:
         rolling = np.convolve(vs_rand, np.ones(window)/window, mode="valid")
-        ax.plot(iters[window-1:], rolling, "g-", linewidth=3,
-                alpha=0.9, label=f"{window}-iter avg")
+        ax.plot(rand_iters[window-1:], rolling, "g-", linewidth=3,
+                alpha=0.9, label=f"{window}-eval avg")
     ax.axhline(y=25, color="gray", linestyle="--",
                alpha=0.5, label="fair share (25%)")
     ax.set_title("Win Rate vs Random — Strength Signal")
@@ -148,8 +150,12 @@ def plot_n4_dashboard(history, output_path):
 
     # Panel 2: Accept/reject gate
     ax = axes[0, 1]
-    colors = ["#4CAF50" if a else "#F44336" for a in accepted]
-    ax.bar(iters, vs_best, color=colors, alpha=0.7, width=0.8)
+    # Colour by the accept decision of the *evaluated* iterations, keyed on iter
+    # so the bars and their verdicts cannot slip out of alignment.
+    accepted_by_iter = {h["iter"]: h.get("accepted", False) for h in history}
+    colors = ["#4CAF50" if accepted_by_iter.get(i) else "#F44336"
+              for i in best_iters]
+    ax.bar(best_iters, vs_best, color=colors, alpha=0.7, width=0.8)
     ax.axhline(y=30, color="orange", linestyle="--",
                linewidth=2, label="Accept threshold (30%)")
     ax.set_title("Model Accept/Reject Gate")
@@ -262,8 +268,7 @@ def plot_comparison(n4_history, metrics_2p, output_path):
 
     # 4p panel
     ax = axes[1]
-    iters_4p = [h["iter"] for h in n4_history]
-    wr_4p = [h["win_vs_random"] * 100 for h in n4_history]
+    iters_4p, wr_4p = eval_series(n4_history, "win_vs_random")
     ax.plot(iters_4p, wr_4p, "g-o", markersize=3, linewidth=1.5)
     ax.axhline(y=25, color="gray", linestyle="--",
                alpha=0.5, label="fair share (25%)")
@@ -276,8 +281,9 @@ def plot_comparison(n4_history, metrics_2p, output_path):
 
     # Add result annotations
     if metrics_2p:
-        best_2p = max(m["win_rate_vs_random"] for m in metrics_2p) * 100
-        axes[0].annotate(f"Eval: 95% ± 3%\n(240 games)",
+        # The 95% figure is the shipped 240-game full-sim eval, not the training
+        # curve's max, so it is deliberately a literal rather than derived.
+        axes[0].annotate("Eval: 95% ± 3%\n(240 games)",
                          xy=(iters_2p[-1], wr_2p[-1]),
                          xytext=(iters_2p[-1]-15, 60),
                          fontsize=10, fontweight="bold",
@@ -285,7 +291,7 @@ def plot_comparison(n4_history, metrics_2p, output_path):
                                    facecolor="lightblue", alpha=0.8),
                          arrowprops=dict(arrowstyle="->"))
 
-    axes[1].annotate(f"Eval: 84.2% ± 4.6%\n(240 games, fair=25%)",
+    axes[1].annotate("Eval: 84.2% ± 4.6%\n(240 games, fair=25%)",
                      xy=(iters_4p[-1], wr_4p[-1]),
                      xytext=(iters_4p[-1]-30, 40),
                      fontsize=10, fontweight="bold",

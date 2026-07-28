@@ -13,7 +13,6 @@ from src.mcts.mcts import MCTS, MCTSConfig as CfgOld
 from src.model.network import QuoridorModel
 from src.env.quoridor_env import QuoridorEnv
 import logging
-import torch
 import numpy as np
 import sys
 from pathlib import Path
@@ -134,7 +133,7 @@ nega_pct = 100 * wins_nega / total_decided if total_decided > 0 else 0
 maxn_pct = 100 * wins_maxn / total_decided if total_decided > 0 else 0
 print(
     f"\n  RESULT: negamax {wins_nega}W ({nega_pct:.0f}%) | max^n {wins_maxn}W ({maxn_pct:.0f}%) | draws {draws}")
-print(f"  EXPECTED: ~50/50 (same model, equivalent search)")
+print("  EXPECTED: ~50/50 (same model, equivalent search)")
 
 # --- Test 2: vs Random ---
 print(f"\n{'='*60}")

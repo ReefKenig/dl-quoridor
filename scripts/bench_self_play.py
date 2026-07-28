@@ -11,11 +11,17 @@ that matters is measured here, not assumed).
 Usage (local 5x5 smoke):
     PYTHONPATH=. python scripts/bench_self_play.py --games 12
 
+Each engine gets untimed warmup games before it is timed (`--warmup-games`), so
+CUDA context init, cuDNN autotune and worker spawn don't land entirely on
+whichever engine happens to run first. `--repeat` reports best-of-N, and
+`--order` lets you swap which engine goes first — if the margin is within ~10%,
+run it both ways before trusting it.
+
 Usage (9x9 realistic):
     PYTHONPATH=. python scripts/bench_self_play.py \
         --board-size 9 --walls 10 --num-channels 128 --num-res-blocks 8 \
         --sims 800 --games 50 --vec-games 64 --num-workers 32 \
-        --batch-size 256 --device auto
+        --batch-size 256 --device auto --repeat 3
 """
 import argparse
 import time
@@ -41,14 +47,27 @@ class _Cfg:
         self.virtual_loss = 1.0
 
 
-def _time(label, fn):
-    t0 = time.time()
-    samples, wins = fn()
-    dt = time.time() - t0
-    n_games = sum(wins.values())
-    print(f"\n[{label}] {dt:.1f}s | {n_games} games | "
-          f"{n_games / dt:.2f} games/s | {len(samples)} samples")
-    return dt, n_games
+def _time(label, fn, repeat=1):
+    """Time `fn` `repeat` times and report the BEST run.
+
+    Best-of, not mean: we want each engine's achievable throughput, and the
+    noise here (page cache, other load, CUDA clock ramp) is one-sided.
+    """
+    times = []
+    for r in range(repeat):
+        t0 = time.time()
+        samples, wins = fn()
+        dt = max(time.time() - t0, 1e-9)
+        times.append(dt)
+        n_games = sum(wins.values())
+        tag = f"{label} run {r + 1}/{repeat}" if repeat > 1 else label
+        print(f"\n[{tag}] {dt:.1f}s | {n_games} games | "
+              f"{n_games / dt:.2f} games/s | {len(samples)} samples")
+    best = min(times)
+    if repeat > 1:
+        print(f"[{label}] best {best:.1f}s (of {repeat}: "
+              f"{', '.join(f'{t:.1f}' for t in times)})")
+    return best
 
 
 def main():
@@ -69,6 +88,16 @@ def main():
     ap.add_argument("--explore-moves", type=int, default=10)
     ap.add_argument("--max-moves", type=int, default=160)
     ap.add_argument("--device", default="auto")
+    ap.add_argument("--repeat", type=int, default=1,
+                    help="timed runs per engine; reports best-of")
+    ap.add_argument("--warmup-games", type=int, default=2,
+                    help="untimed games per engine before timing (0 disables). "
+                         "Absorbs CUDA context init, cuDNN autotune and worker "
+                         "spawn, which otherwise land entirely on whichever "
+                         "engine runs first")
+    ap.add_argument("--order", default="parallel,vectorized",
+                    help="comma-separated engine order. Run it both ways if the "
+                         "margin is close — ordering effects are real")
     ap.add_argument("--skip-parallel", action="store_true")
     ap.add_argument("--skip-vectorized", action="store_true")
     a = ap.parse_args()
@@ -82,25 +111,41 @@ def main():
         num_res_blocks=a.num_res_blocks, num_players=N, device=a.device,
     )
 
+    quiet = {"log": lambda *x: None}
+    engines = {
+        "parallel": lambda games: generate_parallel_self_play_mp(
+            model, cfg, num_workers=a.num_workers, total_games=games,
+            batch_size=a.batch_size, **quiet),
+        "vectorized": lambda games: generate_vectorized_self_play_mp(
+            model, cfg, total_games=games, vec_games=(a.vec_games or None),
+            batch_size=a.batch_size, **quiet),
+    }
+    skipped = {"parallel": a.skip_parallel, "vectorized": a.skip_vectorized}
+    order = [e.strip() for e in a.order.split(",") if e.strip()]
+    unknown = [e for e in order if e not in engines]
+    if unknown:
+        ap.error(f"unknown engine(s) in --order: {unknown}; "
+                 f"expected from {list(engines)}")
+
     print("=" * 60)
     print(f"Bench | board={a.board_size} N={N} sims={a.sims} games={a.games} "
           f"vec_games={a.vec_games or 'auto'} workers={a.num_workers} "
           f"batch={a.batch_size} leaf_batch={a.leaf_batch}")
+    print(f"order={'>'.join(order)} repeat={a.repeat} warmup={a.warmup_games}")
     print("=" * 60)
 
     results = {}
-    if not a.skip_parallel:
-        results["parallel"] = _time("parallel", lambda: generate_parallel_self_play_mp(
-            model, cfg, num_workers=a.num_workers, total_games=a.games,
-            batch_size=a.batch_size, log=lambda *x: None))
-    if not a.skip_vectorized:
-        results["vectorized"] = _time("vectorized", lambda: generate_vectorized_self_play_mp(
-            model, cfg, total_games=a.games, vec_games=(a.vec_games or None),
-            batch_size=a.batch_size, log=lambda *x: None))
+    for name in order:
+        if skipped[name]:
+            continue
+        run = engines[name]
+        if a.warmup_games > 0:
+            print(f"\n[{name}] warmup ({a.warmup_games} games, untimed)...")
+            run(a.warmup_games)
+        results[name] = _time(name, lambda: run(a.games), repeat=a.repeat)
 
     if "parallel" in results and "vectorized" in results:
-        pt = results["parallel"][0]
-        vt = results["vectorized"][0]
+        pt, vt = results["parallel"], results["vectorized"]
         print("\n" + "=" * 60)
         print(f"SPEEDUP (parallel/vectorized): {pt / vt:.2f}x  "
               f"({'vectorized faster' if vt < pt else 'parallel faster'})")

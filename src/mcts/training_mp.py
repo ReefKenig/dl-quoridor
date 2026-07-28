@@ -445,8 +445,17 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             if accepted:
                 best.copy_weights_from(model)
                 best.save(os.path.join(checkpoint_dir, "best.pt"))
+            # Distinguish "lost the gate" from "the gate had nothing to judge":
+            # a mostly-timed-out eval rejects on insufficient evidence, which is a
+            # game-length problem, not a strength problem.
+            if not accepted and ev.decided_games < ev.num_games * ev.MIN_DECIDED_FRACTION:
+                verdict = (f"reject (only {ev.decided_games}/{ev.num_games} games "
+                           f"decided — too few to gate on)")
+            else:
+                verdict = "ACCEPT" if accepted else "reject"
             _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
-                 f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'} ({eval_best_secs:.0f}s)")
+                 f"{100*ev_wr:.1f}% of {ev.decided_games} decided {verdict} "
+                 f"({eval_best_secs:.0f}s)")
             # Persist the accept/reject before eval-vs-random, so best.pt and the
             # row's `accepted` stay consistent even if the next phase is interrupted.
             row.update(win_vs_best=ev_wr, accepted=accepted,

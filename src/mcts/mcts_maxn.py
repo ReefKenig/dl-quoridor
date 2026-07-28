@@ -293,14 +293,21 @@ class MCTSMaxN:
             node.value_sum += value
             node = node.parent
 
-    def _add_dirichlet_noise(self, root):
+    def _add_dirichlet_noise(self, root, rng=None):
         # epsilon <= 0 disables exploration noise entirely (used during eval so
         # strength is measured deterministically at true best-play). Short-circuit
         # so we don't even draw from the RNG — the mix below would be a no-op anyway.
+        #
+        # `rng` is any object exposing .dirichlet (a np.random.Generator). Callers
+        # running several searches concurrently in one process MUST pass their own,
+        # or the interleaved draws off the global stream make each search's noise
+        # depend on what the other searches happened to be doing. Default None =
+        # the global stream, which keeps the single-search paths unchanged.
         if self.config.dirichlet_epsilon <= 0 or not root.children:
             return
+        rng = rng if rng is not None else np.random
         actions = list(root.children.keys())
-        noise = np.random.dirichlet(
+        noise = rng.dirichlet(
             [self.config.dirichlet_alpha] * len(actions))
         eps = self.config.dirichlet_epsilon
         for i, a in enumerate(actions):
@@ -348,16 +355,24 @@ class VectorizedSearch:
                 vs.apply(policy, value)
         probs = vs.action_probs(temperature)
 
-    `collect()` may return None when the step resolved terminal/dead-end
-    simulations that need no network call (it still consumed those simulations);
-    the driver simply skips a game that returns None this round and revisits it.
+    `collect()` returns None exactly when this search has no network work left —
+    the simulation budget is spent, whether because the sims resolved
+    terminal/dead-end inline (no eval needed) or because the root itself was a
+    dead end. That always coincides with `done()` being True, so a None means
+    "advance this game", not "retry it next round".
+
+    `rng` (a np.random.Generator, optional) supplies the root's Dirichlet noise.
+    A driver stepping several searches at once must give each its own, otherwise
+    they interleave draws off the global stream and each game's noise depends on
+    how many others were in flight. None = the global stream.
     """
 
-    def __init__(self, mcts, env, state):
+    def __init__(self, mcts, env, state, rng=None):
         self.mcts = mcts
         self.env = env
         self.state = env.clone_state(state)
         self.num_players = mcts.num_players
+        self.rng = rng
         self.root = Node(num_players=self.num_players)
         self.remaining = mcts.config.num_simulations
         self._root_ready = False
@@ -424,7 +439,7 @@ class VectorizedSearch:
             mcts._set_children_from_policy(
                 node, env, node.valid_actions, policy, value)
             node.is_expanded = True
-            mcts._add_dirichlet_noise(self.root)
+            mcts._add_dirichlet_noise(self.root, rng=self.rng)
             self._root_ready = True
             self._pending_node = None
             self._pending_is_root = False

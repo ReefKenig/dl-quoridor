@@ -9,8 +9,12 @@ coordinator (exact sequential MCTS, one pending leaf per tree); every step, the
 driver gathers one leaf from each active game, runs a SINGLE `model.predict_batch`
 over all of them, scatters the results back, and advances any game whose search
 finished. No multiprocessing, no queues, no per-worker blocking — the GPU batch is
-naturally G-wide and stays full because finished games are refilled from the
-iteration's remaining quota.
+G-wide for the bulk of the iteration, because a finished game is immediately
+refilled from the remaining quota. It does narrow over the final G games, once
+the quota is exhausted and slots start retiring without replacement; that tail is
+bounded by G rather than by the whole straggler spread, which is the improvement
+over the worker-pool path.
+
 
 Correctness: because each game runs `VectorizedSearch` (bit-identical to
 `MCTSMaxN.search` with leaf_batch=1), the per-move visit distributions are exact
@@ -18,18 +22,29 @@ sequential MCTS — no virtual-loss approximation. Value-target assignment and
 augmentation reuse `assign_vector_targets` / `augment_mp`, so samples match the
 sequential/parallel paths. The return contract `(samples, wins)` is identical to
 `generate_parallel_self_play_mp` for a drop-in swap.
+
+Randomness: every slot owns a `np.random.Generator` seeded from (base_seed,
+game_index), used for BOTH its Dirichlet noise and its action sampling. Nothing
+here touches the global `np.random` stream. That is what makes a game's data a
+function of its index alone — run the same iteration at vec_games=1 or 64 and
+game 7 is the same game either way. Sharing the global stream would instead make
+every game's noise depend on how many others happened to be in flight.
+(On CUDA, invariance is up to `predict_batch`'s batch-composition nondeterminism:
+different batch shapes can differ in the last ulp. Exact on CPU.)
 """
 import numpy as np
 import torch
 
 from src.env.quoridor_env_mp import QuoridorEnvMP
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig, VectorizedSearch
-from src.mcts.self_play_mp import assign_vector_targets, augment_mp
+from src.mcts.self_play_mp import (assign_vector_targets, augment_mp,
+                                   game_seed)
 
 
 class _GameSlot:
     """Per-game state for one concurrent self-play game in the driver."""
-    __slots__ = ["game_index", "state", "trajectory", "move_count", "search"]
+    __slots__ = ["game_index", "state", "trajectory", "move_count", "search",
+                 "rng"]
 
     def __init__(self, game_index, state):
         self.game_index = game_index
@@ -37,6 +52,7 @@ class _GameSlot:
         self.trajectory = []
         self.move_count = 0
         self.search = None
+        self.rng = None
 
 
 def _batched_eval(model, env, leaf_states):
@@ -68,7 +84,10 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
         batch_size  : cap on leaves per predict_batch (defaults to vec_games; a
                       round never has more than vec_games leaves anyway).
         on_games_complete : optional callback(games_done, total_games, wins).
-        base_seed   : game g is seeded base_seed + g (Dirichlet + action sampling).
+        base_seed   : game g draws from its own Generator seeded
+                      game_seed(base_seed, g) — Dirichlet noise + action sampling.
+                      A game's data therefore depends on its index, never on
+                      vec_games or on which games ran alongside it.
         explore_temp/final_temp : action-sampling temperature before/after
                       cfg.explore_moves (defaults match play_one_game: 1.0 then 0.3).
 
@@ -102,7 +121,7 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
 
     mcts = _new_mcts()   # stateless across searches; shared by all slots
 
-    samples = []
+    by_game = {}          # game_index -> that game's samples (see the flush below)
     wins = {}
     games_done = 0
     next_game = 0
@@ -111,7 +130,6 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
         nonlocal next_game
         gi = next_game
         next_game += 1
-        np.random.seed(base_seed + gi)   # per-game reproducibility
         state = env.reset()
         if slot_or_none is None:
             slot = _GameSlot(gi, state)
@@ -121,7 +139,10 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
             slot.state = state
             slot.trajectory = []
             slot.move_count = 0
-        slot.search = VectorizedSearch(mcts, env, state)
+        # Private stream per game — never the global one, which the other G-1
+        # in-flight games would interleave their draws into.
+        slot.rng = np.random.default_rng(game_seed(base_seed, gi))
+        slot.search = VectorizedSearch(mcts, env, state, rng=slot.rng)
         return slot
 
     slots = [_start_slot(None) for _ in range(min(G, total_games))]
@@ -152,23 +173,28 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
             mover = env.get_current_player(slot.state)
             slot.trajectory.append(
                 (env.state_to_tensor(slot.state), probs, mover))
-            action = int(np.random.choice(len(probs), p=probs))
+            action = int(slot.rng.choice(len(probs), p=probs))
             slot.state, _, done, info = env.step(slot.state, action)
             slot.move_count += 1
 
             game_over = done or slot.move_count >= max_moves
             if not game_over:
-                slot.search = VectorizedSearch(mcts, env, slot.state)
+                slot.search = VectorizedSearch(
+                    mcts, env, slot.state, rng=slot.rng)
                 surviving.append(slot)
                 continue
 
             # Finalize the game -> training samples (+ mirror augmentation).
+            # Keyed by game index, not appended: games finish out of order and
+            # the order depends on vec_games, so appending would make the output
+            # sequence a function of the concurrency width. Flushed in index
+            # order below.
             winner = info.get("winner") if done else None
             game_samples = assign_vector_targets(
                 slot.trajectory, winner, N, discount)
             aug = [augment_mp(t, p, v, N, env.board_size)
                    for (t, p, v) in game_samples]
-            samples.extend(game_samples + aug)
+            by_game[slot.game_index] = game_samples + aug
             wins[winner] = wins.get(winner, 0) + 1
             games_done += 1
             if on_games_complete:
@@ -181,6 +207,9 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
 
         slots = surviving
 
+    # Flush in game-index order so the returned sequence is a function of
+    # base_seed and total_games alone — same data whatever vec_games was.
+    samples = [s for gi in sorted(by_game) for s in by_game[gi]]
     if not samples:
         log("[VECTORIZED-MP] WARNING: no samples generated.")
     return samples, wins

@@ -133,6 +133,41 @@ def test_vectorized_concurrency_invariant():
     assert sum(wins_w.values()) == 3
 
 
+def test_vectorized_concurrency_invariant_with_noise():
+    """The invariance that actually matters: with Dirichlet noise and temperature
+    sampling ON — i.e. the production regime — a game's data still depends only on
+    its index, not on how many games ran alongside it.
+
+    The eps=0/temp=0 test above cannot see this: it draws from no RNG at all. When
+    every slot shared the global np.random stream, this assertion failed hard
+    (different sample counts, not just different tails), because each game's noise
+    depended on the interleaving of every other in-flight game.
+    """
+    cfg = _Cfg(num_players=2, eps=0.25)      # noise on
+    model = _model(2)
+    kw = dict(total_games=4, base_seed=17)   # temps left at production defaults
+    wide, wins_w = generate_vectorized_self_play_mp(model, cfg, vec_games=4, **kw)
+    narrow, wins_n = generate_vectorized_self_play_mp(model, cfg, vec_games=1, **kw)
+    _assert_samples_equal(wide, narrow)
+    assert wins_w == wins_n
+
+
+def test_vectorized_refill_does_not_disturb_inflight_games():
+    """Starting a refilled game must not perturb the games already in flight.
+
+    total_games > vec_games forces refills mid-iteration. Re-seeding a global RNG
+    at refill time would rewind the stream underneath every running game, so this
+    would diverge from the un-refilled (vec_games=1) ordering.
+    """
+    cfg = _Cfg(num_players=2, eps=0.25)
+    model = _model(2)
+    kw = dict(total_games=5, base_seed=3)
+    refilled, _ = generate_vectorized_self_play_mp(model, cfg, vec_games=2, **kw)
+    one_at_a_time, _ = generate_vectorized_self_play_mp(
+        model, cfg, vec_games=1, **kw)
+    _assert_samples_equal(refilled, one_at_a_time)
+
+
 def test_vectorized_exact_game_count_uneven():
     """Return contract: plays exactly total_games even when it isn't a multiple of
     vec_games, and the progress callback fires total_games times."""

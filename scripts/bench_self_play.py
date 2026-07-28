@@ -32,18 +32,33 @@ from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
 
 
+# Every knob the bench takes, with its default. The CLI turns each into a
+# --flag and run_bench() accepts the same names as keywords, so the notebook and
+# the command line drive one implementation rather than two.
+DEFAULTS = dict(
+    board_size=5, num_players=2, walls=3, num_channels=64, num_res_blocks=4,
+    sims=100, games=12, vec_games=0, num_workers=8, batch_size=128,
+    leaf_batch=8, explore_moves=10, max_moves=160, device="auto",
+    repeat=1, warmup_games=2, order="parallel,vectorized",
+    skip_parallel=False, skip_vectorized=False,
+)
+
+
 class _Cfg:
-    def __init__(self, a):
-        self.num_players = a.num_players
-        self.board_size = a.board_size
-        self.max_walls_per_player = a.walls
-        self.max_turns = a.max_moves
-        self.mcts_simulations = a.sims
+    """The TrainingConfigMP-shaped object both self-play engines read."""
+
+    def __init__(self, num_players, board_size, walls, sims, explore_moves,
+                 max_moves, leaf_batch):
+        self.num_players = num_players
+        self.board_size = board_size
+        self.max_walls_per_player = walls
+        self.max_turns = max_moves
+        self.mcts_simulations = sims
         self.discount = 0.99
-        self.explore_moves = a.explore_moves
-        self.max_game_moves = a.max_moves
+        self.explore_moves = explore_moves
+        self.max_game_moves = max_moves
         self.mcts_dirichlet_epsilon = 0.25
-        self.leaf_batch = a.leaf_batch
+        self.leaf_batch = leaf_batch
         self.virtual_loss = 1.0
 
 
@@ -70,68 +85,69 @@ def _time(label, fn, repeat=1):
     return best
 
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="parallel vs vectorized self-play bench")
-    ap.add_argument("--board-size", type=int, default=5)
-    ap.add_argument("--num-players", type=int, default=2)
-    ap.add_argument("--walls", type=int, default=3)
-    ap.add_argument("--num-channels", type=int, default=64)
-    ap.add_argument("--num-res-blocks", type=int, default=4)
-    ap.add_argument("--sims", type=int, default=100)
-    ap.add_argument("--games", type=int, default=12)
-    ap.add_argument("--vec-games", type=int, default=0,
-                    help="0 => driver default")
-    ap.add_argument("--num-workers", type=int, default=8)
-    ap.add_argument("--batch-size", type=int, default=128)
-    ap.add_argument("--leaf-batch", type=int, default=8)
-    ap.add_argument("--explore-moves", type=int, default=10)
-    ap.add_argument("--max-moves", type=int, default=160)
-    ap.add_argument("--device", default="auto")
-    ap.add_argument("--repeat", type=int, default=1,
-                    help="timed runs per engine; reports best-of")
-    ap.add_argument("--warmup-games", type=int, default=2,
-                    help="untimed games per engine before timing (0 disables). "
-                         "Absorbs CUDA context init, cuDNN autotune and worker "
-                         "spawn, which otherwise land entirely on whichever "
-                         "engine runs first")
-    ap.add_argument("--order", default="parallel,vectorized",
-                    help="comma-separated engine order. Run it both ways if the "
-                         "margin is close — ordering effects are real")
-    ap.add_argument("--skip-parallel", action="store_true")
-    ap.add_argument("--skip-vectorized", action="store_true")
-    a = ap.parse_args()
+def describe_device(device="auto"):
+    """Report what torch will actually run on. Call this BEFORE trusting any
+    timing: on a CPU-only torch build the comparison says nothing about the GPU
+    box, and the vectorized driver also drops its CPU/GPU pipelining."""
+    import torch
+    cuda = torch.cuda.is_available()
+    name = torch.cuda.get_device_name(0) if cuda else "n/a"
+    resolved = ("cuda" if cuda else "cpu") if device == "auto" else device
+    print(f"torch {torch.__version__} | cuda_available={cuda} | gpu={name} "
+          f"| device={device!r} resolves to {resolved!r}")
+    if not cuda:
+        print("WARNING: no CUDA. Both engines will be CPU-bound and the "
+              "vectorized driver runs unpipelined — these numbers will not "
+              "transfer to the GPU box.")
+    return resolved
 
-    N = a.num_players
-    cfg = _Cfg(a)
+
+def run_bench(**kwargs):
+    """Run the parallel-vs-vectorized comparison. Returns {engine: best_seconds}.
+
+    Accepts any key in DEFAULTS. This is the whole benchmark — main() only parses
+    argv and calls it, so the notebook and the CLI measure identical things.
+    """
+    unknown_kw = set(kwargs) - set(DEFAULTS)
+    if unknown_kw:
+        raise TypeError(f"unknown bench option(s): {sorted(unknown_kw)}; "
+                        f"expected from {sorted(DEFAULTS)}")
+    o = {**DEFAULTS, **kwargs}
+
+    N = o["num_players"]
+    cfg = _Cfg(num_players=N, board_size=o["board_size"], walls=o["walls"],
+               sims=o["sims"], explore_moves=o["explore_moves"],
+               max_moves=o["max_moves"], leaf_batch=o["leaf_batch"])
     model = QuoridorModelMP(
-        board_size=a.board_size,
-        action_space_size=compute_action_space_size(a.board_size),
-        in_channels=3 * N + 3, num_channels=a.num_channels,
-        num_res_blocks=a.num_res_blocks, num_players=N, device=a.device,
+        board_size=o["board_size"],
+        action_space_size=compute_action_space_size(o["board_size"]),
+        in_channels=3 * N + 3, num_channels=o["num_channels"],
+        num_res_blocks=o["num_res_blocks"], num_players=N, device=o["device"],
     )
 
     quiet = {"log": lambda *x: None}
     engines = {
         "parallel": lambda games: generate_parallel_self_play_mp(
-            model, cfg, num_workers=a.num_workers, total_games=games,
-            batch_size=a.batch_size, **quiet),
+            model, cfg, num_workers=o["num_workers"], total_games=games,
+            batch_size=o["batch_size"], **quiet),
         "vectorized": lambda games: generate_vectorized_self_play_mp(
-            model, cfg, total_games=games, vec_games=(a.vec_games or None),
-            batch_size=a.batch_size, **quiet),
+            model, cfg, total_games=games, vec_games=(o["vec_games"] or None),
+            batch_size=o["batch_size"], **quiet),
     }
-    skipped = {"parallel": a.skip_parallel, "vectorized": a.skip_vectorized}
-    order = [e.strip() for e in a.order.split(",") if e.strip()]
+    skipped = {"parallel": o["skip_parallel"], "vectorized": o["skip_vectorized"]}
+    order = [e.strip() for e in o["order"].split(",") if e.strip()]
     unknown = [e for e in order if e not in engines]
     if unknown:
-        ap.error(f"unknown engine(s) in --order: {unknown}; "
-                 f"expected from {list(engines)}")
+        raise ValueError(f"unknown engine(s) in order: {unknown}; "
+                         f"expected from {list(engines)}")
 
     print("=" * 60)
-    print(f"Bench | board={a.board_size} N={N} sims={a.sims} games={a.games} "
-          f"vec_games={a.vec_games or 'auto'} workers={a.num_workers} "
-          f"batch={a.batch_size} leaf_batch={a.leaf_batch}")
-    print(f"order={'>'.join(order)} repeat={a.repeat} warmup={a.warmup_games}")
+    print(f"Bench | board={o['board_size']} N={N} sims={o['sims']} "
+          f"games={o['games']} vec_games={o['vec_games'] or 'auto'} "
+          f"workers={o['num_workers']} batch={o['batch_size']} "
+          f"leaf_batch={o['leaf_batch']}")
+    print(f"order={'>'.join(order)} repeat={o['repeat']} "
+          f"warmup={o['warmup_games']}")
     print("=" * 60)
 
     results = {}
@@ -139,10 +155,10 @@ def main():
         if skipped[name]:
             continue
         run = engines[name]
-        if a.warmup_games > 0:
-            print(f"\n[{name}] warmup ({a.warmup_games} games, untimed)...")
-            run(a.warmup_games)
-        results[name] = _time(name, lambda: run(a.games), repeat=a.repeat)
+        if o["warmup_games"] > 0:
+            print(f"\n[{name}] warmup ({o['warmup_games']} games, untimed)...")
+            run(o["warmup_games"])
+        results[name] = _time(name, lambda: run(o["games"]), repeat=o["repeat"])
 
     if "parallel" in results and "vectorized" in results:
         pt, vt = results["parallel"], results["vectorized"]
@@ -150,6 +166,48 @@ def main():
         print(f"SPEEDUP (parallel/vectorized): {pt / vt:.2f}x  "
               f"({'vectorized faster' if vt < pt else 'parallel faster'})")
         print("=" * 60)
+    return results
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="parallel vs vectorized self-play bench")
+    ap.add_argument("--board-size", type=int, default=DEFAULTS["board_size"])
+    ap.add_argument("--num-players", type=int, default=DEFAULTS["num_players"])
+    ap.add_argument("--walls", type=int, default=DEFAULTS["walls"])
+    ap.add_argument("--num-channels", type=int, default=DEFAULTS["num_channels"])
+    ap.add_argument("--num-res-blocks", type=int,
+                    default=DEFAULTS["num_res_blocks"])
+    ap.add_argument("--sims", type=int, default=DEFAULTS["sims"])
+    ap.add_argument("--games", type=int, default=DEFAULTS["games"])
+    ap.add_argument("--vec-games", type=int, default=DEFAULTS["vec_games"],
+                    help="0 => driver default")
+    ap.add_argument("--num-workers", type=int, default=DEFAULTS["num_workers"])
+    ap.add_argument("--batch-size", type=int, default=DEFAULTS["batch_size"])
+    ap.add_argument("--leaf-batch", type=int, default=DEFAULTS["leaf_batch"])
+    ap.add_argument("--explore-moves", type=int,
+                    default=DEFAULTS["explore_moves"])
+    ap.add_argument("--max-moves", type=int, default=DEFAULTS["max_moves"])
+    ap.add_argument("--device", default=DEFAULTS["device"])
+    ap.add_argument("--repeat", type=int, default=DEFAULTS["repeat"],
+                    help="timed runs per engine; reports best-of")
+    ap.add_argument("--warmup-games", type=int, default=DEFAULTS["warmup_games"],
+                    help="untimed games per engine before timing (0 disables). "
+                         "Absorbs CUDA context init, cuDNN autotune and worker "
+                         "spawn, which otherwise land entirely on whichever "
+                         "engine runs first")
+    ap.add_argument("--order", default=DEFAULTS["order"],
+                    help="comma-separated engine order. Run it both ways if the "
+                         "margin is close — ordering effects are real")
+    ap.add_argument("--skip-parallel", action="store_true")
+    ap.add_argument("--skip-vectorized", action="store_true")
+    a = ap.parse_args()
+
+    describe_device(a.device)
+    try:
+        run_bench(**vars(a))
+    except ValueError as e:
+        ap.error(str(e))
 
 
 if __name__ == "__main__":

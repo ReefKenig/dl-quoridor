@@ -46,7 +46,7 @@ def augment_mp(tensor, policy, value_vec, num_players, board_size):
     """Left-right mirror augmentation for the MP tensor.
     Flips columns, permutes seat-grouped channels via π=[0,1,3,2],
     mirrors the policy, and permutes the value vector."""
-    N, bs, W = num_players, board_size, board_size - 1
+    N, W = num_players, board_size - 1
     pi = _seat_perm(N)
     t = tensor[:, ::-1, :].copy()          # flip columns
     out = t.copy()

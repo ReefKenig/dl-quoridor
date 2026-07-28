@@ -2,7 +2,7 @@
     "is_poc": false,
     "board_size": 9,
     "mcts": {
-        "num_simulations": 800,
+        "num_simulations": 600,
         "eval_simulations": 200,
         "c_puct": 1.41,
         "temperature": 1.0,
@@ -15,26 +15,24 @@
         "num_channels": 128
     },
     "training": {
-        "num_iterations": 50,
-        "games_per_iteration": 50,
+        "_iters_note": "num_iterations/games_per_iteration are per variant; N=4 games run ~3x longer so it buys fewer of them for the same wall clock",
         "batch_size": 128,
-        "training_epochs": 400,
-        "replay_buffer_size": 200000,
+        "training_epochs": 600,
+        "replay_buffer_size": 500000,
         "learning_rate": 0.001,
         "lr_schedule": "cosine",
         "lr_final_frac": 0.1,
         "weight_decay": 0.0001,
-        "_max_game_moves_note": "counts plies, not rounds — set per variant so each player gets the same budget; see variants.n2/n4",
-        "explore_moves": 20,
+        "_ply_counted_note": "max_game_moves and explore_moves both count plies, not rounds — set per variant so each player gets the same budget; see variants.n2/n4",
         "warmup_min_samples": 5000,
-        "accept_margin": 0.03,
+        "accept_margin": 0.05,
         "eval_every": 5,
         "reward_decay": 0.99
     },
     "parallel": {
-        "num_workers": 16,
-        "inference_batch_size": 256,
-        "leaf_batch": 8,
+        "num_workers": 64,
+        "inference_batch_size": 512,
+        "leaf_batch": 16,
         "virtual_loss": 1.0,
         "parallel_self_play": true,
         "parallel_eval": true,
@@ -46,15 +44,21 @@
             "num_players": 2,
             "max_walls_per_player": 10,
             "max_game_moves": 160,
-            "eval_games": 40,
-            "eval_random_games": 20
+            "explore_moves": 20,
+            "num_iterations": 100,
+            "games_per_iteration": 160,
+            "eval_games": 80,
+            "eval_random_games": 40
         },
         "n4": {
             "num_players": 4,
             "max_walls_per_player": 5,
             "max_game_moves": 320,
-            "eval_games": 40,
-            "eval_random_games": 20
+            "explore_moves": 40,
+            "num_iterations": 70,
+            "games_per_iteration": 70,
+            "eval_games": 80,
+            "eval_random_games": 40
         }
     }
 }

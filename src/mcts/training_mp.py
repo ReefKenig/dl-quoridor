@@ -17,6 +17,7 @@ import numpy as np
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
 from src.utils.schedule import lr_at
+from src.mcts.batched_inference_mp import DEFAULT_BATCH_WAIT_MS
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
 from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
@@ -69,6 +70,10 @@ class TrainingConfigMP:
     # 100 iterations keeps the net chasing the newest self-play data.
     lr_schedule: str = "constant"
     lr_final_frac: float = 0.1           # cosine end point, as a fraction of base_lr
+    # GPU batcher accumulation window. Workers block on their own responses, so
+    # without a wait the batcher fires a forward pass on ~2 messages; the 9x9
+    # runs averaged ~16 leaves against inference_batch_size=256.
+    batch_wait_ms: float = DEFAULT_BATCH_WAIT_MS
     # Opening moves sampled from the visit distribution during eval. 0 makes
     # every eval game with the same seat assignment a replay of the same game,
     # which is how a 40-game gate came to measure 2 distinct games at N=2.
@@ -455,6 +460,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "leaf_batch": cfg.leaf_batch,
                 "virtual_loss": cfg.virtual_loss,
                 "eval_opening_plies": cfg.eval_opening_plies,
+                "batch_wait_ms": cfg.batch_wait_ms,
             }
             t_eval_best = time.time()
             _log(

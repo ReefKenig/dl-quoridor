@@ -32,8 +32,74 @@ import numpy as np
 import torch
 
 
+# How long the batcher may wait for more requests before running a forward pass.
+# Zero reproduces the old drain-what-is-already-there behaviour.
+DEFAULT_BATCH_WAIT_MS = 5.0
+
+
+def _request_rows(req):
+    """Leaves carried by one request: a stacked (b,C,H,W) batch, or a single leaf."""
+    arr = req[2]
+    return arr.shape[0] if arr.ndim == 4 else 1
+
+
+def _collect_batch(request_queue, batch_size, stop_flag, first, batch_wait_s):
+    """Accumulate requests for one forward pass.
+
+    Returns (batch, saw_stop). Two things were wrong with draining greedily via
+    get_nowait:
+
+    1. The loop counted *messages* against `batch_size`, but that parameter is
+       documented (and bucketed downstream) as max **leaves** per forward. With
+       leaf_batch=8 the effective cap was 8x the intended one.
+    2. There was no accumulation window. Every worker blocks on its own response,
+       so at most `num_workers` requests are ever in flight, and the batcher wins
+       the race: it wakes on the first request, finds the queue otherwise empty,
+       and fires a forward pass for ~2 messages. Production logs show ~16 leaves
+       per forward against inference_batch_size=256 — about 6% occupancy.
+
+    Waiting a few milliseconds lets the other workers re-submit, at the cost of
+    that much latency on an under-filled batch. The wait is skipped entirely once
+    `batch_size` leaves are in hand, so a saturated batcher pays nothing.
+    """
+    batch = [first]
+    n_rows = _request_rows(first)
+    if batch_wait_s <= 0:
+        return _drain_nowait(request_queue, batch_size, batch, n_rows)
+    deadline = time.monotonic() + batch_wait_s
+    while n_rows < batch_size:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            req = request_queue.get(timeout=remaining)
+        except Exception:
+            break
+        if req == "STOP":
+            stop_flag.set()
+            return batch, True
+        batch.append(req)
+        n_rows += _request_rows(req)
+    return batch, False
+
+
+def _drain_nowait(request_queue, batch_size, batch, n_rows):
+    """Zero-wait path: take only what is already queued."""
+    while n_rows < batch_size:
+        try:
+            req = request_queue.get_nowait()
+        except Exception:
+            break
+        if req == "STOP":
+            return batch, True
+        batch.append(req)
+        n_rows += _request_rows(req)
+    return batch, False
+
+
 def _inference_worker(models, request_queue, response_queues, batch_size,
-                      stop_flag, results_queue=None, log=print):
+                      stop_flag, results_queue=None, log=print,
+                      batch_wait_ms=DEFAULT_BATCH_WAIT_MS):
     """Multi-model GPU batcher thread (runs in the main process).
 
     `models` is a dict {model_id: QuoridorModelMP}. Each request is
@@ -52,10 +118,10 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
         messages_done = 0
         t_start = time.time()
 
+        batch_wait_s = max(0.0, batch_wait_ms) / 1000.0
         while True:
-            batch = []
-            # Block for the first item so we don't busy-spin, then greedily drain
-            # whatever else is already queued up to batch_size.
+            # Block for the first item so we don't busy-spin, then accumulate up
+            # to batch_size leaves or batch_wait_ms, whichever comes first.
             try:
                 first = request_queue.get(timeout=0.2)
             except Exception:
@@ -64,17 +130,8 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
                 continue
             if first == "STOP":
                 return
-            batch.append(first)
-            while len(batch) < batch_size:
-                try:
-                    req = request_queue.get_nowait()
-                except Exception:
-                    break
-                if req == "STOP":
-                    # Finish the batch we have, then stop.
-                    stop_flag.set()
-                    break
-                batch.append(req)
+            batch, _saw_stop = _collect_batch(
+                request_queue, batch_size, stop_flag, first, batch_wait_s)
 
             # Each request carries a numpy array: a single (C,H,W) leaf or a stacked
             # (b,C,H,W) batch of leaves from one worker (leaf-parallel). Sending numpy
@@ -127,8 +184,13 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
                 msg_rate = messages_done / elapsed if elapsed > 0 else 0
                 avg_batch = evals_done / batches_done
                 leaves_per_msg = evals_done / messages_done if messages_done else 0
+                # occupancy = how full each forward pass actually is. This is the
+                # number to watch when tuning batch_wait_ms; it sat near 6% in
+                # the 9x9 runs (~16 leaves against inference_batch_size=256).
+                occupancy = avg_batch / batch_size if batch_size else 0
                 log(f"  [GPU] {evals_done:,} evals ({batches_done} batches, "
-                    f"avg {avg_batch:.0f}/batch, {rate:.0f} evals/s, "
+                    f"avg {avg_batch:.0f}/batch = {occupancy:.0%} of {batch_size}, "
+                    f"{rate:.0f} evals/s, "
                     f"{msg_rate:.0f} msg/s, {leaves_per_msg:.1f} leaves/msg, {elapsed:.0f}s)")
 
             if stop_flag.is_set():
@@ -197,7 +259,8 @@ def make_batched_evaluate_many(worker_id, request_queue, response_queue, env,
 def run_batched_inference(models, worker_target, per_worker_payloads, batch_size,
                           on_result, log=print, response_timeout=300.0,
                           worker_join_timeout=30.0, queue_timeout=1800.0,
-                          label="PARALLEL-MP", spawn_detail=""):
+                          label="PARALLEL-MP", spawn_detail="",
+                          batch_wait_ms=DEFAULT_BATCH_WAIT_MS):
     """Spawn game workers + one multi-model GPU batcher, then drain results.
 
     Args:
@@ -211,6 +274,11 @@ def run_batched_inference(models, worker_target, per_worker_payloads, batch_size
         per_worker_payloads : list, one opaque payload per worker
                  (``len`` == number of workers spawned).
         batch_size : max leaves per GPU forward pass.
+        batch_wait_ms : how long the batcher may wait for more requests
+                 before running a forward pass. Workers block on their own
+                 responses, so without a wait the batcher fires on ~2
+                 messages and the GPU runs at a fraction of batch_size.
+                 0 disables the wait.
         on_result(msg) : called for every results message that is not
                  ``("done", …)`` or ``("error", …)``.
         queue_timeout : max seconds to wait for the next results message before
@@ -247,7 +315,7 @@ def run_batched_inference(models, worker_target, per_worker_payloads, batch_size
     inference_thread = threading.Thread(
         target=_inference_worker,
         args=(models, request_queue, response_queues, batch_size, stop_flag,
-              results_queue, log),
+              results_queue, log, batch_wait_ms),
         daemon=True,
     )
     inference_thread.start()

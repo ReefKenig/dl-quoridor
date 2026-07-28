@@ -28,7 +28,8 @@ import sys
 import traceback
 from functools import partial
 
-from src.mcts.batched_inference_mp import (make_batched_evaluate,
+from src.mcts.batched_inference_mp import (DEFAULT_BATCH_WAIT_MS,
+                                           make_batched_evaluate,
                                            make_batched_evaluate_many,
                                            run_batched_inference)
 from src.mcts.evaluator_mp import EvalResultMP, tally_game
@@ -145,7 +146,8 @@ def _run_eval(models, mode, config_dict, num_games, num_workers, batch_size,
     run_batched_inference(
         models, _eval_worker, payloads, batch_size, on_result,
         log=log, response_timeout=response_timeout, queue_timeout=queue_timeout,
-        label="EVAL-MP",
+        label="EVAL-MP", batch_wait_ms=config_dict.get(
+            "batch_wait_ms", DEFAULT_BATCH_WAIT_MS),
         spawn_detail=f" ({num_games} {mode} games, sims={config_dict['eval_simulations']})",
     )
     return res

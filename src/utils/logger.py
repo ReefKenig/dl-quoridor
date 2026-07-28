@@ -66,13 +66,8 @@ def make_progress_logger(log_path):
 
     def log(*parts):
         msg = "\n".join(str(p) for p in parts)
-        # Never let logging kill a multi-day run. Two hazards, both real:
-        #   - open() without encoding= uses the locale's preferred encoding, which
-        #     is ASCII under LC_ALL=C. Several log strings contain em-dashes, so a
-        #     C-locale server would raise UnicodeEncodeError from inside the
-        #     training loop and lose the run.
-        #   - stdout has the same exposure when it is a pipe under a C locale.
-        # errors="replace" keeps the message rather than the exception.
+        # Explicit UTF-8: the locale default is ASCII under LC_ALL=C, and log
+        # strings contain em-dashes. A logging crash must not kill a run.
         try:
             print(msg, flush=True)
         except UnicodeEncodeError:

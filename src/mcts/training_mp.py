@@ -65,18 +65,12 @@ class TrainingConfigMP:
     eval_games: int = 80
     eval_random_games: int = 24
     accept_margin: float = 0.05          # accept if win_rate > fair_share + margin
-    # LR schedule over the run. Defaults to "constant" so existing scripts are
-    # unaffected; the 9x9 config opts into cosine, where a constant 1e-3 across
-    # 100 iterations keeps the net chasing the newest self-play data.
+    # "constant" keeps existing scripts unchanged; 9x9 opts into cosine.
     lr_schedule: str = "constant"
     lr_final_frac: float = 0.1           # cosine end point, as a fraction of base_lr
-    # GPU batcher accumulation window. Workers block on their own responses, so
-    # without a wait the batcher fires a forward pass on ~2 messages; the 9x9
-    # runs averaged ~16 leaves against inference_batch_size=256.
+    # Batcher accumulation window; 0 restores the old no-wait draining.
     batch_wait_ms: float = DEFAULT_BATCH_WAIT_MS
-    # Opening moves sampled from the visit distribution during eval. 0 makes
-    # every eval game with the same seat assignment a replay of the same game,
-    # which is how a 40-game gate came to measure 2 distinct games at N=2.
+    # Sampled opening plies in eval; 0 makes same-seat games identical replays.
     eval_opening_plies: int = DEFAULT_EVAL_OPENING_PLIES
     # run eval every N iterations (1 = every iter)
     eval_every: int = 1
@@ -164,12 +158,7 @@ def resolve_self_play_mode(cfg):
 
 
 def zero_sample_reason(it, engine, wins, games_per_iteration, checkpoint_dir):
-    """Diagnose an iteration that produced no training samples.
-
-    Unresolved games now contribute no samples at all, so "0 samples" has two
-    very different causes and they need different fixes. Pointing at a GPU crash
-    when every game simply timed out would send the reader to the wrong place.
-    """
+    """Diagnose a zero-sample iteration: all-timeout vs a stalled batcher."""
     if wins.get(None, 0) >= games_per_iteration:
         return (
             f"[iter {it}] all {games_per_iteration} games timed out at "
@@ -184,15 +173,9 @@ def zero_sample_reason(it, engine, wins, games_per_iteration, checkpoint_dir):
 
 
 def init_champion(best, model, checkpoint_dir, log=print):
-    """Establish the gating champion at run start and make it durable on disk.
+    """Establish the gating champion and make it durable from iteration 0.
 
-    `best.pt` used to be written only on acceptance. A run that never accepted
-    therefore never created it, and `load_champion` below would then silently
-    re-anchor the champion to the current learner on every restart — candidate vs
-    an identical copy of itself, which splits seats exactly and scores 1/N, below
-    any `fair + margin` threshold. That is a closed loop: never accept -> never
-    write best.pt -> next restart resets the champion -> never accept. Writing it
-    up front breaks the loop at its only entry point.
+    Written up front so a run that never accepts still has a real opponent.
     """
     best.copy_weights_from(model)
     best_path = os.path.join(checkpoint_dir, "best.pt")
@@ -205,10 +188,8 @@ def init_champion(best, model, checkpoint_dir, log=print):
 def load_champion(best, model, checkpoint_dir, log=print):
     """Restore the gating champion on resume. Returns True if loaded from disk.
 
-    A missing `best.pt` is not a normal state once `init_champion` has run, so it
-    is reported loudly rather than papered over: falling back to the current
-    learner makes the gate compare the candidate against itself, which looks like
-    a working eval while measuring nothing.
+    A missing best.pt warns loudly: falling back to the learner makes the gate
+    compare the model against itself and measure nothing.
     """
     best_path = os.path.join(checkpoint_dir, "best.pt")
     if os.path.exists(best_path):
@@ -271,8 +252,6 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         _log(
             f"Resumed from iteration {start_iter} (checkpoint: {checkpoint_dir})")
     else:
-        # Durable champion from iteration 0, so the gate has a real opponent even
-        # if nothing is ever accepted.
         init_champion(best, model, checkpoint_dir, log=_log)
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")
@@ -377,8 +356,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
         # --- 2. train ---
         t_train = time.time()
-        # Pure function of the iteration index, so a resumed run picks up the
-        # right rate with no scheduler state to persist.
+        # Pure function of the iteration - nothing to persist across resume.
         cur_lr = lr_at(cfg.lr_schedule, model.base_lr, it, cfg.num_iterations,
                        cfg.lr_final_frac)
         model.set_lr(cur_lr)
@@ -419,10 +397,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         accepted = False
         eval_best_secs = 0.0
         eval_rand_secs = 0.0
-        # None, not 0.0: on a skipped-eval iteration nothing was measured. Zeros
-        # here are indistinguishable from a real 0% and were persisted into
-        # meta.json for 44 of the 51 rows across the two 9x9 runs, then plotted
-        # as if they were results.
+        # None, not 0.0 - a skipped eval measured nothing, and zeros here are
+        # indistinguishable from a real 0%.
         ev_wr = None
         evr_wr = None
 
@@ -495,9 +471,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             if accepted:
                 best.copy_weights_from(model)
                 best.save(os.path.join(checkpoint_dir, "best.pt"))
-            # Distinguish "lost the gate" from "the gate had nothing to judge":
-            # a mostly-timed-out eval rejects on insufficient evidence, which is a
-            # game-length problem, not a strength problem.
+            # Distinguish losing the gate from having too little evidence.
             if not accepted and ev.decided_games < ev.num_games * ev.MIN_DECIDED_FRACTION:
                 verdict = (f"reject (only {ev.decided_games}/{ev.num_games} games "
                            f"decided — too few to gate on)")
@@ -544,9 +518,6 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             _log(
                 f"[iter {it+1}/{cfg.num_iterations}] eval skipped (eval_every={cfg.eval_every})")
 
-        # "n/a" rather than 0.0%: the summary line is the thing most often read
-        # at a glance, and a skipped eval printing "vs_best=0.0% reject" is what
-        # made both 9x9 runs look like total failures for 44 of 51 iterations.
         vs_best_txt = (f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'}"
                        if ev_wr is not None else "n/a (not evaluated)")
         vs_rand_txt = f"{100*evr_wr:.1f}%" if evr_wr is not None else "n/a"

@@ -44,23 +44,11 @@ def _request_rows(req):
 
 
 def _collect_batch(request_queue, batch_size, stop_flag, first, batch_wait_s):
-    """Accumulate requests for one forward pass.
+    """Accumulate leaves for one forward pass; returns (batch, saw_stop).
 
-    Returns (batch, saw_stop). Two things were wrong with draining greedily via
-    get_nowait:
-
-    1. The loop counted *messages* against `batch_size`, but that parameter is
-       documented (and bucketed downstream) as max **leaves** per forward. With
-       leaf_batch=8 the effective cap was 8x the intended one.
-    2. There was no accumulation window. Every worker blocks on its own response,
-       so at most `num_workers` requests are ever in flight, and the batcher wins
-       the race: it wakes on the first request, finds the queue otherwise empty,
-       and fires a forward pass for ~2 messages. Production logs show ~16 leaves
-       per forward against inference_batch_size=256 — about 6% occupancy.
-
-    Waiting a few milliseconds lets the other workers re-submit, at the cost of
-    that much latency on an under-filled batch. The wait is skipped entirely once
-    `batch_size` leaves are in hand, so a saturated batcher pays nothing.
+    Counts leaves, not messages. Waits up to `batch_wait_s` for stragglers,
+    since workers block on their own responses and the batcher otherwise fires
+    on whatever happens to be queued. Returns early once batch_size is reached.
     """
     batch = [first]
     n_rows = _request_rows(first)
@@ -184,9 +172,6 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
                 msg_rate = messages_done / elapsed if elapsed > 0 else 0
                 avg_batch = evals_done / batches_done
                 leaves_per_msg = evals_done / messages_done if messages_done else 0
-                # occupancy = how full each forward pass actually is. This is the
-                # number to watch when tuning batch_wait_ms; it sat near 6% in
-                # the 9x9 runs (~16 leaves against inference_batch_size=256).
                 occupancy = avg_batch / batch_size if batch_size else 0
                 log(f"  [GPU] {evals_done:,} evals ({batches_done} batches, "
                     f"avg {avg_batch:.0f}/batch = {occupancy:.0%} of {batch_size}, "

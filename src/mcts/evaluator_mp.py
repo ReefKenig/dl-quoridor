@@ -26,18 +26,11 @@ OPENING_TEMPERATURE = 1.0
 def mcts_agent_mp(mcts, temperature: float = 0.1,
                   opening_plies: int = 0,
                   opening_temperature: float = OPENING_TEMPERATURE) -> AgentFn:
-    """Argmax over visit counts, except for the first `opening_plies` moves.
+    """Argmax over visit counts, except the first `opening_plies` moves.
 
-    With `dirichlet_epsilon=0` and argmax selection, MCTS is a deterministic
-    function of the position, so every eval game sharing a seat assignment
-    replays move-for-move. A 40-game gating eval was therefore measuring N
-    distinct games — 2 at N=2, 4 at N=4 — while reporting n=40.
-
-    The opening plies are sampled from the visit distribution at a higher
-    temperature (proportional to visits at 1.0), so games diverge immediately
-    while every move still comes from the model's own search. Note that the
-    default eval temperature of 0.1 raises counts to the 10th power, which is
-    effectively one-hot — sampling *that* would not produce diversity.
+    Without a sampled opening, eps=0 + argmax makes every game with the same
+    seat assignment identical. Sampling needs its own temperature: the eval
+    default of 0.1 raises counts to the 10th power and is effectively one-hot.
     """
     def agent(env, state, ply: int = 0, rng=None) -> int:
         if rng is not None and ply < opening_plies:
@@ -58,12 +51,8 @@ def random_agent() -> AgentFn:
 
 
 def eval_rng(base_seed: int, game_index: int):
-    """Per-game RNG, shared by the sequential and parallel eval paths.
-
-    Keyed on the game index alone so an outcome never depends on which worker
-    happened to run it, and an explicit RandomState rather than the global
-    np.random so eval cannot be perturbed by unrelated seeding elsewhere.
-    """
+    """Per-game RNG, keyed on the game index so the outcome never depends on
+    which worker ran it. Explicit RandomState, not global np.random."""
     return np.random.RandomState(base_seed + game_index)
 
 
@@ -80,8 +69,7 @@ def play_eval_game(env, agents, max_moves: int, rng=None) -> Optional[int]:
 
 
 def tally_game(res: "EvalResultMP", cand_seat: int, winner: Optional[int]):
-    """Fold one game's outcome into a result. Shared so the sequential path, the
-    parallel driver and the test reference cannot drift apart in their bookkeeping."""
+    """Fold one game's outcome into a result. Shared by all three eval paths."""
     res.num_games += 1
     res.games_per_seat[cand_seat] = res.games_per_seat.get(cand_seat, 0) + 1
     if winner is None:
@@ -105,15 +93,12 @@ class EvalResultMP:
     seat_wins: dict = field(default_factory=dict)
     games_per_seat: dict = field(default_factory=dict)
 
-    # An eval whose decided games fall below this fraction of games played is too
-    # thin to gate on: at a 90% timeout rate a single lucky decided game reads as
-    # a 100% win rate. Reject rather than promote on that evidence.
+    # Below this fraction of decided games the eval is too thin to gate on.
     MIN_DECIDED_FRACTION = 0.25
 
     @property
     def decided_games(self) -> int:
-        """Games that produced a winner. Quoridor has no true draws — a draw here
-        is a timeout at max_game_moves, i.e. a game that measured nothing."""
+        """Games with a winner. A draw here is a timeout, not a real draw."""
         return self.num_games - self.draws
 
     @property
@@ -122,13 +107,8 @@ class EvalResultMP:
 
     @property
     def candidate_win_rate(self) -> float:
-        """Win rate over *decided* games.
-
-        Dividing by num_games counted every timeout as a candidate loss, which
-        capped the achievable rate at (1 - draw_rate). At N=4's observed 84-90%
-        timeout rate that ceiling was ~10% against a `fair + margin` bar of 28%,
-        so the gate could not be cleared at any strength.
-        """
+        """Win rate over *decided* games; timeouts are excluded, not counted
+        as losses (which capped the achievable rate at 1 - draw_rate)."""
         return (self.candidate_wins / self.decided_games
                 if self.decided_games else 0.0)
 

@@ -19,23 +19,9 @@ def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
     """trajectory: list of (state_tensor, policy, mover). Returns list of
     (state_tensor, policy, value_vec).
 
-    An unresolved game (`winner is None`) is a timeout at max_game_moves, not a
-    draw — Quoridor has no draws. Labelling every position in such a game with a
-    zero vector taught the value head that those positions are neutral, and at
-    the N=4 9x9 timeout rate of 84-90% that was ~166k of 195k buffer samples.
-    The head duly converged on predicting zero (loss_v 0.0074, which reads as
-    accuracy but is the collapse), leaving MCTS with no positional signal, so
-    games wandered to the cap and produced more timeouts.
-
-    Unresolved games are therefore dropped rather than relabelled. A
-    distance-to-goal ranking was considered and rejected: `_distance_map` is BFS
-    *through walls*, so it is a more honest proxy than raw proximity, but it
-    ignores walls-in-hand and turn order, and a shorter remaining path is not a
-    win. Raising the per-variant ply cap makes timeouts rare enough that
-    discarding them costs little and invents nothing.
-
-    `drop_unresolved=False` restores the old zero-vector labelling, for tests
-    that need to exercise it.
+    An unresolved game is a timeout, not a draw. Labelling those positions 0
+    collapsed the value head, so they are dropped instead. drop_unresolved=False
+    restores the old zero-vector labelling for tests.
     """
     if winner is None and drop_unresolved:
         return []

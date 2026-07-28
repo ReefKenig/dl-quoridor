@@ -4,6 +4,7 @@ from gymnasium import spaces
 from stable_baselines3 import PPO
 
 from src.env.quoridor_env import QuoridorEnv
+from src.env.tensor_spec import OBS_CHANNELS
 
 
 class SB3Wrapper(gym.Env):
@@ -15,7 +16,9 @@ class SB3Wrapper(gym.Env):
         self.action_space = spaces.Discrete(self.env.action_space_size)
         self.observation_space = spaces.Box(
             low=0, high=1,
-            shape=(10, self.board_size, self.board_size),  # CHW for CnnPolicy
+            # CHW for CnnPolicy. Width comes from the spec, not a literal, so it
+            # tracks state_to_tensor instead of silently disagreeing with it.
+            shape=(OBS_CHANNELS, self.board_size, self.board_size),
             dtype=np.float32
         )
         self.state = None

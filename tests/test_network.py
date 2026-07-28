@@ -11,6 +11,7 @@ import os
 import numpy as np
 import pytest
 
+from src.env.tensor_spec import OBS_CHANNELS
 from src.model.network import QuoridorModel
 
 
@@ -27,7 +28,7 @@ def model():
 
 def test_predict_output_shape(model):
     """predict() returns policy of correct size and scalar value."""
-    state = np.random.randn(5, 5, 10).astype(np.float32)
+    state = np.random.randn(5, 5, OBS_CHANNELS).astype(np.float32)
     policy, value = model.predict(state)
 
     assert policy.shape == (44,)
@@ -41,7 +42,7 @@ def test_predict_output_shape(model):
 def test_train_step_returns_losses(model):
     """train_step() returns two loss floats."""
     batch_size = 8
-    states = np.random.randn(batch_size, 5, 5, 10).astype(np.float32)
+    states = np.random.randn(batch_size, 5, 5, OBS_CHANNELS).astype(np.float32)
     policies = np.random.dirichlet(
         np.ones(44), size=batch_size).astype(np.float32)
     values = np.random.choice([-1.0, 1.0], size=batch_size).astype(np.float32)
@@ -56,7 +57,7 @@ def test_train_step_returns_losses(model):
 
 def test_save_and_load(model):
     """Model save/load preserves weights."""
-    state = np.random.randn(5, 5, 10).astype(np.float32)
+    state = np.random.randn(5, 5, OBS_CHANNELS).astype(np.float32)
 
     policy_before, value_before = model.predict(state)
 
@@ -84,7 +85,7 @@ def test_save_and_load(model):
 def test_training_reduces_loss(model):
     """Multiple train steps should reduce loss."""
     batch_size = 16
-    states = np.random.randn(batch_size, 5, 5, 10).astype(np.float32)
+    states = np.random.randn(batch_size, 5, 5, OBS_CHANNELS).astype(np.float32)
     # Use a specific target distribution
     policies = np.zeros((batch_size, 44), dtype=np.float32)
     policies[:, 0] = 1.0  # all probability on action 0

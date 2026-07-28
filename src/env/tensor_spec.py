@@ -5,9 +5,13 @@ This file defines the EXACT tensor layout and provides a reference
 implementation for computing each channel. Reef must produce identical
 output from his QuoridorEnv.state_to_tensor().
 
-Tensor shape: (board_size, board_size, 10)
+Tensor shape: (board_size, board_size, 10) for build_tensor() below.
 All values normalized to [0, 1].
 Indexed as tensor[row, col, channel].
+
+NOTE: these 10 are the BASE channels. QuoridorEnv.state_to_tensor() appends one
+more — ch 10, side-to-move — so the observation the network actually sees is 11
+wide. Use OBS_CHANNELS (defined below) when sizing anything against it.
 
 Channel Breakdown
 -----------------
@@ -21,6 +25,8 @@ Ch 6: Player 0 walls remaining  — uniform plane, value = remaining / max_walls
 Ch 7: Player 1 walls remaining  — uniform plane, value = remaining / max_walls
 Ch 8: Player 0 distance map     — BFS distance from each cell to P0's goal row, normalized by max possible distance
 Ch 9: Player 1 distance map     — BFS distance from each cell to P1's goal row, normalized by max possible distance
+Ch 10: Side to move             — uniform plane, value = current_player (added by
+                                  QuoridorEnv.state_to_tensor, not by build_tensor)
 
 Design Rationale
 -----------------
@@ -47,6 +53,17 @@ This keeps the spatial structure — convolutions can "see" wall extent.
 import numpy as np
 from collections import deque
 from typing import List, Tuple, Set
+
+
+# Channel counts — the single source of truth for the network's input width.
+# build_tensor() emits the BASE planes (ch 0-9) documented above;
+# QuoridorEnv.state_to_tensor() appends the side-to-move plane (ch 10), so what
+# actually reaches the network is OBS_CHANNELS wide. Anything sizing a conv,
+# an observation space, or a synthetic test state must use OBS_CHANNELS —
+# hardcoding 10 is what let the network defaults and these two numbers drift
+# apart in the first place.
+BASE_CHANNELS = 10
+OBS_CHANNELS = BASE_CHANNELS + 1
 
 
 # Wall grid size = board_size - 1

@@ -37,8 +37,8 @@ import torch
 
 from src.env.quoridor_env_mp import QuoridorEnvMP
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig, VectorizedSearch
-from src.mcts.self_play_mp import (assign_vector_targets, augment_mp,
-                                   game_seed)
+from src.mcts.self_play_mp import (assign_vector_targets, augment_mp, game_seed,
+                                   normalize_action_probs)
 
 
 class _GameSlot:
@@ -169,7 +169,7 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
 
             temp = explore_temp if slot.move_count < explore_moves else final_temp
             probs = slot.search.action_probs(temp)
-            probs = probs / probs.sum()
+            probs = normalize_action_probs(probs, env, slot.state)
             mover = env.get_current_player(slot.state)
             slot.trajectory.append(
                 (env.state_to_tensor(slot.state), probs, mover))

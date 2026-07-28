@@ -94,6 +94,28 @@ def game_seed(base_seed, game_index):
     return int(seq.generate_state(1, dtype=np.uint32)[0])
 
 
+def normalize_action_probs(probs, env=None, state=None):
+    """Renormalize a visit-count distribution for fp precision.
+
+    `probs` sums to 0 only when the root had no children, i.e. the mover had no
+    legal action. Dividing anyway yields NaN, which surfaces much later as an
+    opaque `np.random.choice` ValueError. Fall back to uniform over the actual
+    valid actions when we can, and otherwise fail with a message that says what
+    happened.
+    """
+    total = probs.sum()
+    if total > 0:
+        return probs / total
+    valid = env.get_valid_actions(state) if env is not None else []
+    if len(valid) > 0:
+        fallback = np.zeros_like(probs)
+        fallback[valid] = 1.0 / len(valid)
+        return fallback
+    raise RuntimeError(
+        "MCTS produced an all-zero action distribution and the position has no "
+        "valid actions — the search root is a dead end.")
+
+
 def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
                   temp_explore=1.0, explore_moves=15):
     state = env.reset()
@@ -106,7 +128,7 @@ def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
             break
         temp = temp_explore if move_count < explore_moves else 0.3
         probs = mcts.search(env, state, temperature=temp)
-        probs = probs / probs.sum()   # renormalize for fp precision
+        probs = normalize_action_probs(probs, env, state)
         mover = env.get_current_player(state)
         trajectory.append((env.state_to_tensor(state), probs, mover))
         action = int(np.random.choice(len(probs), p=probs))

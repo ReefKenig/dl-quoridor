@@ -17,7 +17,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
     from src.mcts.mcts import MCTSConfig
@@ -97,6 +97,38 @@ class AppConfig:
     @property
     def weight_decay(self) -> float:
         return self.raw.get("training", {}).get("weight_decay", 0.0001)
+
+
+def resolve_variant(raw: Dict[str, Any], variant: str) -> Dict[str, Any]:
+    """The `training` block with `variants[variant]` merged over it.
+
+    Some settings cannot be shared across player counts. `max_game_moves` counts
+    individual plies, not rounds, so a single shared value hands N=2 players
+    twice the per-player budget of N=4 players on the same board: 160 plies is 80
+    turns each at N=2 but only 40 each at N=4. That is what drove the N=4 9x9
+    timeout rate to 84-90% and collapsed its value head.
+    """
+    merged = dict(raw.get("training", {}))
+    merged.update(raw.get("variants", {}).get(variant, {}))
+    return merged
+
+
+def variant_setting(raw: Dict[str, Any], variant: str, key: str,
+                    default: Any = None) -> Any:
+    """One setting, preferring the variant's override over the shared default."""
+    return resolve_variant(raw, variant).get(key, default)
+
+
+def ply_budget_per_player(raw: Dict[str, Any], variant: str) -> float:
+    """Plies each player gets before a game is cut short at `max_game_moves`.
+
+    The number that should be comparable across variants — not the raw cap.
+    """
+    merged = resolve_variant(raw, variant)
+    num_players = merged.get("num_players")
+    if not num_players:
+        raise KeyError(f"variant {variant!r} does not declare num_players")
+    return merged["max_game_moves"] / num_players
 
 
 def load_config(path: str = "configs/config_5x5.json") -> AppConfig:

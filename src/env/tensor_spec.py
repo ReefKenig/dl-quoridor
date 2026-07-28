@@ -9,9 +9,8 @@ Tensor shape: (board_size, board_size, 10) for build_tensor() below.
 All values normalized to [0, 1].
 Indexed as tensor[row, col, channel].
 
-NOTE: these 10 are the BASE channels. QuoridorEnv.state_to_tensor() appends one
-more — ch 10, side-to-move — so the observation the network actually sees is 11
-wide. Use OBS_CHANNELS (defined below) when sizing anything against it.
+NOTE: these 10 are the BASE channels; state_to_tensor() appends ch 10
+(side-to-move), so the network sees 11. Size against OBS_CHANNELS below.
 
 Channel Breakdown
 -----------------
@@ -55,13 +54,8 @@ from collections import deque
 from typing import List, Tuple, Set
 
 
-# Channel counts — the single source of truth for the network's input width.
-# build_tensor() emits the BASE planes (ch 0-9) documented above;
-# QuoridorEnv.state_to_tensor() appends the side-to-move plane (ch 10), so what
-# actually reaches the network is OBS_CHANNELS wide. Anything sizing a conv,
-# an observation space, or a synthetic test state must use OBS_CHANNELS —
-# hardcoding 10 is what let the network defaults and these two numbers drift
-# apart in the first place.
+# Single source of truth for the network's input width: build_tensor() emits the
+# base planes (ch 0-9), state_to_tensor() appends side-to-move (ch 10).
 BASE_CHANNELS = 10
 OBS_CHANNELS = BASE_CHANNELS + 1
 

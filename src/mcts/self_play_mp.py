@@ -79,30 +79,15 @@ def augment_mp(tensor, policy, value_vec, num_players, board_size):
 
 
 def game_seed(base_seed, game_index):
-    """Derive game `game_index`'s seed from `base_seed`.
-
-    Consecutive game indices must give *uncorrelated* streams: self-play draws
-    Dirichlet noise and samples actions, and neighbouring games sharing structure
-    in their exploration noise would quietly cut sample diversity. SeedSequence
-    hashes (base_seed, game_index) into well-scattered entropy, which
-    `base_seed + game_index` does not guarantee.
-
-    Deterministic: the same (base_seed, game_index) always yields the same seed,
-    regardless of which worker or slot happens to play the game.
-    """
+    """Seed for game `game_index`, hashed rather than added so neighbouring games
+    get uncorrelated exploration noise. Deterministic per (base_seed, index)."""
     seq = np.random.SeedSequence([int(base_seed), int(game_index)])
     return int(seq.generate_state(1, dtype=np.uint32)[0])
 
 
 def normalize_action_probs(probs, env=None, state=None):
-    """Renormalize a visit-count distribution for fp precision.
-
-    `probs` sums to 0 only when the root had no children, i.e. the mover had no
-    legal action. Dividing anyway yields NaN, which surfaces much later as an
-    opaque `np.random.choice` ValueError. Fall back to uniform over the actual
-    valid actions when we can, and otherwise fail with a message that says what
-    happened.
-    """
+    """Renormalize visit counts. A zero sum means the root had no children, so
+    fall back to uniform over valid actions rather than dividing into NaN."""
     total = probs.sum()
     if total > 0:
         return probs / total

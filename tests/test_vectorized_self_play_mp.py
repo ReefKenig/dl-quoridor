@@ -134,15 +134,9 @@ def test_vectorized_concurrency_invariant():
 
 
 def test_vectorized_concurrency_invariant_with_noise():
-    """The invariance that actually matters: with Dirichlet noise and temperature
-    sampling ON — i.e. the production regime — a game's data still depends only on
-    its index, not on how many games ran alongside it.
-
-    The eps=0/temp=0 test above cannot see this: it draws from no RNG at all. When
-    every slot shared the global np.random stream, this assertion failed hard
-    (different sample counts, not just different tails), because each game's noise
-    depended on the interleaving of every other in-flight game.
-    """
+    """With noise and temperature sampling on (the production regime), a game's
+    data still depends only on its index, not on how many ran alongside it.
+    The eps=0/temp=0 test above cannot see this — it draws from no RNG at all."""
     cfg = _Cfg(num_players=2, eps=0.25)      # noise on
     model = _model(2)
     kw = dict(total_games=4, base_seed=17)   # temps left at production defaults
@@ -153,12 +147,8 @@ def test_vectorized_concurrency_invariant_with_noise():
 
 
 def test_vectorized_refill_does_not_disturb_inflight_games():
-    """Starting a refilled game must not perturb the games already in flight.
-
-    total_games > vec_games forces refills mid-iteration. Re-seeding a global RNG
-    at refill time would rewind the stream underneath every running game, so this
-    would diverge from the un-refilled (vec_games=1) ordering.
-    """
+    """total_games > vec_games forces mid-iteration refills; starting one must
+    not perturb the games already in flight."""
     cfg = _Cfg(num_players=2, eps=0.25)
     model = _model(2)
     kw = dict(total_games=5, base_seed=3)

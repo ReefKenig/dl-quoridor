@@ -94,11 +94,8 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                 game_counter.value = remaining - 1
             game_index = total_games - remaining
 
-            # Seed per game (not once per worker): the sample stream is tied to the
-            # game index, not to which worker happened to grab it, so the data is
-            # reproducible even though game-to-worker assignment is now dynamic.
-            # game_seed hashes (base_seed, index) rather than adding them, so
-            # neighbouring games get uncorrelated exploration noise.
+            # Seed per game, not per worker: ties the sample stream to the game
+            # index rather than to whichever worker claimed it.
             seed = game_seed(base_seed, game_index)
             random.seed(seed)
             np.random.seed(seed)

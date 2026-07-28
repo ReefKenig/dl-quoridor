@@ -136,12 +136,8 @@ SELF_PLAY_MODES = ("sequential", "parallel", "vectorized")
 
 
 def resolve_self_play_mode(cfg):
-    """Resolve cfg.self_play_mode to a concrete engine name.
-
-    Validates rather than falling through: an unrecognised value used to land
-    silently in the sequential branch, which looks like a working run and costs
-    a night of training at a fraction of the intended throughput.
-    """
+    """Resolve cfg.self_play_mode to a concrete engine name, raising on typos
+    rather than silently falling through to the sequential path."""
     mode = getattr(cfg, "self_play_mode", "auto")
     if mode == "auto":
         return "parallel" if cfg.parallel_self_play else "sequential"

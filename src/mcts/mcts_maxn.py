@@ -298,11 +298,8 @@ class MCTSMaxN:
         # strength is measured deterministically at true best-play). Short-circuit
         # so we don't even draw from the RNG — the mix below would be a no-op anyway.
         #
-        # `rng` is any object exposing .dirichlet (a np.random.Generator). Callers
-        # running several searches concurrently in one process MUST pass their own,
-        # or the interleaved draws off the global stream make each search's noise
-        # depend on what the other searches happened to be doing. Default None =
-        # the global stream, which keeps the single-search paths unchanged.
+        # `rng`: callers stepping several searches at once must pass their own,
+        # or interleaved draws off the global stream couple their noise together.
         if self.config.dirichlet_epsilon <= 0 or not root.children:
             return
         rng = rng if rng is not None else np.random
@@ -355,16 +352,11 @@ class VectorizedSearch:
                 vs.apply(policy, value)
         probs = vs.action_probs(temperature)
 
-    `collect()` returns None exactly when this search has no network work left —
-    the simulation budget is spent, whether because the sims resolved
-    terminal/dead-end inline (no eval needed) or because the root itself was a
-    dead end. That always coincides with `done()` being True, so a None means
-    "advance this game", not "retry it next round".
+    `collect()` returns None exactly when the sim budget is spent, which always
+    coincides with `done()` — so None means "advance this game", not "retry".
 
-    `rng` (a np.random.Generator, optional) supplies the root's Dirichlet noise.
-    A driver stepping several searches at once must give each its own, otherwise
-    they interleave draws off the global stream and each game's noise depends on
-    how many others were in flight. None = the global stream.
+    `rng` supplies the root's Dirichlet noise; a driver stepping several searches
+    at once must give each its own. None = the global stream.
     """
 
     def __init__(self, mcts, env, state, rng=None):

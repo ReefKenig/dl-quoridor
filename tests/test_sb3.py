@@ -11,14 +11,8 @@ from src.env.tensor_spec import OBS_CHANNELS
 
 
 class BoardCNN(BaseFeaturesExtractor):
-    """Small 3x3-conv extractor sized for a Quoridor board.
-
-    SB3's default CnnPolicy extractor (NatureCNN) is built for Atari frames: its
-    first layer is an 8x8 kernel at stride 4, which cannot consume a 5x5 board at
-    all, and it asserts the observation is a uint8 image. Our observation is an
-    11-channel float32 plane stack in [0, 1], so it needs padded 3x3 convs and no
-    downsampling.
-    """
+    """3x3-conv extractor sized for a Quoridor board: SB3's default NatureCNN
+    uses an 8x8 stride-4 first layer and cannot consume a 5x5 board."""
 
     def __init__(self, observation_space, features_dim=128):
         super().__init__(observation_space, features_dim)
@@ -45,8 +39,7 @@ class SB3Wrapper(gym.Env):
         self.action_space = spaces.Discrete(self.env.action_space_size)
         self.observation_space = spaces.Box(
             low=0, high=1,
-            # CHW for CnnPolicy. Width comes from the spec, not a literal, so it
-            # tracks state_to_tensor instead of silently disagreeing with it.
+            # CHW for CnnPolicy; width from the spec so it tracks the env.
             shape=(OBS_CHANNELS, self.board_size, self.board_size),
             dtype=np.float32
         )

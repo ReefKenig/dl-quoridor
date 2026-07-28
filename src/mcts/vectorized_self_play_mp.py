@@ -9,11 +9,8 @@ coordinator (exact sequential MCTS, one pending leaf per tree); every step, the
 driver gathers one leaf from each active game, runs a SINGLE `model.predict_batch`
 over all of them, scatters the results back, and advances any game whose search
 finished. No multiprocessing, no queues, no per-worker blocking — the GPU batch is
-G-wide for the bulk of the iteration, because a finished game is immediately
-refilled from the remaining quota. It does narrow over the final G games, once
-the quota is exhausted and slots start retiring without replacement; that tail is
-bounded by G rather than by the whole straggler spread, which is the improvement
-over the worker-pool path.
+G-wide until the quota runs out, then narrows over the final G games as slots
+retire. That tail is bounded by G, not by the straggler spread.
 
 Correctness: because each game runs `VectorizedSearch` (bit-identical to
 `MCTSMaxN.search` with leaf_batch=1), the per-move visit distributions are exact
@@ -23,13 +20,9 @@ sequential/parallel paths. The return contract `(samples, wins)` is identical to
 `generate_parallel_self_play_mp` for a drop-in swap.
 
 Randomness: every slot owns a `np.random.Generator` seeded from (base_seed,
-game_index), used for BOTH its Dirichlet noise and its action sampling. Nothing
-here touches the global `np.random` stream. That is what makes a game's data a
-function of its index alone — run the same iteration at vec_games=1 or 64 and
-game 7 is the same game either way. Sharing the global stream would instead make
-every game's noise depend on how many others happened to be in flight.
-(On CUDA, invariance is up to `predict_batch`'s batch-composition nondeterminism:
-different batch shapes can differ in the last ulp. Exact on CPU.)
+game_index) for both Dirichlet noise and action sampling, never the global
+stream — so a game's data depends on its index alone, not on vec_games. (On CUDA,
+up to predict_batch's batch-composition nondeterminism; exact on CPU.)
 """
 import numpy as np
 import torch
@@ -55,12 +48,8 @@ class _GameSlot:
 
 
 def _submit(model, env, chunk):
-    """Launch one forward over `chunk`'s leaves WITHOUT reading the result back.
-
-    On CUDA the kernels are queued asynchronously, so this returns while the GPU
-    is still working and the caller can descend more trees on the CPU meanwhile.
-    Returns an opaque handle for `_apply`.
-    """
+    """Queue a forward over `chunk`'s leaves without reading it back, so the
+    caller can descend more trees while the GPU works. Handle for `_apply`."""
     stacked = torch.from_numpy(
         np.ascontiguousarray(
             np.stack([env.state_to_tensor(leaf).transpose(2, 0, 1)
@@ -160,8 +149,7 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
             slot.state = state
             slot.trajectory = []
             slot.move_count = 0
-        # Private stream per game — never the global one, which the other G-1
-        # in-flight games would interleave their draws into.
+        # Private stream per game; the global one would interleave G-1 others.
         slot.rng = np.random.default_rng(game_seed(base_seed, gi))
         slot.search = VectorizedSearch(mcts, env, state, rng=slot.rng)
         return slot
@@ -169,12 +157,8 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
     slots = [_start_slot(None) for _ in range(min(G, total_games))]
 
     while slots:
-        # 1+2. Descend trees and evaluate leaves, pipelined: split the active
-        # slots into `pipeline_groups` and keep one forward in flight while the
-        # next group's tree-walks run. Without this the round is strictly
-        # serial — GPU idle during the (Python, single-core, and at 9x9/800 sims
-        # dominant) descents, CPU idle during the forward. With k groups, k-1 of
-        # the k forwards overlap CPU work. k=1 restores the plain behaviour.
+        # 1+2. Descend and evaluate, pipelined: with k groups, k-1 of the k
+        # forwards overlap the next group's tree-walks. k=1 = plain behaviour.
         per_group = -(-len(slots) // pipeline_groups)   # ceil
         inflight = None
         for gs in range(0, len(slots), per_group):
@@ -213,11 +197,8 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
                 surviving.append(slot)
                 continue
 
-            # Finalize the game -> training samples (+ mirror augmentation).
-            # Keyed by game index, not appended: games finish out of order and
-            # the order depends on vec_games, so appending would make the output
-            # sequence a function of the concurrency width. Flushed in index
-            # order below.
+            # Finalize -> samples (+ mirror augmentation). Keyed by game index,
+            # not appended: completion order depends on vec_games.
             winner = info.get("winner") if done else None
             game_samples = assign_vector_targets(
                 slot.trajectory, winner, N, discount)
@@ -236,8 +217,7 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
 
         slots = surviving
 
-    # Flush in game-index order so the returned sequence is a function of
-    # base_seed and total_games alone — same data whatever vec_games was.
+    # Index order, so the sequence depends on base_seed/total_games alone.
     samples = [s for gi in sorted(by_game) for s in by_game[gi]]
     if not samples:
         log("[VECTORIZED-MP] WARNING: no samples generated.")

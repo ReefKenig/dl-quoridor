@@ -23,25 +23,9 @@ def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
     collapsed the value head, so they are dropped instead. drop_unresolved=False
     restores the old zero-vector labelling for tests.
 
-    `discount_unit` selects what the exponent counts:
-
-      "round" — plies / num_players, so gamma decays per the mover's own turns.
-      "ply"   — every move by anybody, the original behaviour.
-
-    It is per-variant because the right *effective* target magnitude depends on
-    game length and player count, and neither unit is right everywhere. At 9x9:
-
-                       ply-counted        round-counted
-      N=2  (85 plies)  0.99**85  = 0.43   0.99**42.5 = 0.65
-      N=4 (136 plies)  0.99**136 = 0.25   0.99**34   = 0.71
-
-    Measured over two runs: N=2 improved under "round" (gate 61.5% -> 78.8% at
-    iteration 10), while N=4 got worse — its draw rate stalled at 46% where the
-    ply-counted run had fallen to 16%, and its policy loss kept dropping (1.39
-    -> 1.33) instead of broadening, i.e. converging early onto a policy that
-    does not finish games. Pushing N=4 to 0.71 asserts near-certainty about a
-    four-player opening whose outcome is genuinely uncertain, which is the
-    high-gamma failure the 5x5 ablation already identified.
+    discount_unit: "round" decays per the mover's own turns (plies/N), "ply"
+    per move by anybody. Per-variant — the right effective target magnitude
+    depends on game length and player count.
     """
     if winner is None and drop_unresolved:
         return []

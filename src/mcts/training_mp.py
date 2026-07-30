@@ -208,12 +208,8 @@ def _read_first(*paths):
 
 
 def _cgroup_mem_limit_gb():
-    """Container memory ceiling in GB, or None when unlimited/not containerised.
-
-    psutil reports the *host's* RAM, which on a shared or MIG-partitioned box is
-    not what this process may use. A run reading "1623 GB RAM" while capped at a
-    fraction of it will look impossible to OOM right up until it is killed.
-    """
+    """Container memory ceiling in GB, or None when unlimited. psutil reports the
+    host's RAM, which on a shared or MIG-partitioned box is not what we may use."""
     raw = _read_first("/sys/fs/cgroup/memory.max",                  # cgroup v2
                       "/sys/fs/cgroup/memory/memory.limit_in_bytes")  # cgroup v1
     if raw is None or raw == "max":
@@ -227,11 +223,7 @@ def _cgroup_mem_limit_gb():
 
 
 def _cpu_budget():
-    """(usable_cpus, source) actually available to this process.
-
-    Falls back through cgroup quota -> scheduler affinity -> host core count, so
-    the number reported is the one the workers will really contend for.
-    """
+    """(usable_cpus, source): cgroup quota -> affinity -> host cores."""
     raw = _read_first("/sys/fs/cgroup/cpu.max")                     # cgroup v2
     if raw and not raw.startswith("max"):
         try:
@@ -273,20 +265,13 @@ def resource_banner(cfg):
     if cpus and cfg.num_workers > cpus:
         lines.append(
             f"WARNING: num_workers={cfg.num_workers} exceeds the {cpus:.0f} usable "
-            f"cpus — workers will contend for cores. Sustained slowdowns followed "
-            f"by a killed kernel are the signature of this, not of a GPU problem.")
+            f"cpus — expect contention, and slowdowns that end in a killed kernel.")
     return lines
 
 
 def freeze_config(cfg, checkpoint_dir, log=print):
-    """Write the resolved config next to the checkpoints.
-
-    configs/config_9x9.json is shared and gets edited between runs, so without
-    this the only record of what a run actually used is the launch banner in
-    games.log — the 9x9 v3 runs have no config.json at all, while every 5x5 run
-    does. Written every launch: a resumed run re-freezes the config it resumed
-    under, which is the one that produced the later iterations.
-    """
+    """Write the resolved config next to the checkpoints, so a run dir records
+    what it actually ran rather than relying on the shared config file."""
     path = os.path.join(checkpoint_dir, "config.json")
     resolved = {k: v for k, v in vars(cfg).items() if not k.startswith("_")}
     with open(path, "w") as f:
@@ -533,9 +518,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
                    win_vs_best=ev_wr, accepted=accepted,
                    win_vs_random=evr_wr, fair=fair, draw_rate=draw_rate,
-                   # Sample size behind win_vs_best. Without it meta.json records
-                   # a rate with no denominator and the only way back to "58.5%
-                   # of 65 decided" is re-parsing games.log.
+                   # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
                    rand_decided_games=None, greedy_decided_games=None,
                    win_vs_greedy=None,
@@ -690,11 +673,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         vs_best_txt = (f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'}"
                        if ev_wr is not None else "n/a (not evaluated)")
         vs_rand_txt = f"{100*evr_wr:.1f}%" if evr_wr is not None else "n/a"
-        # rss tracks the parent's memory against the buffer: the n2 9x9 run was
-        # killed twice with no traceback, and a slow climb here is the evidence
-        # that would confirm or rule out host memory pressure. Measured at the
-        # end of the iteration, so it needs its own write — every earlier
-        # _write_meta has already run by this point.
+        # Measured at iteration end, so it needs its own write.
         row["rss_gb"] = _rss_gb()
         _write_meta()
         _log(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "

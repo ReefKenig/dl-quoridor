@@ -55,13 +55,8 @@ NUM_MOVE_ACTIONS = 12
 
 
 def greedy_agent() -> AgentFn:
-    """Pawn-rush: take the legal move that most shortens your own path; no walls.
-
-    An absolute yardstick that does not move as training progresses. It is
-    needed because vs-random saturates: the 9x9 N=2 run hit 100% against random
-    at iteration 5 and stayed there for the remaining 95 iterations, so that
-    column carried no information about anything that happened afterwards.
-    """
+    """Pawn-rush: the legal move that most shortens your own path, never a wall.
+    A fixed yardstick, unlike vs-random (which saturates) or the moving gate."""
     def agent(env, state, ply: int = 0, rng=None) -> int:
         r = np.random if rng is None else rng
         valid = env.get_valid_actions(state)

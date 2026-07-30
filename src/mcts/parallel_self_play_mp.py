@@ -105,8 +105,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                 env, mcts, N,
                 max_moves=config_dict["max_game_moves"],
                 discount=config_dict["discount"],
-                # .get keeps a run launched before this key existed on the
-                # old behaviour: workers re-import from disk every iteration.
+                # .get: workers re-import from disk, so an older run keeps its unit.
                 discount_unit=config_dict.get("discount_unit", "round"),
                 explore_moves=config_dict["explore_moves"],
             )

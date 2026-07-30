@@ -18,7 +18,7 @@
         "_iters_note": "num_iterations/games_per_iteration are per variant; N=4 games run ~3x longer so it buys fewer of them for the same wall clock",
         "batch_size": 128,
         "training_epochs": 600,
-        "_replay_buffer_note": "100k ~= 7 iterations of coverage at N=2, the regime the 5x5 buffer ablation validated (runs/n2_5x5_buf10k_v1: 10k ~= 6 iters, identical loss_v endpoint and strength vs the 100k baseline). 500k bought nothing and cost ~1.4 GB of parent RSS.",
+        "_replay_buffer_note": "100k ~= 7 iterations of coverage at N=2 \u2014 the regime runs/n2_5x5_buf10k_v1 validated.",
         "replay_buffer_size": 100000,
         "learning_rate": 0.001,
         "lr_schedule": "cosine",
@@ -29,7 +29,7 @@
         "accept_margin": 0.05,
         "eval_every": 5,
         "reward_decay": 0.99,
-        "_discount_unit_note": "Per-variant. 'round' decays gamma per the mover's own turns, 'ply' per move by anybody. Measured at 9x9: N=2 improved under round (gate 61.5%->78.8% at iter 10 vs v3), N=4 got worse (draws stalled at 46% where the ply run had reached 16%, policy loss falling instead of broadening). Round pushes the N=4 opening target to 0.71 vs 0.25 ply-counted, asserting near-certainty about a genuinely uncertain 4-player opening."
+        "_discount_unit_note": "Per-variant: 'round' decays per the mover's own turns, 'ply' per move by anybody. Measured better at N=2, worse at N=4."
     },
     "parallel": {
         "num_workers": 64,

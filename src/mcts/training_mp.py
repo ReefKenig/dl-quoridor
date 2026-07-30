@@ -21,8 +21,10 @@ from src.mcts.batched_inference_mp import DEFAULT_BATCH_WAIT_MS
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
 from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
-                                   evaluate_against_random_mp, mcts_agent_mp)
+                                   evaluate_against_random_mp, greedy_agent,
+                                   mcts_agent_mp)
 from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
+                                       evaluate_against_greedy_parallel_mp,
                                        evaluate_against_random_parallel_mp)
 from src.utils.logger import make_progress_logger
 
@@ -64,6 +66,9 @@ class TrainingConfigMP:
     max_game_moves: int = 300
     eval_games: int = 80
     eval_random_games: int = 24
+    # Absolute yardstick that does not saturate the way vs-random does (9x9 N=2
+    # hit 100% vs random at iter 5 and stayed there). 0 disables it.
+    eval_greedy_games: int = 0
     accept_margin: float = 0.05          # accept if win_rate > fair_share + margin
     # "constant" keeps existing scripts unchanged; 9x9 opts into cosine.
     lr_schedule: str = "constant"
@@ -514,6 +519,38 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             row.update(win_vs_random=evr_wr, eval_rand_secs=eval_rand_secs,
                        secs=time.time() - t0, eval_ran=True)
             _write_meta()
+
+            # --- 5. eval vs greedy (absolute yardstick; opt-in) ---
+            if cfg.eval_greedy_games:
+                t_eval_greedy = time.time()
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs greedy "
+                     f"({cfg.eval_greedy_games} games, {eval_sims} sims)...")
+
+                def _eval_greedy_progress(done, total, r):
+                    elapsed = time.time() - t_eval_greedy
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs greedy: "
+                         f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
+
+                if cfg.parallel_eval:
+                    evg = evaluate_against_greedy_parallel_mp(
+                        model, eval_config_dict, num_games=cfg.eval_greedy_games,
+                        num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
+                        on_progress=_eval_greedy_progress,
+                        base_seed=it * 100_003 + 70_000, log=_log)
+                else:
+                    greedy = greedy_agent()
+                    evg = evaluate_mp(env, cand, greedy, num_games=cfg.eval_greedy_games,
+                                      max_moves=cfg.max_game_moves,
+                                      on_progress=_eval_greedy_progress,
+                                      base_seed=it * 100_003 + 70_000)
+                eval_greedy_secs = time.time() - t_eval_greedy
+                evg_wr = evg.candidate_win_rate
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs greedy done: "
+                     f"{100*evg_wr:.1f}% of {evg.decided_games} decided "
+                     f"({eval_greedy_secs:.0f}s)")
+                row.update(win_vs_greedy=evg_wr, eval_greedy_secs=eval_greedy_secs,
+                           secs=time.time() - t0)
+                _write_meta()
         else:
             _log(
                 f"[iter {it+1}/{cfg.num_iterations}] eval skipped (eval_every={cfg.eval_every})")

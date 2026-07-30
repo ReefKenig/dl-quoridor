@@ -49,6 +49,9 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
         if project_dir not in sys.path:
             sys.path.insert(0, project_dir)
 
+        import torch
+        torch.set_num_threads(1)   # see parallel_self_play_mp._worker
+
         from src.env.quoridor_env_mp import QuoridorEnvMP
         from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, eval_rng,
                                            greedy_agent, mcts_agent_mp,

@@ -152,25 +152,43 @@ preflight
 
 # nbconvert execution:
 #   --to notebook --execute : run every cell in order
+#   --allow-errors : a raising cell no longer aborts the rest of the notebook.
+#     Both 9x9 v3 runs died this way — a TypeError in the training-curves cell
+#     skipped every cell after it, including the checkpoint export.
 #   --ExecutePreprocessor.timeout=-1 : no per-cell timeout (training is long)
 #   --output : write the executed copy (with outputs) next to the logs
-CMD="$PYTHON -m jupyter nbconvert --to notebook --execute \
+NBCONVERT="$PYTHON -m jupyter nbconvert --to notebook --execute \
+  --allow-errors \
   --ExecutePreprocessor.timeout=-1 \
   --output '$OUT_NB' \
   '$NOTEBOOK'"
 
-# Keep macOS awake while training (no-op on Linux).
-CAFFEINATE=""
-if command -v caffeinate >/dev/null 2>&1; then
-  CAFFEINATE="caffeinate -i"
-fi
-CMD="$CAFFEINATE $CMD"
+# Retry loop: --allow-errors covers cell exceptions, but a *killed* kernel (OOM,
+# host restart) still fails the whole run with no Python traceback. The n2 9x9
+# run lost 6h that way twice, each time waiting for a human to notice. The
+# notebook's resume=True makes a relaunch idempotent, so just retry.
+MAX_RETRIES="${MAX_RETRIES:-5}"
+RETRY_DELAY="${RETRY_DELAY:-60}"
+CMD="started=\$(date +%s)
+echo \"=== run started \$(date -Iseconds) | host \$(hostname) | notebook $NOTEBOOK ===\"
+for attempt in \$(seq 1 $MAX_RETRIES); do
+  echo \"=== attempt \$attempt/$MAX_RETRIES started \$(date -Iseconds) ===\"
+  if $NBCONVERT; then
+    echo \"=== completed on attempt \$attempt at \$(date -Iseconds) after \$(( (\$(date +%s) - started) / 60 )) min ===\"
+    exit 0
+  fi
+  echo \"=== attempt \$attempt failed at \$(date -Iseconds) (killed kernel?) — retrying in ${RETRY_DELAY}s ===\"
+  sleep $RETRY_DELAY
+done
+echo \"=== gave up after $MAX_RETRIES attempts at \$(date -Iseconds), \$(( (\$(date +%s) - started) / 60 )) min elapsed ===\"
+exit 1"
 
 echo "=== launching notebook execution ==="
 echo "  mode      : $MODE"
 echo "  notebook  : $NOTEBOOK"
 echo "  logfile   : $LOG"
 echo "  executed  : $OUT_NB"
+echo "  retries   : up to $MAX_RETRIES, ${RETRY_DELAY}s apart"
 echo "===================================="
 
 case "$MODE" in

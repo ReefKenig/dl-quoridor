@@ -40,7 +40,7 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
     """Play the assigned eval games; candidate rotates seats by game index.
 
     `payload` is `(mode, game_indices, config_dict, base_seed)` with
-    `mode in {"vs_best", "vs_random"}`. Emits one
+    `mode in {"vs_best", "vs_random", "vs_greedy"}`. Emits one
     `("game", worker_id, g, cand_seat, winner)` per game, then `("done", worker_id)`.
     """
     mode, game_indices, config_dict, base_seed = payload
@@ -51,8 +51,8 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
 
         from src.env.quoridor_env_mp import QuoridorEnvMP
         from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, eval_rng,
-                                           mcts_agent_mp, play_eval_game,
-                                           random_agent)
+                                           greedy_agent, mcts_agent_mp,
+                                           play_eval_game, random_agent)
         from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 
         N = config_dict["num_players"]
@@ -96,6 +96,8 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
         if mode == "vs_best":
             opp_agent = mcts_agent_mp(_make_mcts(1), temperature=0.1,
                                       opening_plies=opening_plies)
+        elif mode == "vs_greedy":
+            opp_agent = greedy_agent()
         else:  # vs_random
             opp_agent = random_agent()
 
@@ -172,5 +174,19 @@ def evaluate_against_random_parallel_mp(cand_model, config_dict, num_games=24,
                                         response_timeout=300.0):
     """Parallel candidate-vs-random eval. Drop-in for `evaluate_against_random_mp`."""
     return _run_eval({0: cand_model}, "vs_random", config_dict,
+                     num_games, num_workers, batch_size, on_progress, base_seed,
+                     log, response_timeout)
+
+
+def evaluate_against_greedy_parallel_mp(cand_model, config_dict, num_games=24,
+                                        num_workers=8, batch_size=64,
+                                        on_progress=None, base_seed=0, log=print,
+                                        response_timeout=300.0):
+    """Parallel candidate-vs-greedy eval — the absolute yardstick.
+
+    Same shape as the vs-random eval, but the opponent is the pawn-rush baseline
+    from `evaluator_mp.greedy_agent`, which does not saturate the way random does.
+    """
+    return _run_eval({0: cand_model}, "vs_greedy", config_dict,
                      num_games, num_workers, batch_size, on_progress, base_seed,
                      log, response_timeout)

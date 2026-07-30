@@ -44,6 +44,38 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def resolve_ship_checkpoint(run_dir):
+    """(path, label) of the checkpoint to ship for `run_dir`, or (None, reason).
+
+    `best.pt` is the gating champion and is written up front from the *untrained*
+    starting model, so a run where no iteration was ever accepted has a randomly
+    initialised best.pt. Shipping it would deploy a network that never trained —
+    which is exactly what the n4_9x9_v3 run would have produced. Fall back to
+    latest.pt in that case, and always say which one was chosen.
+    """
+    run = Path(run_dir)
+    best, latest = run / "best.pt", run / "latest.pt"
+
+    history = []
+    try:
+        with open(run / "meta.json") as f:
+            history = json.load(f).get("history", [])
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    accepts = [row["iter"] for row in history if row.get("accepted")]
+    last_iter = history[-1]["iter"] if history else None
+
+    if accepts and best.exists():
+        return str(best), f"best.pt (accepted at iter {accepts[-1]}, {len(accepts)} accepts)"
+    if latest.exists():
+        why = ("no iteration was ever accepted, so best.pt is the untrained "
+               "initialization" if history else "no history in meta.json")
+        return str(latest), f"latest.pt (iter {last_iter}) — {why}"
+    if best.exists():
+        return str(best), "best.pt (no latest.pt found)"
+    return None, f"no best.pt or latest.pt in {run_dir}"
+
+
 class CheckpointManager:
     """
     Manages training checkpoints on disk.

@@ -50,6 +50,44 @@ def random_agent() -> AgentFn:
     return agent
 
 
+# Actions 0..11 are pawn moves; everything above is a wall placement.
+NUM_MOVE_ACTIONS = 12
+
+
+def greedy_agent() -> AgentFn:
+    """Pawn-rush: take the legal move that most shortens your own path; no walls.
+
+    An absolute yardstick that does not move as training progresses. It is
+    needed because vs-random saturates: the 9x9 N=2 run hit 100% against random
+    at iteration 5 and stayed there for the remaining 95 iterations, so that
+    column carried no information about anything that happened afterwards.
+    """
+    def agent(env, state, ply: int = 0, rng=None) -> int:
+        r = np.random if rng is None else rng
+        valid = env.get_valid_actions(state)
+        moves = [int(a) for a in valid if a < NUM_MOVE_ACTIONS]
+        if not moves:
+            return int(r.choice(valid))
+
+        cp = state.current_player
+        best, ties = None, []
+        for action in moves:
+            nxt, *_ = env.step(state, action)
+            dist = env.distance_to_goal(nxt, cp)
+            if dist is None:            # walled in by this move — never choose it
+                continue
+            if best is None or dist < best:
+                best, ties = dist, [action]
+            elif dist == best:
+                ties.append(action)
+        if not ties:
+            return int(r.choice(moves))
+        # Break ties randomly: a deterministic argmin would make every game with
+        # the same seat assignment replay identically.
+        return int(r.choice(ties))
+    return agent
+
+
 def eval_rng(base_seed: int, game_index: int):
     """Per-game RNG, keyed on the game index so the outcome never depends on
     which worker ran it. Explicit RandomState, not global np.random."""

@@ -21,8 +21,10 @@ from src.mcts.batched_inference_mp import DEFAULT_BATCH_WAIT_MS
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
 from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
-                                   evaluate_against_random_mp, mcts_agent_mp)
+                                   evaluate_against_random_mp, greedy_agent,
+                                   mcts_agent_mp)
 from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
+                                       evaluate_against_greedy_parallel_mp,
                                        evaluate_against_random_parallel_mp)
 from src.utils.logger import make_progress_logger
 
@@ -64,6 +66,9 @@ class TrainingConfigMP:
     max_game_moves: int = 300
     eval_games: int = 80
     eval_random_games: int = 24
+    # Absolute yardstick that does not saturate the way vs-random does (9x9 N=2
+    # hit 100% vs random at iter 5 and stayed there). 0 disables it.
+    eval_greedy_games: int = 0
     accept_margin: float = 0.05          # accept if win_rate > fair_share + margin
     # "constant" keeps existing scripts unchanged; 9x9 opts into cosine.
     lr_schedule: str = "constant"
@@ -172,6 +177,40 @@ def zero_sample_reason(it, engine, wins, games_per_iteration, checkpoint_dir):
         f"'[GPU INFERENCE] CRASHED' or '[WORKER … ] CRASHED'.")
 
 
+def _rss_gb():
+    """Resident memory of this process, in GB (0.0 if psutil is unavailable)."""
+    try:
+        import psutil
+        return psutil.Process().memory_info().rss / 1e9
+    except Exception:
+        return 0.0
+
+
+def _host_ram_gb():
+    try:
+        import psutil
+        return psutil.virtual_memory().total / 1e9
+    except Exception:
+        return 0.0
+
+
+def freeze_config(cfg, checkpoint_dir, log=print):
+    """Write the resolved config next to the checkpoints.
+
+    configs/config_9x9.json is shared and gets edited between runs, so without
+    this the only record of what a run actually used is the launch banner in
+    games.log — the 9x9 v3 runs have no config.json at all, while every 5x5 run
+    does. Written every launch: a resumed run re-freezes the config it resumed
+    under, which is the one that produced the later iterations.
+    """
+    path = os.path.join(checkpoint_dir, "config.json")
+    resolved = {k: v for k, v in vars(cfg).items() if not k.startswith("_")}
+    with open(path, "w") as f:
+        json.dump(resolved, f, indent=2, default=str, sort_keys=True)
+    log(f"Config frozen -> {path}")
+    return path
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion and make it durable from iteration 0.
 
@@ -235,8 +274,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
         f"explore_moves={cfg.explore_moves} warmup={cfg.warmup_min_samples} "
         f"leaf_batch={cfg.leaf_batch} vloss={cfg.virtual_loss}",
+        f"host: {os.cpu_count()} cores, {_host_ram_gb():.0f} GB RAM, "
+        f"rss={_rss_gb():.2f} GB at launch",
         "=" * 70,
     )
+    freeze_config(cfg, checkpoint_dir, log=_log)
 
     # --- Resume from checkpoint if available ---
     start_iter = 0
@@ -406,6 +448,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
                    win_vs_best=ev_wr, accepted=accepted,
                    win_vs_random=evr_wr, fair=fair, draw_rate=draw_rate,
+                   # Sample size behind win_vs_best. Without it meta.json records
+                   # a rate with no denominator and the only way back to "58.5%
+                   # of 65 decided" is re-parsing games.log.
+                   decided_games=None, eval_timeouts=None,
                    secs=time.time() - t0, buffer=len(buffer),
                    sp_secs=sp_secs, train_secs=train_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,
@@ -483,6 +529,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             # Persist the accept/reject before eval-vs-random, so best.pt and the
             # row's `accepted` stay consistent even if the next phase is interrupted.
             row.update(win_vs_best=ev_wr, accepted=accepted,
+                       decided_games=ev.decided_games,
+                       eval_timeouts=ev.num_games - ev.decided_games,
                        eval_best_secs=eval_best_secs, secs=time.time() - t0)
             _write_meta()
 
@@ -514,6 +562,38 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             row.update(win_vs_random=evr_wr, eval_rand_secs=eval_rand_secs,
                        secs=time.time() - t0, eval_ran=True)
             _write_meta()
+
+            # --- 5. eval vs greedy (absolute yardstick; opt-in) ---
+            if cfg.eval_greedy_games:
+                t_eval_greedy = time.time()
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs greedy "
+                     f"({cfg.eval_greedy_games} games, {eval_sims} sims)...")
+
+                def _eval_greedy_progress(done, total, r):
+                    elapsed = time.time() - t_eval_greedy
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs greedy: "
+                         f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
+
+                if cfg.parallel_eval:
+                    evg = evaluate_against_greedy_parallel_mp(
+                        model, eval_config_dict, num_games=cfg.eval_greedy_games,
+                        num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
+                        on_progress=_eval_greedy_progress,
+                        base_seed=it * 100_003 + 70_000, log=_log)
+                else:
+                    greedy = greedy_agent()
+                    evg = evaluate_mp(env, cand, greedy, num_games=cfg.eval_greedy_games,
+                                      max_moves=cfg.max_game_moves,
+                                      on_progress=_eval_greedy_progress,
+                                      base_seed=it * 100_003 + 70_000)
+                eval_greedy_secs = time.time() - t_eval_greedy
+                evg_wr = evg.candidate_win_rate
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs greedy done: "
+                     f"{100*evg_wr:.1f}% of {evg.decided_games} decided "
+                     f"({eval_greedy_secs:.0f}s)")
+                row.update(win_vs_greedy=evg_wr, eval_greedy_secs=eval_greedy_secs,
+                           secs=time.time() - t0)
+                _write_meta()
         else:
             _log(
                 f"[iter {it+1}/{cfg.num_iterations}] eval skipped (eval_every={cfg.eval_every})")
@@ -521,9 +601,17 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         vs_best_txt = (f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'}"
                        if ev_wr is not None else "n/a (not evaluated)")
         vs_rand_txt = f"{100*evr_wr:.1f}%" if evr_wr is not None else "n/a"
+        # rss tracks the parent's memory against the buffer: the n2 9x9 run was
+        # killed twice with no traceback, and a slow climb here is the evidence
+        # that would confirm or rule out host memory pressure. Measured at the
+        # end of the iteration, so it needs its own write — every earlier
+        # _write_meta has already run by this point.
+        row["rss_gb"] = _rss_gb()
+        _write_meta()
         _log(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
              f"vs_best={vs_best_txt} | "
              f"vs_rand={vs_rand_txt} | draw={100*draw_rate:.0f}% | buf={len(buffer)} | "
+             f"rss={row['rss_gb']:.2f}GB | "
              f"sp={sp_secs:.0f}s train={train_secs:.0f}s "
              f"eval_best={eval_best_secs:.0f}s eval_rand={eval_rand_secs:.0f}s | "
              f"total={row['secs']:.0f}s")

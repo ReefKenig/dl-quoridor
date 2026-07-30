@@ -138,7 +138,10 @@ def test_run_config_variant_overrides_win(cfg9):
     n2, n4 = resolve_run_config(cfg9, "n2"), resolve_run_config(cfg9, "n4")
 
     assert (n2["max_game_moves"], n4["max_game_moves"]) == (160, 320)
-    assert n2["num_iterations"] != n4["num_iterations"]
+    # games_per_iteration is deliberately sized per variant (N=4 games run ~1.6x
+    # longer). num_iterations is not a witness for this: the variants may share
+    # a value, as they do when both are set to the same relaunch budget.
+    assert n2["games_per_iteration"] != n4["games_per_iteration"]
     assert n2["num_simulations"] == n4["num_simulations"]   # shared
 
 

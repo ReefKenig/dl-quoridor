@@ -46,20 +46,22 @@
             "max_walls_per_player": 10,
             "max_game_moves": 160,
             "explore_moves": 20,
-            "num_iterations": 100,
+            "num_iterations": 150,
             "games_per_iteration": 160,
             "eval_games": 80,
-            "eval_random_games": 40
+            "eval_random_games": 40,
+            "eval_greedy_games": 40
         },
         "n4": {
             "num_players": 4,
             "max_walls_per_player": 5,
             "max_game_moves": 320,
             "explore_moves": 40,
-            "num_iterations": 70,
+            "num_iterations": 150,
             "games_per_iteration": 70,
             "eval_games": 80,
-            "eval_random_games": 40
+            "eval_random_games": 40,
+            "eval_greedy_games": 40
         }
     }
 }

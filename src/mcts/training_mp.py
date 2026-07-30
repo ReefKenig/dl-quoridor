@@ -194,6 +194,87 @@ def _host_ram_gb():
         return 0.0
 
 
+def _read_first(*paths):
+    for path in paths:
+        try:
+            with open(path) as f:
+                return f.read().strip()
+        except OSError:
+            continue
+    return None
+
+
+def _cgroup_mem_limit_gb():
+    """Container memory ceiling in GB, or None when unlimited/not containerised.
+
+    psutil reports the *host's* RAM, which on a shared or MIG-partitioned box is
+    not what this process may use. A run reading "1623 GB RAM" while capped at a
+    fraction of it will look impossible to OOM right up until it is killed.
+    """
+    raw = _read_first("/sys/fs/cgroup/memory.max",                  # cgroup v2
+                      "/sys/fs/cgroup/memory/memory.limit_in_bytes")  # cgroup v1
+    if raw is None or raw == "max":
+        return None
+    try:
+        limit = int(raw)
+    except ValueError:
+        return None
+    # v1 reports a sentinel near 2**63 when unlimited.
+    return None if limit >= 2**62 else limit / 1e9
+
+
+def _cpu_budget():
+    """(usable_cpus, source) actually available to this process.
+
+    Falls back through cgroup quota -> scheduler affinity -> host core count, so
+    the number reported is the one the workers will really contend for.
+    """
+    raw = _read_first("/sys/fs/cgroup/cpu.max")                     # cgroup v2
+    if raw and not raw.startswith("max"):
+        try:
+            quota, period = raw.split()
+            return int(quota) / int(period), "cgroup quota"
+        except (ValueError, ZeroDivisionError):
+            pass
+    quota = _read_first("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")      # cgroup v1
+    period = _read_first("/sys/fs/cgroup/cpu/cpu.cfs_period_us")
+    if quota and period and int(quota) > 0:
+        return int(quota) / int(period), "cgroup quota"
+    try:
+        return float(len(os.sched_getaffinity(0))), "affinity"
+    except AttributeError:
+        return float(os.cpu_count() or 0), "host cores"
+
+
+def _gpu_desc():
+    """Device name and memory as this process sees it — a MIG slice, not the card."""
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return "no CUDA"
+        props = torch.cuda.get_device_properties(0)
+        return f"{props.name}, {props.total_memory / 1e9:.0f} GB"
+    except Exception:
+        return "unknown"
+
+
+def resource_banner(cfg):
+    """One line describing what this process may actually use, plus a warning
+    when num_workers oversubscribes the CPU budget."""
+    cpus, source = _cpu_budget()
+    mem_limit = _cgroup_mem_limit_gb()
+    mem = (f"{mem_limit:.0f} GB limit (host {_host_ram_gb():.0f} GB)"
+           if mem_limit else f"{_host_ram_gb():.0f} GB, no cgroup limit")
+    lines = [f"resources: {cpus:.0f} usable cpus ({source}), {mem}, "
+             f"gpu: {_gpu_desc()}, rss={_rss_gb():.2f} GB at launch"]
+    if cpus and cfg.num_workers > cpus:
+        lines.append(
+            f"WARNING: num_workers={cfg.num_workers} exceeds the {cpus:.0f} usable "
+            f"cpus — workers will contend for cores. Sustained slowdowns followed "
+            f"by a killed kernel are the signature of this, not of a GPU problem.")
+    return lines
+
+
 def freeze_config(cfg, checkpoint_dir, log=print):
     """Write the resolved config next to the checkpoints.
 
@@ -274,8 +355,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
         f"explore_moves={cfg.explore_moves} warmup={cfg.warmup_min_samples} "
         f"leaf_batch={cfg.leaf_batch} vloss={cfg.virtual_loss}",
-        f"host: {os.cpu_count()} cores, {_host_ram_gb():.0f} GB RAM, "
-        f"rss={_rss_gb():.2f} GB at launch",
+        *resource_banner(cfg),
         "=" * 70,
     )
     freeze_config(cfg, checkpoint_dir, log=_log)

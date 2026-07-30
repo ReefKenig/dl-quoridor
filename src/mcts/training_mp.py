@@ -80,6 +80,9 @@ class TrainingConfigMP:
     # run eval every N iterations (1 = every iter)
     eval_every: int = 1
     discount: float = 0.97
+    # "round" = decay per the mover's own turns; "ply" = per move by
+    # anybody. Per-variant: measured better at N=2, worse at N=4.
+    discount_unit: str = "round"
     explore_moves: int = 15
     mcts_dirichlet_epsilon: float = 0.25
     # --- self-play engine selector ---
@@ -355,6 +358,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         f"| accept_margin={cfg.accept_margin} | buffer={cfg.replay_buffer_size}",
         f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
         f"explore_moves={cfg.explore_moves} warmup={cfg.warmup_min_samples} "
+        f"discount={cfg.discount}/{cfg.discount_unit} "
         f"leaf_batch={cfg.leaf_batch} vloss={cfg.virtual_loss}",
         *resource_banner(cfg),
         "=" * 70,

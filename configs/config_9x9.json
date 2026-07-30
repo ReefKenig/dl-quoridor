@@ -28,7 +28,8 @@
         "warmup_min_samples": 5000,
         "accept_margin": 0.05,
         "eval_every": 5,
-        "reward_decay": 0.99
+        "reward_decay": 0.99,
+        "_discount_unit_note": "Per-variant. 'round' decays gamma per the mover's own turns, 'ply' per move by anybody. Measured at 9x9: N=2 improved under round (gate 61.5%->78.8% at iter 10 vs v3), N=4 got worse (draws stalled at 46% where the ply run had reached 16%, policy loss falling instead of broadening). Round pushes the N=4 opening target to 0.71 vs 0.25 ply-counted, asserting near-certainty about a genuinely uncertain 4-player opening."
     },
     "parallel": {
         "num_workers": 64,
@@ -50,7 +51,8 @@
             "games_per_iteration": 160,
             "eval_games": 80,
             "eval_random_games": 40,
-            "eval_greedy_games": 40
+            "eval_greedy_games": 40,
+            "discount_unit": "round"
         },
         "n4": {
             "num_players": 4,
@@ -61,7 +63,8 @@
             "games_per_iteration": 70,
             "eval_games": 80,
             "eval_random_games": 40,
-            "eval_greedy_games": 40
+            "eval_greedy_games": 40,
+            "discount_unit": "ply"
         }
     }
 }

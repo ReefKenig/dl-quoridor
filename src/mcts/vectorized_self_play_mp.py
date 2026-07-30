@@ -201,7 +201,8 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
             # not appended: completion order depends on vec_games.
             winner = info.get("winner") if done else None
             game_samples = assign_vector_targets(
-                slot.trajectory, winner, N, discount)
+                slot.trajectory, winner, N, discount,
+                discount_unit=getattr(cfg, 'discount_unit', 'round'))
             aug = [augment_mp(t, p, v, N, env.board_size)
                    for (t, p, v) in game_samples]
             by_game[slot.game_index] = game_samples + aug

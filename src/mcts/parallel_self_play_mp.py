@@ -105,6 +105,9 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                 env, mcts, N,
                 max_moves=config_dict["max_game_moves"],
                 discount=config_dict["discount"],
+                # .get keeps a run launched before this key existed on the
+                # old behaviour: workers re-import from disk every iteration.
+                discount_unit=config_dict.get("discount_unit", "round"),
                 explore_moves=config_dict["explore_moves"],
             )
             results_queue.put(("game", worker_id, samples, winner))
@@ -165,6 +168,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         "mcts_simulations": cfg.mcts_simulations,
         "mcts_dirichlet_epsilon": getattr(cfg, "mcts_dirichlet_epsilon", 0.25),
         "discount": cfg.discount,
+        "discount_unit": getattr(cfg, "discount_unit", "round"),
         "explore_moves": cfg.explore_moves,
         "max_game_moves": cfg.max_game_moves,
         "leaf_batch": getattr(cfg, "leaf_batch", 1),

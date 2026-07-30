@@ -350,7 +350,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         f"training_loop_mp launched | N={cfg.num_players} board={cfg.board_size}x{cfg.board_size} "
         f"| sims={cfg.mcts_simulations} games/iter={cfg.games_per_iteration} "
         f"| self_play={sp_mode} workers={cfg.num_workers} vec_games={cfg.vec_games}",
-        f"checkpoint_dir={checkpoint_dir} | eval={cfg.eval_games}+{cfg.eval_random_games} "
+        f"checkpoint_dir={checkpoint_dir} | eval={cfg.eval_games}+{cfg.eval_random_games}"
+        f"{'+' + str(cfg.eval_greedy_games) + ' greedy' if cfg.eval_greedy_games else ' (no greedy)'} "
         f"| accept_margin={cfg.accept_margin} | buffer={cfg.replay_buffer_size}",
         f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
         f"explore_moves={cfg.explore_moves} warmup={cfg.warmup_min_samples} "
@@ -532,6 +533,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # a rate with no denominator and the only way back to "58.5%
                    # of 65 decided" is re-parsing games.log.
                    decided_games=None, eval_timeouts=None,
+                   rand_decided_games=None, greedy_decided_games=None,
+                   win_vs_greedy=None,
                    secs=time.time() - t0, buffer=len(buffer),
                    sp_secs=sp_secs, train_secs=train_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,
@@ -640,6 +643,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "
                  f"{100*evr_wr:.1f}% ({eval_rand_secs:.0f}s)")
             row.update(win_vs_random=evr_wr, eval_rand_secs=eval_rand_secs,
+                       rand_decided_games=evr.decided_games,
                        secs=time.time() - t0, eval_ran=True)
             _write_meta()
 
@@ -672,6 +676,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                      f"{100*evg_wr:.1f}% of {evg.decided_games} decided "
                      f"({eval_greedy_secs:.0f}s)")
                 row.update(win_vs_greedy=evg_wr, eval_greedy_secs=eval_greedy_secs,
+                           greedy_decided_games=evg.decided_games,
                            secs=time.time() - t0)
                 _write_meta()
         else:

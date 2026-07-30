@@ -10,7 +10,7 @@ Rows now store None for un-evaluated iterations. These helpers also recognise
 the legacy shape so figures can still be produced from existing runs.
 """
 
-EVAL_KEYS = ("win_vs_best", "win_vs_random")
+EVAL_KEYS = ("win_vs_best", "win_vs_random", "win_vs_greedy")
 
 
 def eval_ran(row) -> bool:

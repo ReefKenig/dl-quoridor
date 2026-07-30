@@ -7,7 +7,7 @@ figures drew them as a curve collapsing to zero four iterations in five.
 """
 import pytest
 
-from src.utils.history import eval_ran, eval_series
+from src.utils.history import eval_ran, eval_series, eval_value
 
 
 def _row(it, *, best=None, rand=None, ran=None, best_secs=0.0, accepted=False):
@@ -127,3 +127,23 @@ def test_unknown_key_is_rejected():
     """Guards against silently plotting a non-eval column through this path."""
     with pytest.raises(KeyError):
         eval_series([_row(1, ran=True)], "loss_p")
+
+
+def test_a_genuine_zero_is_kept_not_treated_as_missing():
+    """0.0 is a real measurement and the most important one the greedy baseline
+    produces: the N=2 model scored 96.4% vs random and 0% vs greedy at iteration
+    5. Dropping it as falsy would hide exactly the result worth seeing."""
+    history = [{"iter": 5, "eval_ran": True, "win_vs_greedy": 0.0}]
+
+    iters, values = eval_series(history, "win_vs_greedy")
+
+    assert (iters, values) == ([5], [0.0])
+    assert eval_value(history[0], "win_vs_greedy") == 0.0
+
+
+def test_greedy_is_a_recognised_eval_column():
+    with pytest.raises(KeyError):
+        eval_series([{"iter": 1, "eval_ran": True}], "win_vs_nothing")
+
+    assert eval_series([{"iter": 1, "eval_ran": True, "win_vs_greedy": 0.25}],
+                       "win_vs_greedy") == ([1], pytest.approx([25.0]))

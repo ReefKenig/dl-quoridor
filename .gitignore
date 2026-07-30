@@ -33,6 +33,10 @@ wandb/
 # Legacy / dead checkpoint dirs (kept on disk under runs/, weights ignored above).
 # meta.json / config.json / *.log inside runs/ are tracked for versioning.
 
+# Launcher scratch: the pid of a detached run, meaningless on any other machine.
+notebook.pid
+*_artifacts.tar.gz
+
 # Testing
 .pytest_cache/
 

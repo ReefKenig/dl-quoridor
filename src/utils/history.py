@@ -34,14 +34,26 @@ def eval_ran(row) -> bool:
     return True
 
 
+def eval_value(row, key):
+    """This row's measurement for `key`, or None if the iteration skipped eval.
+
+    `row.get(key)` alone is not enough: skipped rows carry the key with a null
+    value, so a `.get(key, 0)` default never fires and callers get None where
+    they expected a number.
+    """
+    if key not in EVAL_KEYS:
+        raise KeyError(f"{key!r} is not an eval column; expected one of {EVAL_KEYS}")
+    if not eval_ran(row) or row.get(key) is None:
+        return None
+    return row[key]
+
+
 def eval_series(history, key, scale=100.0):
     """(iters, values) for rows that carry a real measurement for `key`.
 
     Skipped-eval rows are dropped rather than plotted as zeros, so a gap in the
     curve reads as "not measured" instead of "lost every game".
     """
-    if key not in EVAL_KEYS:
-        raise KeyError(f"{key!r} is not an eval column; expected one of {EVAL_KEYS}")
-    points = [(row["iter"], row[key] * scale) for row in history
-              if eval_ran(row) and row.get(key) is not None]
+    points = [(row["iter"], value * scale) for row in history
+              if (value := eval_value(row, key)) is not None]
     return [p[0] for p in points], [p[1] for p in points]

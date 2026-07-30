@@ -194,6 +194,23 @@ def _host_ram_gb():
         return 0.0
 
 
+def freeze_config(cfg, checkpoint_dir, log=print):
+    """Write the resolved config next to the checkpoints.
+
+    configs/config_9x9.json is shared and gets edited between runs, so without
+    this the only record of what a run actually used is the launch banner in
+    games.log — the 9x9 v3 runs have no config.json at all, while every 5x5 run
+    does. Written every launch: a resumed run re-freezes the config it resumed
+    under, which is the one that produced the later iterations.
+    """
+    path = os.path.join(checkpoint_dir, "config.json")
+    resolved = {k: v for k, v in vars(cfg).items() if not k.startswith("_")}
+    with open(path, "w") as f:
+        json.dump(resolved, f, indent=2, default=str, sort_keys=True)
+    log(f"Config frozen -> {path}")
+    return path
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion and make it durable from iteration 0.
 
@@ -261,6 +278,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         f"rss={_rss_gb():.2f} GB at launch",
         "=" * 70,
     )
+    freeze_config(cfg, checkpoint_dir, log=_log)
 
     # --- Resume from checkpoint if available ---
     start_iter = 0

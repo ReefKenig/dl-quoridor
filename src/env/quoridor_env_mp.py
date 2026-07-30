@@ -319,6 +319,12 @@ class QuoridorEnvMP(QuoridorEnvInterface):
                 vb.add((r - 1, cm))
         return hb, vb
 
+    def distance_to_goal(self, state, player):
+        """Moves for `player` to reach their goal from `state`, or None if walled in."""
+        path = self._shortest_path(state.positions[player], state.goals[player],
+                                   state.h_walls, state.v_walls)
+        return None if path is None else len(path) - 1
+
     def _player_blockers(self, state, h, v):
         """Per-player path-cutting wall slots, or None if any player is already
         walled in (callers then fall back to the exhaustive check)."""

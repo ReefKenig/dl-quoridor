@@ -62,13 +62,49 @@ def test_zero_labelling_still_available_for_tests():
     assert all(np.allclose(vec, 0.0) for _t, _p, vec in samples)
 
 
-def test_discounting_is_unchanged_for_decided_games():
-    """Later positions carry more credit than earlier ones."""
+def test_discounting_decays_toward_earlier_positions():
+    """Later positions carry more credit than earlier ones.
+
+    Exponents are rounds-to-go (plies / num_players), not plies: a 4-ply N=2
+    game is 2 rounds, so the opening is discount**2 rather than discount**4.
+    """
     samples = assign_vector_targets(_trajectory(4), winner=0, num_players=2,
                                     discount=0.5)
     winner_values = [vec[0] for _t, _p, vec in samples]
 
-    assert winner_values == pytest.approx([0.5**4, 0.5**3, 0.5**2, 0.5**1])
+    assert winner_values == pytest.approx([0.5**2.0, 0.5**1.5, 0.5**1.0, 0.5**0.5])
+
+
+def test_same_rounds_to_go_discounts_equally_at_any_player_count():
+    """The bug this guards: gamma must mean the same thing at N=2 and N=4.
+
+    Ply-counted discounting decayed an N=4 target four times faster than an N=2
+    target for the same number of that player's own moves-to-go.
+    """
+    rounds, discount = 8, 0.9
+    two = assign_vector_targets(_trajectory(2 * rounds, num_players=2),
+                                winner=0, num_players=2, discount=discount)
+    four = assign_vector_targets(_trajectory(4 * rounds, num_players=4),
+                                 winner=0, num_players=4, discount=discount)
+
+    # Opening position of each game: `rounds` rounds from the end in both.
+    assert two[0][2][0] == pytest.approx(discount**rounds)
+    assert four[0][2][0] == pytest.approx(discount**rounds)
+
+
+def test_long_four_player_game_keeps_a_usable_opening_target():
+    """The 9x9 N=4 failure mode, as a number.
+
+    136 plies at gamma=0.99 labelled the opening 0.99**136 ~= 0.25 under ply
+    counting — and ~0.07 in the early high-timeout iterations, which is what
+    taught the value head that the opening is worth nothing.
+    """
+    samples = assign_vector_targets(_trajectory(136, num_players=4), winner=0,
+                                    num_players=4, discount=0.99)
+    opening = samples[0][2][0]
+
+    assert opening == pytest.approx(0.99**34, abs=1e-6)   # 136 plies = 34 rounds
+    assert opening > 0.7, "opening target must stay informative"
 
 
 # ── zero-sample diagnosis ────────────────────────────────────────────────────

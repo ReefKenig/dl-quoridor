@@ -22,6 +22,15 @@ def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
     An unresolved game is a timeout, not a draw. Labelling those positions 0
     collapsed the value head, so they are dropped instead. drop_unresolved=False
     restores the old zero-vector labelling for tests.
+
+    The discount is applied per *round* (plies / num_players), not per ply. A
+    ply-counted exponent decays N=4 targets four times faster than N=2 targets
+    for the same number of that player's own moves-to-go: at 9x9 it left N=4
+    opening positions labelled 0.99**136 ~= 0.25 (and ~0.07 in the early
+    high-timeout iterations), so the value head learned "the opening is worth
+    nothing" from every game. Counting rounds makes gamma mean the same thing at
+    every player count and board size. Same plies-vs-rounds distinction already
+    fixed for max_game_moves.
     """
     if winner is None and drop_unresolved:
         return []
@@ -31,7 +40,7 @@ def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
         if winner is None:
             vec = np.zeros(num_players, dtype=np.float32)
         else:
-            disc = discount ** (n - idx)
+            disc = discount ** ((n - idx) / num_players)
             vec = np.full(num_players, -disc, dtype=np.float32)
             vec[winner] = disc
         out.append((tensor, policy, vec))

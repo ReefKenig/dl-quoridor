@@ -48,6 +48,9 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         import random
         import numpy as np
         import torch
+        # Each worker otherwise sizes its thread pool from the host's core count
+        # (256), not the cgroup quota (16), so N workers fight over N*256 threads.
+        torch.set_num_threads(1)
         from src.env.quoridor_env_mp import QuoridorEnvMP
         from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
         from src.mcts.self_play_mp import play_one_game, game_seed

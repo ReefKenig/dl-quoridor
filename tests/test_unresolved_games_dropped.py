@@ -127,3 +127,38 @@ def test_zero_samples_without_timeouts_still_points_at_the_log():
 
     assert "CRASHED" in msg
     assert "games.log" in msg
+
+
+# ── per-variant discount unit ────────────────────────────────────────────────
+
+def test_ply_unit_restores_the_original_decay():
+    samples = assign_vector_targets(_trajectory(4), winner=0, num_players=2,
+                                    discount=0.5, discount_unit="ply")
+    winner_values = [vec[0] for _t, _p, vec in samples]
+
+    assert winner_values == pytest.approx([0.5**4, 0.5**3, 0.5**2, 0.5**1])
+
+
+def test_the_unit_is_what_split_the_two_variants():
+    """The 9x9 numbers behind making this per-variant: round counting more than
+    doubles the N=4 opening target, which measured worse over two runs."""
+    traj = _trajectory(136, num_players=4)
+    by_unit = {u: assign_vector_targets(traj, 0, 4, 0.99, discount_unit=u)[0][2][0]
+               for u in ("ply", "round")}
+
+    assert by_unit["ply"] == pytest.approx(0.99**136, abs=1e-6)
+    assert by_unit["round"] == pytest.approx(0.99**34, abs=1e-6)
+    assert by_unit["round"] > 2 * by_unit["ply"]
+
+
+def test_round_is_the_default_so_a_running_job_is_unaffected():
+    """Workers re-import from disk every iteration, so a config built before the
+    key existed must keep its behaviour rather than silently switch units."""
+    traj = _trajectory(85, num_players=2)
+    config_dict = {"discount": 0.99}                  # no discount_unit key
+
+    fallback = assign_vector_targets(
+        traj, 0, 2, 0.99, discount_unit=config_dict.get("discount_unit", "round"))
+    explicit = assign_vector_targets(traj, 0, 2, 0.99, discount_unit="round")
+
+    assert fallback[0][2][0] == explicit[0][2][0]

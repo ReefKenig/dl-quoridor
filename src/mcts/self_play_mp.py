@@ -15,7 +15,7 @@ import numpy as np
 
 
 def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
-                          drop_unresolved=True):
+                          drop_unresolved=True, discount_unit="round"):
     """trajectory: list of (state_tensor, policy, mover). Returns list of
     (state_tensor, policy, value_vec).
 
@@ -23,14 +23,9 @@ def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
     collapsed the value head, so they are dropped instead. drop_unresolved=False
     restores the old zero-vector labelling for tests.
 
-    The discount is applied per *round* (plies / num_players), not per ply. A
-    ply-counted exponent decays N=4 targets four times faster than N=2 targets
-    for the same number of that player's own moves-to-go: at 9x9 it left N=4
-    opening positions labelled 0.99**136 ~= 0.25 (and ~0.07 in the early
-    high-timeout iterations), so the value head learned "the opening is worth
-    nothing" from every game. Counting rounds makes gamma mean the same thing at
-    every player count and board size. Same plies-vs-rounds distinction already
-    fixed for max_game_moves.
+    discount_unit: "round" decays per the mover's own turns (plies/N), "ply"
+    per move by anybody. Per-variant — the right effective target magnitude
+    depends on game length and player count.
     """
     if winner is None and drop_unresolved:
         return []
@@ -40,7 +35,8 @@ def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
         if winner is None:
             vec = np.zeros(num_players, dtype=np.float32)
         else:
-            disc = discount ** ((n - idx) / num_players)
+            per = num_players if discount_unit == "round" else 1
+            disc = discount ** ((n - idx) / per)
             vec = np.full(num_players, -disc, dtype=np.float32)
             vec[winner] = disc
         out.append((tensor, policy, vec))
@@ -120,6 +116,7 @@ def normalize_action_probs(probs, env=None, state=None):
 
 
 def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
+                  discount_unit="round",
                   temp_explore=1.0, explore_moves=15):
     state = env.reset()
     trajectory = []
@@ -140,6 +137,7 @@ def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
         if done:
             winner = info.get("winner")
             break
-    samples = assign_vector_targets(trajectory, winner, num_players, discount)
+    samples = assign_vector_targets(trajectory, winner, num_players, discount,
+                                    discount_unit=discount_unit)
     aug = [augment_mp(t, p, v, num_players, env.board_size) for (t, p, v) in samples]
     return samples + aug, winner

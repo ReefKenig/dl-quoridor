@@ -10,7 +10,7 @@ Rows now store None for un-evaluated iterations. These helpers also recognise
 the legacy shape so figures can still be produced from existing runs.
 """
 
-EVAL_KEYS = ("win_vs_best", "win_vs_random")
+EVAL_KEYS = ("win_vs_best", "win_vs_random", "win_vs_greedy")
 
 
 def eval_ran(row) -> bool:
@@ -36,11 +36,7 @@ def eval_ran(row) -> bool:
 
 def eval_value(row, key):
     """This row's measurement for `key`, or None if the iteration skipped eval.
-
-    `row.get(key)` alone is not enough: skipped rows carry the key with a null
-    value, so a `.get(key, 0)` default never fires and callers get None where
-    they expected a number.
-    """
+    Skipped rows carry the key set to null, so `.get(key, 0)` never defaults."""
     if key not in EVAL_KEYS:
         raise KeyError(f"{key!r} is not an eval column; expected one of {EVAL_KEYS}")
     if not eval_ran(row) or row.get(key) is None:

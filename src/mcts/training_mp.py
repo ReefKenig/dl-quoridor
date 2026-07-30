@@ -80,6 +80,9 @@ class TrainingConfigMP:
     # run eval every N iterations (1 = every iter)
     eval_every: int = 1
     discount: float = 0.97
+    # "round" = decay per the mover's own turns; "ply" = per move by
+    # anybody. Per-variant: measured better at N=2, worse at N=4.
+    discount_unit: str = "round"
     explore_moves: int = 15
     mcts_dirichlet_epsilon: float = 0.25
     # --- self-play engine selector ---
@@ -194,15 +197,81 @@ def _host_ram_gb():
         return 0.0
 
 
-def freeze_config(cfg, checkpoint_dir, log=print):
-    """Write the resolved config next to the checkpoints.
+def _read_first(*paths):
+    for path in paths:
+        try:
+            with open(path) as f:
+                return f.read().strip()
+        except OSError:
+            continue
+    return None
 
-    configs/config_9x9.json is shared and gets edited between runs, so without
-    this the only record of what a run actually used is the launch banner in
-    games.log — the 9x9 v3 runs have no config.json at all, while every 5x5 run
-    does. Written every launch: a resumed run re-freezes the config it resumed
-    under, which is the one that produced the later iterations.
-    """
+
+def _cgroup_mem_limit_gb():
+    """Container memory ceiling in GB, or None when unlimited. psutil reports the
+    host's RAM, which on a shared or MIG-partitioned box is not what we may use."""
+    raw = _read_first("/sys/fs/cgroup/memory.max",                  # cgroup v2
+                      "/sys/fs/cgroup/memory/memory.limit_in_bytes")  # cgroup v1
+    if raw is None or raw == "max":
+        return None
+    try:
+        limit = int(raw)
+    except ValueError:
+        return None
+    # v1 reports a sentinel near 2**63 when unlimited.
+    return None if limit >= 2**62 else limit / 1e9
+
+
+def _cpu_budget():
+    """(usable_cpus, source): cgroup quota -> affinity -> host cores."""
+    raw = _read_first("/sys/fs/cgroup/cpu.max")                     # cgroup v2
+    if raw and not raw.startswith("max"):
+        try:
+            quota, period = raw.split()
+            return int(quota) / int(period), "cgroup quota"
+        except (ValueError, ZeroDivisionError):
+            pass
+    quota = _read_first("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")      # cgroup v1
+    period = _read_first("/sys/fs/cgroup/cpu/cpu.cfs_period_us")
+    if quota and period and int(quota) > 0:
+        return int(quota) / int(period), "cgroup quota"
+    try:
+        return float(len(os.sched_getaffinity(0))), "affinity"
+    except AttributeError:
+        return float(os.cpu_count() or 0), "host cores"
+
+
+def _gpu_desc():
+    """Device name and memory as this process sees it — a MIG slice, not the card."""
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return "no CUDA"
+        props = torch.cuda.get_device_properties(0)
+        return f"{props.name}, {props.total_memory / 1e9:.0f} GB"
+    except Exception:
+        return "unknown"
+
+
+def resource_banner(cfg):
+    """One line describing what this process may actually use, plus a warning
+    when num_workers oversubscribes the CPU budget."""
+    cpus, source = _cpu_budget()
+    mem_limit = _cgroup_mem_limit_gb()
+    mem = (f"{mem_limit:.0f} GB limit (host {_host_ram_gb():.0f} GB)"
+           if mem_limit else f"{_host_ram_gb():.0f} GB, no cgroup limit")
+    lines = [f"resources: {cpus:.0f} usable cpus ({source}), {mem}, "
+             f"gpu: {_gpu_desc()}, rss={_rss_gb():.2f} GB at launch"]
+    if cpus and cfg.num_workers > cpus:
+        lines.append(
+            f"WARNING: num_workers={cfg.num_workers} exceeds the {cpus:.0f} usable "
+            f"cpus — expect contention, and slowdowns that end in a killed kernel.")
+    return lines
+
+
+def freeze_config(cfg, checkpoint_dir, log=print):
+    """Write the resolved config next to the checkpoints, so a run dir records
+    what it actually ran rather than relying on the shared config file."""
     path = os.path.join(checkpoint_dir, "config.json")
     resolved = {k: v for k, v in vars(cfg).items() if not k.startswith("_")}
     with open(path, "w") as f:
@@ -269,13 +338,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         f"training_loop_mp launched | N={cfg.num_players} board={cfg.board_size}x{cfg.board_size} "
         f"| sims={cfg.mcts_simulations} games/iter={cfg.games_per_iteration} "
         f"| self_play={sp_mode} workers={cfg.num_workers} vec_games={cfg.vec_games}",
-        f"checkpoint_dir={checkpoint_dir} | eval={cfg.eval_games}+{cfg.eval_random_games} "
+        f"checkpoint_dir={checkpoint_dir} | eval={cfg.eval_games}+{cfg.eval_random_games}"
+        f"{'+' + str(cfg.eval_greedy_games) + ' greedy' if cfg.eval_greedy_games else ' (no greedy)'} "
         f"| accept_margin={cfg.accept_margin} | buffer={cfg.replay_buffer_size}",
         f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
         f"explore_moves={cfg.explore_moves} warmup={cfg.warmup_min_samples} "
+        f"discount={cfg.discount}/{cfg.discount_unit} "
         f"leaf_batch={cfg.leaf_batch} vloss={cfg.virtual_loss}",
-        f"host: {os.cpu_count()} cores, {_host_ram_gb():.0f} GB RAM, "
-        f"rss={_rss_gb():.2f} GB at launch",
+        *resource_banner(cfg),
         "=" * 70,
     )
     freeze_config(cfg, checkpoint_dir, log=_log)
@@ -448,10 +518,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
                    win_vs_best=ev_wr, accepted=accepted,
                    win_vs_random=evr_wr, fair=fair, draw_rate=draw_rate,
-                   # Sample size behind win_vs_best. Without it meta.json records
-                   # a rate with no denominator and the only way back to "58.5%
-                   # of 65 decided" is re-parsing games.log.
+                   # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
+                   rand_decided_games=None, greedy_decided_games=None,
+                   win_vs_greedy=None,
                    secs=time.time() - t0, buffer=len(buffer),
                    sp_secs=sp_secs, train_secs=train_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,
@@ -560,6 +630,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs random done: "
                  f"{100*evr_wr:.1f}% ({eval_rand_secs:.0f}s)")
             row.update(win_vs_random=evr_wr, eval_rand_secs=eval_rand_secs,
+                       rand_decided_games=evr.decided_games,
                        secs=time.time() - t0, eval_ran=True)
             _write_meta()
 
@@ -592,6 +663,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                      f"{100*evg_wr:.1f}% of {evg.decided_games} decided "
                      f"({eval_greedy_secs:.0f}s)")
                 row.update(win_vs_greedy=evg_wr, eval_greedy_secs=eval_greedy_secs,
+                           greedy_decided_games=evg.decided_games,
                            secs=time.time() - t0)
                 _write_meta()
         else:
@@ -601,11 +673,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         vs_best_txt = (f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'}"
                        if ev_wr is not None else "n/a (not evaluated)")
         vs_rand_txt = f"{100*evr_wr:.1f}%" if evr_wr is not None else "n/a"
-        # rss tracks the parent's memory against the buffer: the n2 9x9 run was
-        # killed twice with no traceback, and a slow climb here is the evidence
-        # that would confirm or rule out host memory pressure. Measured at the
-        # end of the iteration, so it needs its own write — every earlier
-        # _write_meta has already run by this point.
+        # Measured at iteration end, so it needs its own write.
         row["rss_gb"] = _rss_gb()
         _write_meta()
         _log(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "

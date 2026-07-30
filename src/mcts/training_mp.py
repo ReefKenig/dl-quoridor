@@ -177,6 +177,23 @@ def zero_sample_reason(it, engine, wins, games_per_iteration, checkpoint_dir):
         f"'[GPU INFERENCE] CRASHED' or '[WORKER … ] CRASHED'.")
 
 
+def _rss_gb():
+    """Resident memory of this process, in GB (0.0 if psutil is unavailable)."""
+    try:
+        import psutil
+        return psutil.Process().memory_info().rss / 1e9
+    except Exception:
+        return 0.0
+
+
+def _host_ram_gb():
+    try:
+        import psutil
+        return psutil.virtual_memory().total / 1e9
+    except Exception:
+        return 0.0
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion and make it durable from iteration 0.
 
@@ -240,6 +257,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
         f"explore_moves={cfg.explore_moves} warmup={cfg.warmup_min_samples} "
         f"leaf_batch={cfg.leaf_batch} vloss={cfg.virtual_loss}",
+        f"host: {os.cpu_count()} cores, {_host_ram_gb():.0f} GB RAM, "
+        f"rss={_rss_gb():.2f} GB at launch",
         "=" * 70,
     )
 
@@ -411,6 +430,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
                    win_vs_best=ev_wr, accepted=accepted,
                    win_vs_random=evr_wr, fair=fair, draw_rate=draw_rate,
+                   # Sample size behind win_vs_best. Without it meta.json records
+                   # a rate with no denominator and the only way back to "58.5%
+                   # of 65 decided" is re-parsing games.log.
+                   decided_games=None, eval_timeouts=None,
                    secs=time.time() - t0, buffer=len(buffer),
                    sp_secs=sp_secs, train_secs=train_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,
@@ -488,6 +511,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             # Persist the accept/reject before eval-vs-random, so best.pt and the
             # row's `accepted` stay consistent even if the next phase is interrupted.
             row.update(win_vs_best=ev_wr, accepted=accepted,
+                       decided_games=ev.decided_games,
+                       eval_timeouts=ev.num_games - ev.decided_games,
                        eval_best_secs=eval_best_secs, secs=time.time() - t0)
             _write_meta()
 
@@ -558,9 +583,17 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         vs_best_txt = (f"{100*ev_wr:.1f}% {'ACCEPT' if accepted else 'reject'}"
                        if ev_wr is not None else "n/a (not evaluated)")
         vs_rand_txt = f"{100*evr_wr:.1f}%" if evr_wr is not None else "n/a"
+        # rss tracks the parent's memory against the buffer: the n2 9x9 run was
+        # killed twice with no traceback, and a slow climb here is the evidence
+        # that would confirm or rule out host memory pressure. Measured at the
+        # end of the iteration, so it needs its own write — every earlier
+        # _write_meta has already run by this point.
+        row["rss_gb"] = _rss_gb()
+        _write_meta()
         _log(f">>> iter {it+1} | loss_p={lp:.3f} loss_v={lv:.3f} | "
              f"vs_best={vs_best_txt} | "
              f"vs_rand={vs_rand_txt} | draw={100*draw_rate:.0f}% | buf={len(buffer)} | "
+             f"rss={row['rss_gb']:.2f}GB | "
              f"sp={sp_secs:.0f}s train={train_secs:.0f}s "
              f"eval_best={eval_best_secs:.0f}s eval_rand={eval_rand_secs:.0f}s | "
              f"total={row['secs']:.0f}s")

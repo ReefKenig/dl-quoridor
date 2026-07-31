@@ -4,15 +4,19 @@ Separates two explanations for a 0% greedy score: a policy that cannot win the
 race, or the sampled eval opening (4 plies at temperature 1.0) throwing away the
 tempo that decides a race against a deterministic rusher.
 
+--trace additionally plays one game move by move and reports how the candidate
+spent its turns, which turns "it loses" into a mechanism.
+
     PYTHONPATH=. python3 scripts/probe_greedy.py runs/n2_9x9_v4 --games 20
+    PYTHONPATH=. python3 scripts/probe_greedy.py runs/n2_9x9_v4 --trace
 """
 import argparse
 import json
 import os
 
 from src.env.quoridor_env_mp import QuoridorEnvMP, compute_action_space_size
-from src.mcts.evaluator_mp import (eval_rng, greedy_agent, mcts_agent_mp,
-                                   play_eval_game)
+from src.mcts.evaluator_mp import (NUM_MOVE_ACTIONS, eval_rng, greedy_agent,
+                                   mcts_agent_mp, play_eval_game)
 from src.mcts.training_mp import TrainingConfigMP, _mcts
 from src.model.network_mp import QuoridorModelMP
 from src.utils.checkpoint import resolve_ship_checkpoint
@@ -37,6 +41,58 @@ def probe(env, agent_for, games, seats, base_seed):
     return wins, decided, by_seat
 
 
+def trace(env, cand, seat, base_seed=0):
+    """Play one game and report how the candidate spent its turns.
+
+    A racer wins on tempo, so the diagnosis is what the candidate does with its
+    turns: walls it cannot afford, moves that do not shorten its path, or a clean
+    race it simply loses.
+    """
+    rng = eval_rng(base_seed, 0)
+    agents = {s: (cand if s == seat else greedy_agent())
+              for s in range(env.num_players)}
+    state = env.reset()
+    walls = closer = other = 0
+    start = env.distance_to_goal(state, seat)
+    ply = 0
+
+    while not state.game_over and ply < env.max_turns:
+        mover = state.current_player
+        action = int(agents[mover](env, state, ply=ply, rng=rng))
+        before = env.distance_to_goal(state, seat)
+        state, _r, _done, _info = env.step(state, action)
+        if mover == seat:
+            after = env.distance_to_goal(state, seat)
+            if action >= NUM_MOVE_ACTIONS:
+                walls += 1
+            elif after is not None and before is not None and after < before:
+                closer += 1
+            else:
+                other += 1
+        ply += 1
+
+    turns = walls + closer + other
+    dist = {s: env.distance_to_goal(state, s) for s in range(env.num_players)}
+    winner = "draw/timeout" if state.winner is None else f"P{state.winner}"
+    print(f"\n  TRACE (candidate in seat {seat}, {ply} plies, winner {winner})")
+    print(f"    candidate turns: {turns}   walls {walls}   "
+          f"moved closer {closer}   neither {other}")
+    print(f"    its distance to goal: {start} -> {dist[seat]}")
+    print(f"    all distances at the end: {dist}")
+    if not turns:
+        return
+    print(f"    {100 * walls / turns:.0f}% of its turns were walls, "
+          f"{100 * closer / turns:.0f}% advanced it")
+    if state.winner == seat:
+        print("    -> it won this game")
+    elif walls > closer:
+        print("    -> walls more than it advances: losing the race on tempo")
+    elif other > closer:
+        print("    -> most pawn moves do not shorten its path: it is not racing")
+    else:
+        print("    -> it races cleanly but is still outpaced")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dir")
@@ -44,6 +100,8 @@ def main():
     ap.add_argument("--sims", type=int, default=0, help="0 = eval_simulations from config")
     ap.add_argument("--channels", type=int, default=0, help="0 = from configs/config_<b>x<b>.json")
     ap.add_argument("--blocks", type=int, default=0)
+    ap.add_argument("--trace", action="store_true",
+                    help="also play one game move by move and diagnose the loss")
     args = ap.parse_args()
 
     cfg_path = os.path.join(args.run_dir, "config.json")
@@ -81,6 +139,11 @@ def main():
         rate = wins / decided if decided else 0.0
         seats = " ".join(f"seat{s}:{w}" for s, w in by_seat.items())
         print(f"  opening_plies={plies}: {wins}/{decided} decided = {rate:.1%}  [{seats}]")
+
+    if args.trace:
+        cand = mcts_agent_mp(_mcts(model, env, mcfg, sims=sims, dirichlet_epsilon=0.0),
+                             temperature=0.1, opening_plies=0)
+        trace(env, cand, seat=0)
 
     print("\n  Both near 0% -> the policy cannot win the race.")
     print("  0 plies much higher -> the sampled opening is costing the tempo,")

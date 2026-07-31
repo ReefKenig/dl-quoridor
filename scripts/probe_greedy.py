@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 
+from src.env.pathing import SPEC_V1_DIST_SQ
 from src.env.quoridor_env_mp import QuoridorEnvMP, compute_action_space_size
 from src.mcts.evaluator_mp import (NUM_MOVE_ACTIONS, eval_rng, greedy_agent,
                                    mcts_agent_mp, play_eval_game)
@@ -118,9 +119,11 @@ def main():
     print(f"{args.run_dir}: {label}\n  N={N} board={board} sims={sims} "
           f"net={channels}x{blocks} ({args.games} games per seat)\n")
 
+    # Run dirs frozen before spec_version existed are all v1 by definition.
     env = QuoridorEnvMP(board_size=board, num_players=N,
                         max_turns=rc["max_game_moves"],
-                        max_walls_per_player=rc["max_walls_per_player"])
+                        max_walls_per_player=rc["max_walls_per_player"],
+                        spec_version=rc.get("spec_version", SPEC_V1_DIST_SQ))
     model = QuoridorModelMP(
         board_size=board, action_space_size=compute_action_space_size(board),
         in_channels=3 * N + 3, num_channels=channels,

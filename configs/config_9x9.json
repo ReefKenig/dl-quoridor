@@ -34,7 +34,10 @@
         "_accept_margin_note": "0.08 at eval_games=160: SE is 0.040, so the 0.58 bar is +2.0 sigma (~2% false accepts). The old 0.05 at 80 games was +0.9 sigma = 19%, and v4's post-iter-15 accepts were consistent with pure noise.",
         "_wall_mask_note": "Race-only self-play for the opening iterations. Walls are 128 of 140 actions at 9x9 (32 of 44 at 5x5), so an untrained policy walls ~91% of the time and never learns the race. Eval always plays the full game. 0 = off.",
         "wall_mask_iters": 10,
-        "_reward_decay_note": "0.99, NOT 0.97. Probed both 5x5 arms vs greedy at tensor spec v1, 20 games/seat: gamma=0.99 goes 40/40 (seat 0 with exactly 1 wall/game), gamma=0.97 goes 20/40, losing seat 0 entirely (0/20) by over-walling at 3/game. Seat 0 is won only by spending a turn on a wall that pays off later, and a steeper discount makes that lose to advancing now. The 2026-06 gamma ablation measured loss_v drift only and says nothing about playing strength."
+        "_reward_decay_note": "0.99, NOT 0.97. Probed both 5x5 arms vs greedy at tensor spec v1, 20 games/seat: gamma=0.99 goes 40/40 (seat 0 with exactly 1 wall/game), gamma=0.97 goes 20/40, losing seat 0 entirely (0/20) by over-walling at 3/game. Seat 0 is won only by spending a turn on a wall that pays off later, and a steeper discount makes that lose to advancing now. The 2026-06 gamma ablation measured loss_v drift only and says nothing about playing strength.",
+        "_greedy_stop_note": "Abort on racing decay, which the gate cannot see: in local_9x9_v6 it accepted at 69% and 60% while greedy fell 60% -> 10% over the same window. One seat is always winnable by racing alone (seat 1 at N=2, seat 0 at N=4), so the best per-seat rate has a hard ceiling and only falls if the policy stops racing. Warns on the first eval 20+ pts below the peak, stops on the second. best.pt holds the peak, so an early stop still ships the good model.",
+        "greedy_stop_patience": 2,
+        "greedy_stop_drop": 0.2
     },
     "parallel": {
         "_num_workers_note": "Match the pod's cgroup cpu quota (16). Above it the jupyter server stops answering its own health check, whose entrypoint runs pkill -9 on failure.",

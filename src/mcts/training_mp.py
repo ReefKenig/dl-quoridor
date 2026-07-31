@@ -123,6 +123,15 @@ class TrainingConfigMP:
     # Input-plane spec the run trains under; frozen into the run dir's config.json
     # so the resulting checkpoint can be replayed on the planes it actually saw.
     spec_version: int = CURRENT_SPEC
+    # Early stop on racing decay. Greedy always has one seat a pure racer wins
+    # outright (seat 1 at N=2, seat 0 at N=4 — whoever the head-on pawn jump
+    # favours), so the BEST per-seat greedy rate is a hard-ceiling probe: it
+    # cannot drift up, and a sustained fall means the policy stopped racing.
+    # The gate cannot see this — in local_9x9_v6 it kept accepting (69%, 60%)
+    # while greedy went 60% -> 10%. Stop after this many consecutive evals at
+    # least greedy_stop_drop below the best rate seen so far. 0 = disabled.
+    greedy_stop_patience: int = 0
+    greedy_stop_drop: float = 0.20
 
 
 class ReplayBufferMP:
@@ -158,6 +167,19 @@ def _mcts(model, env, cfg, sims=None, dirichlet_epsilon=None):
         evaluate_fn=lambda st: model.predict(env.state_to_tensor(st)),
         num_players=cfg.num_players,
     )
+
+
+def racing_decay_strike(best_seat, peak, below, drop):
+    """Advance the racing-decay watch by one greedy eval.
+
+    Compares against the best rate ever seen, not the previous eval, so a slow
+    slide cannot hide. Returns (peak, consecutive_strikes).
+    """
+    if peak is None or best_seat > peak:
+        return best_seat, 0
+    if best_seat <= peak - drop:
+        return peak, below + 1
+    return peak, 0
 
 
 SELF_PLAY_MODES = ("sequential", "parallel", "vectorized")
@@ -400,6 +422,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         init_champion(best, model, checkpoint_dir, log=_log)
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")
+
+    # Racing-decay watch (see cfg.greedy_stop_patience).
+    greedy_peak = None
+    greedy_below_peak = 0
+    stop_reason = None
 
     for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
@@ -716,6 +743,28 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                            greedy_decided_games=evg.decided_games,
                            greedy_by_seat=greedy_by_seat,
                            secs=time.time() - t0)
+
+                # Racing decay: best per-seat rate against its own running peak.
+                if cfg.greedy_stop_patience:
+                    seat_rates = [w / n for w, n in greedy_by_seat.values() if n]
+                    best_seat = max(seat_rates) if seat_rates else 0.0
+                    row["greedy_best_seat"] = best_seat
+                    prev_below = greedy_below_peak
+                    greedy_peak, greedy_below_peak = racing_decay_strike(
+                        best_seat, greedy_peak, greedy_below_peak,
+                        cfg.greedy_stop_drop)
+                    if greedy_below_peak > prev_below:
+                        _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: racing decay — "
+                             f"best seat {100*best_seat:.0f}% is {100*(greedy_peak-best_seat):.0f} "
+                             f"pts below the peak {100*greedy_peak:.0f}% "
+                             f"({greedy_below_peak}/{cfg.greedy_stop_patience} evals)")
+                        if greedy_below_peak >= cfg.greedy_stop_patience:
+                            stop_reason = (
+                                f"racing decay: best per-seat greedy rate {100*best_seat:.0f}% "
+                                f"stayed >={100*cfg.greedy_stop_drop:.0f} pts below its peak "
+                                f"{100*greedy_peak:.0f}% for {greedy_below_peak} consecutive "
+                                f"evals. best.pt holds the peak; resume by raising "
+                                f"greedy_stop_patience if this was noise.")
                 _write_meta()
         else:
             _log(
@@ -734,4 +783,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
              f"sp={sp_secs:.0f}s train={train_secs:.0f}s "
              f"eval_best={eval_best_secs:.0f}s eval_rand={eval_rand_secs:.0f}s | "
              f"total={row['secs']:.0f}s")
+
+        if stop_reason:
+            # meta.json and both checkpoints are already written for this
+            # iteration, so the run resumes from here untouched if wanted.
+            _log(f"STOPPING EARLY at iteration {it+1}/{cfg.num_iterations} — {stop_reason}")
+            break
     return history

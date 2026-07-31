@@ -49,6 +49,8 @@ def main():
         discount_unit="round",
         # The whole point of the run: race-only self-play, then unmask.
         wall_mask_iters=int(os.environ.get("MASK_ITERS", 8)),
+        greedy_stop_patience=int(os.environ.get("STOP_PATIENCE", 2)),
+        greedy_stop_drop=float(os.environ.get("STOP_DROP", 0.20)),
         eval_every=int(os.environ.get("EVAL_EVERY", 4)),
         eval_games=int(os.environ.get("EVAL_GAMES", 40)),
         eval_random_games=int(os.environ.get("EVAL_RANDOM", 20)),

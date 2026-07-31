@@ -137,15 +137,22 @@ preflight() {
   exit 1
 }
 
-# Don't double-launch the same notebook: if a previous nohup pid is still alive.
+# Don't double-launch the same notebook. The pid must still be alive AND still
+# be this notebook: pids recycle, and a stale file pointing at an unrelated
+# process would lock the run out permanently — fatal under a watchdog, which
+# would then no-op forever instead of restarting.
 PID_FILE="$LOG_DIR/notebook.pid"
 if [ -f "$PID_FILE" ]; then
   OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
   if [ -n "${OLD_PID:-}" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-    echo "ERROR: a run for '$TAG' is already active (pid $OLD_PID). " >&2
-    echo "       Stop it first:  kill $OLD_PID" >&2
-    exit 1
+    if ps -p "$OLD_PID" -o args= 2>/dev/null | grep -qF "$NOTEBOOK"; then
+      echo "ERROR: a run for '$TAG' is already active (pid $OLD_PID). " >&2
+      echo "       Stop it first:  kill $OLD_PID" >&2
+      exit 1
+    fi
+    echo "  [preflight] pid $OLD_PID is alive but is not $NOTEBOOK — stale pid file, continuing."
   fi
+  rm -f "$PID_FILE"
 fi
 
 preflight

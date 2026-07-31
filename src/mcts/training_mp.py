@@ -112,6 +112,12 @@ class TrainingConfigMP:
     board_size: int = 5
     max_walls_per_player: int = 3
     max_turns: int = 300
+    # Mask wall actions out of SELF-PLAY for this many opening iterations, so the
+    # policy learns to race before it can wall. Eval always allows walls, so the
+    # gate and the greedy baseline stay comparable across the whole run.
+    # 0 = off. Set per iteration onto cfg.walls_enabled, which the workers read.
+    wall_mask_iters: int = 0
+    walls_enabled: bool = True
 
 
 class ReplayBufferMP:
@@ -371,8 +377,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
         # --- 1. self-play ---
+        # Wall curriculum: race-only self-play for the opening iterations, so the
+        # policy is not initialised into a 91%-walls action prior. Restored to
+        # True before eval below, which always plays the full game.
+        walls_masked = it < cfg.wall_mask_iters
+        cfg.walls_enabled = env.walls_enabled = not walls_masked
         _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
-             f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims)...")
+             f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims"
+             f"{', WALLS MASKED' if walls_masked else ''})...")
 
         def _on_progress(done, total, w):
             if done % 5 == 0 or done == total:
@@ -444,6 +456,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                          f"({elapsed:.0f}s, {rate*60:.1f} games/min)")
 
         sp_secs = time.time() - t0
+        # Eval, gating and the greedy baseline always play the full game.
+        cfg.walls_enabled = env.walls_enabled = True
         # Win distribution across seats (None = draw/timeout). A healthy self-play
         # iteration is roughly balanced; a lopsided split or all-draws is an early
         # warning of seat bias or a degenerate policy.
@@ -521,7 +535,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
                    rand_decided_games=None, greedy_decided_games=None,
-                   win_vs_greedy=None,
+                   win_vs_greedy=None, greedy_by_seat=None,
                    secs=time.time() - t0, buffer=len(buffer),
                    sp_secs=sp_secs, train_secs=train_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,
@@ -659,11 +673,20 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                                       base_seed=it * 100_003 + 70_000)
                 eval_greedy_secs = time.time() - t_eval_greedy
                 evg_wr = evg.candidate_win_rate
+                # Per seat, because the seats are not symmetric: two racers meeting
+                # head-on let the SECOND one jump the first, so seat 0 must spend a
+                # wall to win while seat 1 wins by racing. A pooled number hides
+                # which of the two the model has failed to learn.
+                greedy_by_seat = {s: [evg.seat_wins.get(s, 0), n]
+                                  for s, n in sorted(evg.games_per_seat.items())}
+                seat_str = " ".join(f"seat{s}:{w}/{n}"
+                                    for s, (w, n) in greedy_by_seat.items())
                 _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs greedy done: "
                      f"{100*evg_wr:.1f}% of {evg.decided_games} decided "
-                     f"({eval_greedy_secs:.0f}s)")
+                     f"[{seat_str}] ({eval_greedy_secs:.0f}s)")
                 row.update(win_vs_greedy=evg_wr, eval_greedy_secs=eval_greedy_secs,
                            greedy_decided_games=evg.decided_games,
+                           greedy_by_seat=greedy_by_seat,
                            secs=time.time() - t0)
                 _write_meta()
         else:

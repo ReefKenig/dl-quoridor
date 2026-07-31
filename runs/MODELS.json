@@ -6,9 +6,9 @@
             "in_channels": 9,
             "num_players": 2,
             "board_size": 5,
-            "eval_win_rate": "97.9% ± 1.9% vs random (fair share 50%)",
+            "eval_win_rate": "97.9% \u00b1 1.9% vs random (fair share 50%)",
             "eval_games": 240,
-            "notes": "Trained with max^n MCTS (≡ negamax at N=2), 30 iterations, augmentation + γ=0.99."
+            "notes": "Trained with max^n MCTS (= negamax at N=2), 30 iterations, augmentation + gamma=0.99. Plays the seat asymmetry correctly: 20/20 vs the greedy racer at 200 sims \u2014 seat 1 with zero walls (pure race, wins on the jump tempo), seat 0 with exactly one wall per game (the minimum that overcomes the one-tempo deficit). The strongest model in the repo."
         },
         "4p_ship": {
             "path": "runs/n4_5x5_v3/ship.pt",
@@ -16,9 +16,9 @@
             "in_channels": 15,
             "num_players": 4,
             "board_size": 5,
-            "eval_win_rate": "84.2% ± 4.6% vs random (fair share 25%)",
+            "eval_win_rate": "84.2% \u00b1 4.6% vs random (fair share 25%)",
             "eval_games": 240,
-            "notes": "Trained with max^n MCTS, 70 iterations, augmentation + γ=0.99. Peak checkpoint iter 68."
+            "notes": "Trained with max^n MCTS, 70 iterations, augmentation + \u03b3=0.99. Peak checkpoint iter 68."
         },
         "2p_legacy": {
             "path": "runs/legacy_2p/best/model.pt",
@@ -29,11 +29,37 @@
             "eval_win_rate": "95% vs random (fair share 50%)",
             "eval_games": 240,
             "notes": "Original scalar architecture. Trained with negamax MCTS, v3.2 notebook, 40 iterations."
+        },
+        "2p_9x9": {
+            "path": "runs/n2_9x9_v4/best.pt",
+            "architecture": "QuoridorModelMP (vector value head, N=2)",
+            "in_channels": 9,
+            "num_players": 2,
+            "board_size": 9,
+            "num_channels": 128,
+            "num_res_blocks": 8,
+            "eval_win_rate": "~97-100% vs random (fair share 50%) BUT 0% vs a greedy pawn-rush",
+            "eval_games": 40,
+            "notes": "Full-size 9x9, 10 walls/player. max^n MCTS, 600 sims, gamma=0.99. best.pt = accept-gated peak of n2_9x9_v4. NOT DEMO-READY: 0/40 vs the greedy racer on every one of 12 training evals, and 0/12 on a direct per-seat probe at 200 sims (seat 0 and seat 1 both). It spends ~61% of its turns placing walls and loses even the seat where walking forward wins outright. The vs-random number is saturated and hides this \u2014 do not quote it alone."
+        },
+        "4p_9x9": {
+            "path": "runs/n4_9x9_v5/best.pt",
+            "architecture": "QuoridorModelMP (vector value head, N=4)",
+            "in_channels": 15,
+            "num_players": 4,
+            "board_size": 9,
+            "num_channels": 128,
+            "num_res_blocks": 8,
+            "eval_win_rate": "~88-96% vs random (fair share 25%) BUT 0% vs a greedy pawn-rush",
+            "eval_games": 40,
+            "notes": "Full-size 9x9, 5 walls/player. max^n MCTS, 600 sims, gamma=0.99. best.pt = accept-gated peak of n4_9x9_v5. NOT DEMO-READY: 0/40 vs the greedy racer on all 14 training evals. Same pathology as 2p_9x9. The vs-random number is saturated \u2014 do not quote it alone."
         }
     },
     "usage": {
         "2p_vector": "QuoridorModelMP(board_size=5, action_space_size=44, in_channels=9, num_channels=64, num_res_blocks=4, num_players=2)",
         "4p_ship": "QuoridorModelMP(board_size=5, action_space_size=44, in_channels=15, num_channels=64, num_res_blocks=4, num_players=4)",
-        "2p_legacy": "QuoridorModel(board_size=5, action_space_size=44, in_channels=10, num_channels=64, num_res_blocks=4)"
+        "2p_legacy": "QuoridorModel(board_size=5, action_space_size=44, in_channels=10, num_channels=64, num_res_blocks=4)",
+        "2p_9x9": "QuoridorModelMP(board_size=9, action_space_size=140, in_channels=9, num_channels=128, num_res_blocks=8, num_players=2)",
+        "4p_9x9": "QuoridorModelMP(board_size=9, action_space_size=140, in_channels=15, num_channels=128, num_res_blocks=8, num_players=4)"
     }
 }

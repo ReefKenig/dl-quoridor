@@ -59,10 +59,15 @@ class QuoridorStateMP:
 
 class QuoridorEnvMP(QuoridorEnvInterface):
     def __init__(self, board_size=5, num_players=4, max_turns=300,
-                 debug=False, max_walls_per_player=None):
+                 debug=False, max_walls_per_player=None, walls_enabled=True):
         assert 2 <= num_players <= 4
         self.board_size = board_size
         self.num_players = num_players
+        # False masks every wall action out of get_valid_actions, turning the
+        # game into a pure race. Used as an early-training curriculum: at 9x9
+        # walls are 128 of 140 actions, so an untrained policy walls ~91% of
+        # the time and self-play never selects for racing.
+        self.walls_enabled = walls_enabled
         if max_walls_per_player is not None:
             self.max_walls_per_player = max_walls_per_player
         else:
@@ -143,7 +148,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
         valid = []
         for tgt in self._pawn_moves(pos, others, h, v):
             valid.append(MOVE_MAP[(tgt[0] - pos[0], tgt[1] - pos[1])])
-        if state.walls_remaining[cp] > 0:
+        if self.walls_enabled and state.walls_remaining[cp] > 0:
             W = self.board_size - 1
             h_off, v_off = 12, 12 + W ** 2
             blockers = self._player_blockers(state, h, v)
@@ -209,7 +214,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
         if self._pawn_moves(pos, others, state.h_walls, state.v_walls):
             return True
         # No pawn moves; check if any wall placement is legal
-        if state.walls_remaining[cp] > 0:
+        if self.walls_enabled and state.walls_remaining[cp] > 0:
             W = self.board_size - 1
             for r in range(W):
                 for c in range(W):

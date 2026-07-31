@@ -61,6 +61,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
             num_players=N,
             max_turns=config_dict["max_turns"],
             max_walls_per_player=config_dict["max_walls_per_player"],
+            walls_enabled=config_dict.get("walls_enabled", True),
         )
         # leaf_batch>1 => collect several leaves per MCTS wave and ship them in one
         # message (make_batched_evaluate_many); leaf_batch=1 keeps the one-leaf path.
@@ -166,6 +167,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         "num_players": cfg.num_players,
         "board_size": getattr(cfg, "board_size", None) or model.board_size,
         "max_walls_per_player": getattr(cfg, "max_walls_per_player", 3),
+        "walls_enabled": getattr(cfg, "walls_enabled", True),
         "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),
         "mcts_simulations": cfg.mcts_simulations,
         "mcts_dirichlet_epsilon": getattr(cfg, "mcts_dirichlet_epsilon", 0.25),

@@ -2,14 +2,14 @@
     "is_poc": false,
     "board_size": 9,
     "mcts": {
-        "num_simulations": 1200,
+        "num_simulations": 600,
         "eval_simulations": 200,
         "c_puct": 1.41,
         "temperature": 1.0,
         "dirichlet_alpha": 0.1,
         "dirichlet_epsilon": 0.25,
         "max_rollout_depth": 200,
-        "_num_simulations_note": "1200, not 600: at 140 actions 600 sims is ~4.3 visits per action, so the visit histogram barely differs from the prior it was seeded with and the policy target reinforces it. Self-play is 93% of the iteration, so this ~2x's wall clock."
+        "_num_simulations_note": "600. The visits-per-action argument for 1200 (140 actions / 600 sims = 4.3 visits) assumed a prior spread uniformly over 128 wall actions \u2014 wall_mask_iters removes that premise, since the masked phase has ~4 legal actions and the unmasked phase starts from a move-concentrated prior. Self-play is 93% of the iteration, so 600 roughly halves the run: N=2 ~32h vs ~62h at 150 iters."
     },
     "network": {
         "num_res_blocks": 8,
@@ -33,7 +33,8 @@
         "_discount_unit_note": "Per-variant: 'round' decays per the mover's own turns, 'ply' per move by anybody. Measured better at N=2, worse at N=4.",
         "_accept_margin_note": "0.08 at eval_games=160: SE is 0.040, so the 0.58 bar is +2.0 sigma (~2% false accepts). The old 0.05 at 80 games was +0.9 sigma = 19%, and v4's post-iter-15 accepts were consistent with pure noise.",
         "_wall_mask_note": "Race-only self-play for the opening iterations. Walls are 128 of 140 actions at 9x9 (32 of 44 at 5x5), so an untrained policy walls ~91% of the time and never learns the race. Eval always plays the full game. 0 = off.",
-        "wall_mask_iters": 10
+        "wall_mask_iters": 10,
+        "_reward_decay_note": "0.99, NOT 0.97. Tested: the gamma=0.97 5x5 arm scores 20/40 vs greedy against 40/40 for gamma=0.99, losing seat 0 entirely (0/20). Seat 0 is won only by spending a turn on a wall that pays off later, and a steeper discount makes that investment lose to advancing now. The 2026-06 gamma ablation measured loss_v drift only and says nothing about playing strength."
     },
     "parallel": {
         "_num_workers_note": "Match the pod's cgroup cpu quota (16). Above it the jupyter server stops answering its own health check, whose entrypoint runs pkill -9 on failure.",

@@ -8,7 +8,7 @@
             "board_size": 5,
             "eval_win_rate": "97.9% \u00b1 1.9% vs random (fair share 50%)",
             "eval_games": 240,
-            "notes": "Trained with max^n MCTS (= negamax at N=2), 30 iterations, augmentation + gamma=0.99. Plays the seat asymmetry correctly: 20/20 vs the greedy racer at 200 sims \u2014 seat 1 with zero walls (pure race, wins on the jump tempo), seat 0 with exactly one wall per game (the minimum that overcomes the one-tempo deficit). The strongest model in the repo."
+            "notes": "Trained with max^n MCTS (= negamax at N=2), 30 iterations, augmentation + gamma=0.99. 40/40 vs the greedy racer at 200 sims (20 games/seat), winning both seats \u2014 including seat 0, which cannot be won by racing (two racers meet head-on and the second jumps the first, so seat 0 must spend a wall). Uses walls in both seats, ~38-43% of turns. The strongest model in the repo. Its gamma=0.97 sibling (runs/n2_5x5_g097_v1) scores 20/40 \u2014 same seat 1, but 0/20 in seat 0, because the steeper discount suppresses paying a tempo now for a win later."
         },
         "4p_ship": {
             "path": "runs/n4_5x5_v3/ship.pt",

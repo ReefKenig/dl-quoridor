@@ -5,6 +5,7 @@ from typing import List, Optional, Set, Tuple
 import numpy as np
 
 from src.env.env_interface import QuoridorEnvInterface
+from src.env.pathing import CURRENT_SPEC
 from src.env.tensor_spec import build_tensor
 
 
@@ -84,8 +85,11 @@ class QuoridorEnv(QuoridorEnvInterface):
         max_turns: int = 150,
         debug: bool = False,
         max_walls_per_player: Optional[int] = None,
+        spec_version: int = CURRENT_SPEC,
     ):
         self.board_size = board_size
+        # Must match the spec the consuming model trained under; see pathing.py.
+        self.spec_version = spec_version
 
         if max_walls_per_player is not None:
             self.max_walls_per_player = max_walls_per_player
@@ -256,6 +260,7 @@ class QuoridorEnv(QuoridorEnvInterface):
             p0_walls_remaining=state.p0_walls,
             p1_walls_remaining=state.p1_walls,
             max_walls=state.max_walls,
+            spec_version=self.spec_version,
         )
 
         turn_channel = np.full(

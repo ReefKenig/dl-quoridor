@@ -27,6 +27,7 @@ up to predict_batch's batch-composition nondeterminism; exact on CPU.)
 import numpy as np
 import torch
 
+from src.env.pathing import CURRENT_SPEC
 from src.env.quoridor_env_mp import QuoridorEnvMP
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig, VectorizedSearch
 from src.mcts.self_play_mp import (assign_vector_targets, augment_mp, game_seed,
@@ -109,6 +110,7 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
         max_turns=getattr(cfg, "max_turns", cfg.max_game_moves),
         max_walls_per_player=getattr(cfg, "max_walls_per_player", 3),
         walls_enabled=getattr(cfg, "walls_enabled", True),
+        spec_version=getattr(cfg, "spec_version", CURRENT_SPEC),
     )
     eps = getattr(cfg, "mcts_dirichlet_epsilon", 0.25)
     discount = cfg.discount

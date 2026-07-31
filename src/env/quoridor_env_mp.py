@@ -14,6 +14,7 @@ from typing import List, Optional, Set, Tuple
 import numpy as np
 
 from src.env.env_interface import QuoridorEnvInterface
+from src.env.pathing import CURRENT_SPEC
 from src.env.tensor_spec_mp import build_tensor_mp
 
 
@@ -59,7 +60,8 @@ class QuoridorStateMP:
 
 class QuoridorEnvMP(QuoridorEnvInterface):
     def __init__(self, board_size=5, num_players=4, max_turns=300,
-                 debug=False, max_walls_per_player=None, walls_enabled=True):
+                 debug=False, max_walls_per_player=None, walls_enabled=True,
+                 spec_version=CURRENT_SPEC):
         assert 2 <= num_players <= 4
         self.board_size = board_size
         self.num_players = num_players
@@ -68,6 +70,8 @@ class QuoridorEnvMP(QuoridorEnvInterface):
         # walls are 128 of 140 actions, so an untrained policy walls ~91% of
         # the time and self-play never selects for racing.
         self.walls_enabled = walls_enabled
+        # Must match the spec the consuming model trained under; see pathing.py.
+        self.spec_version = spec_version
         if max_walls_per_player is not None:
             self.max_walls_per_player = max_walls_per_player
         else:
@@ -170,6 +174,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
             h_walls=state.h_walls, v_walls=state.v_walls,
             remaining=state.walls_remaining, max_walls=state.max_walls,
             goals=state.goals, current_player=state.current_player,
+            spec_version=self.spec_version,
         )
 
     # ---------- helpers ----------

@@ -10,10 +10,12 @@ import os
 import time
 import logging
 from collections import deque
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import numpy as np
 
+from src.env.pathing import CURRENT_SPEC
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
 from src.utils.schedule import lr_at
@@ -118,6 +120,9 @@ class TrainingConfigMP:
     # 0 = off. Set per iteration onto cfg.walls_enabled, which the workers read.
     wall_mask_iters: int = 0
     walls_enabled: bool = True
+    # Input-plane spec the run trains under; frozen into the run dir's config.json
+    # so the resulting checkpoint can be replayed on the planes it actually saw.
+    spec_version: int = CURRENT_SPEC
 
 
 class ReplayBufferMP:
@@ -275,6 +280,21 @@ def resource_banner(cfg):
     return lines
 
 
+@contextmanager
+def _wall_mask(cfg, env, masked):
+    """Race-only self-play for the opening iterations, so the policy is not
+    initialised into a 91%-walls action prior (9x9: walls are 128 of 140
+    actions). Restores on the way out even if self-play raises — eval, gating
+    and the greedy baseline must always play the full game, and the caller may
+    keep using this env after a failed iteration.
+    """
+    cfg.walls_enabled = env.walls_enabled = not masked
+    try:
+        yield
+    finally:
+        cfg.walls_enabled = env.walls_enabled = True
+
+
 def freeze_config(cfg, checkpoint_dir, log=print):
     """Write the resolved config next to the checkpoints, so a run dir records
     what it actually ran rather than relying on the shared config file."""
@@ -326,6 +346,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     make_model : zero-arg callable returning a fresh QuoridorModelMP (for `best`)
     """
     assert env.num_players == cfg.num_players
+    # The workers rebuild the env from cfg, so a disagreement here would have the
+    # parent and the workers training one model on two different plane scales.
+    if env.spec_version != cfg.spec_version:
+        raise ValueError(
+            f"env tensor spec v{env.spec_version} != cfg spec v{cfg.spec_version}; "
+            "resuming a run started under an older spec needs the env built with "
+            "that run's config.json spec_version")
     os.makedirs(checkpoint_dir, exist_ok=True)
     buffer = ReplayBufferMP(cfg.replay_buffer_size)
     best = make_model()
@@ -377,87 +404,82 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
         # --- 1. self-play ---
-        # Wall curriculum: race-only self-play for the opening iterations, so the
-        # policy is not initialised into a 91%-walls action prior. Restored to
-        # True before eval below, which always plays the full game.
         walls_masked = it < cfg.wall_mask_iters
-        cfg.walls_enabled = env.walls_enabled = not walls_masked
-        _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
-             f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims"
-             f"{', WALLS MASKED' if walls_masked else ''})...")
+        with _wall_mask(cfg, env, walls_masked):
+            _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
+                 f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims"
+                 f"{', WALLS MASKED' if walls_masked else ''})...")
 
-        def _on_progress(done, total, w):
-            if done % 5 == 0 or done == total:
-                _log(
-                    f"[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...")
+            def _on_progress(done, total, w):
+                if done % 5 == 0 or done == total:
+                    _log(
+                        f"[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...")
 
-        if sp_mode == "vectorized":
-            # In-process vectorized self-play (Option B): G games share one
-            # predict_batch; exact sequential MCTS per game.
-            sp_samples, wins = generate_vectorized_self_play_mp(
-                model, cfg,
-                total_games=cfg.games_per_iteration,
-                vec_games=(cfg.vec_games or None),
-                batch_size=cfg.inference_batch_size,
-                on_games_complete=_on_progress,
-                base_seed=it * cfg.games_per_iteration,
-                log=_log,
-            )
-            if not sp_samples:
-                raise RuntimeError(zero_sample_reason(
-                    it + 1, "vectorized", wins, cfg.games_per_iteration,
-                    checkpoint_dir))
-            buffer.add(sp_samples)
-            n_new_samples = len(sp_samples)
-        elif sp_mode == "parallel":
-            # GPU-batched parallel self-play
-            sp_samples, wins = generate_parallel_self_play_mp(
-                model, cfg,
-                num_workers=cfg.num_workers,
-                total_games=cfg.games_per_iteration,
-                batch_size=cfg.inference_batch_size,
-                on_games_complete=_on_progress,
-                # Seeds are per-game (base_seed + game_index, index in
-                # [0, games_per_iteration)); stride by games_per_iteration so
-                # iterations never reuse each other's seeds.
-                base_seed=it * cfg.games_per_iteration,
-                log=_log,
-            )
-            if not sp_samples:
-                # Either self-play stalled (usually: the GPU inference thread died
-                # and workers hung until the queue timeout) or every game timed
-                # out. Abort loudly instead of "training" on an empty buffer and
-                # silently advancing completed_iterations — the run can then be
-                # resumed from the last good checkpoint.
-                raise RuntimeError(zero_sample_reason(
-                    it + 1, "parallel", wins, cfg.games_per_iteration,
-                    checkpoint_dir))
-            buffer.add(sp_samples)
-            n_new_samples = len(sp_samples)
-        else:
-            # Sequential self-play (original path)
-            sp_mcts = _mcts(model, env, cfg)
-            wins = {}
-            n_new_samples = 0
-            for g in range(cfg.games_per_iteration):
-                samples, w = play_one_game(env, sp_mcts, cfg.num_players,
-                                           max_moves=cfg.max_game_moves,
-                                           discount=cfg.discount,
-                                           explore_moves=cfg.explore_moves)
-                buffer.add(samples)
-                n_new_samples += len(samples)
-                wins[w] = wins.get(w, 0) + 1
-                # Log every 5 games so long iterations don't look stuck.
-                if (g + 1) % 5 == 0 or (g + 1) == cfg.games_per_iteration:
-                    elapsed = time.time() - t0
-                    rate = (g + 1) / elapsed if elapsed > 0 else 0
-                    _log(f"[iter {it+1}/{cfg.num_iterations}] self-play: "
-                         f"{g+1}/{cfg.games_per_iteration} games "
-                         f"({elapsed:.0f}s, {rate*60:.1f} games/min)")
+            if sp_mode == "vectorized":
+                # In-process vectorized self-play (Option B): G games share one
+                # predict_batch; exact sequential MCTS per game.
+                sp_samples, wins = generate_vectorized_self_play_mp(
+                    model, cfg,
+                    total_games=cfg.games_per_iteration,
+                    vec_games=(cfg.vec_games or None),
+                    batch_size=cfg.inference_batch_size,
+                    on_games_complete=_on_progress,
+                    base_seed=it * cfg.games_per_iteration,
+                    log=_log,
+                )
+                if not sp_samples:
+                    raise RuntimeError(zero_sample_reason(
+                        it + 1, "vectorized", wins, cfg.games_per_iteration,
+                        checkpoint_dir))
+                buffer.add(sp_samples)
+                n_new_samples = len(sp_samples)
+            elif sp_mode == "parallel":
+                # GPU-batched parallel self-play
+                sp_samples, wins = generate_parallel_self_play_mp(
+                    model, cfg,
+                    num_workers=cfg.num_workers,
+                    total_games=cfg.games_per_iteration,
+                    batch_size=cfg.inference_batch_size,
+                    on_games_complete=_on_progress,
+                    # Seeds are per-game (base_seed + game_index, index in
+                    # [0, games_per_iteration)); stride by games_per_iteration so
+                    # iterations never reuse each other's seeds.
+                    base_seed=it * cfg.games_per_iteration,
+                    log=_log,
+                )
+                if not sp_samples:
+                    # Either self-play stalled (usually: the GPU inference thread died
+                    # and workers hung until the queue timeout) or every game timed
+                    # out. Abort loudly instead of "training" on an empty buffer and
+                    # silently advancing completed_iterations — the run can then be
+                    # resumed from the last good checkpoint.
+                    raise RuntimeError(zero_sample_reason(
+                        it + 1, "parallel", wins, cfg.games_per_iteration,
+                        checkpoint_dir))
+                buffer.add(sp_samples)
+                n_new_samples = len(sp_samples)
+            else:
+                # Sequential self-play (original path)
+                sp_mcts = _mcts(model, env, cfg)
+                wins = {}
+                n_new_samples = 0
+                for g in range(cfg.games_per_iteration):
+                    samples, w = play_one_game(env, sp_mcts, cfg.num_players,
+                                               max_moves=cfg.max_game_moves,
+                                               discount=cfg.discount,
+                                               explore_moves=cfg.explore_moves)
+                    buffer.add(samples)
+                    n_new_samples += len(samples)
+                    wins[w] = wins.get(w, 0) + 1
+                    # Log every 5 games so long iterations don't look stuck.
+                    if (g + 1) % 5 == 0 or (g + 1) == cfg.games_per_iteration:
+                        elapsed = time.time() - t0
+                        rate = (g + 1) / elapsed if elapsed > 0 else 0
+                        _log(f"[iter {it+1}/{cfg.num_iterations}] self-play: "
+                             f"{g+1}/{cfg.games_per_iteration} games "
+                             f"({elapsed:.0f}s, {rate*60:.1f} games/min)")
 
-        sp_secs = time.time() - t0
-        # Eval, gating and the greedy baseline always play the full game.
-        cfg.walls_enabled = env.walls_enabled = True
+            sp_secs = time.time() - t0
         # Win distribution across seats (None = draw/timeout). A healthy self-play
         # iteration is roughly balanced; a lopsided split or all-draws is an early
         # warning of seat bias or a degenerate policy.
@@ -561,6 +583,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "board_size": getattr(cfg, "board_size", None) or model.board_size,
                 "max_walls_per_player": getattr(cfg, "max_walls_per_player", 3),
                 "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),
+                # Without this a resumed v1 run would self-play on v1 planes and
+                # gate on v2 ones, comparing both models on a scale neither saw.
+                "spec_version": getattr(cfg, "spec_version", CURRENT_SPEC),
                 "eval_simulations": eval_sims,
                 "max_game_moves": cfg.max_game_moves,
                 "leaf_batch": cfg.leaf_batch,
@@ -677,7 +702,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 # head-on let the SECOND one jump the first, so seat 0 must spend a
                 # wall to win while seat 1 wins by racing. A pooled number hides
                 # which of the two the model has failed to learn.
-                greedy_by_seat = {s: [evg.seat_wins.get(s, 0), n]
+                # str keys: json.dump stringifies int keys anyway, so building
+                # them that way keeps the in-memory row and the reloaded
+                # meta.json the same shape.
+                greedy_by_seat = {str(s): [evg.seat_wins.get(s, 0), n]
                                   for s, n in sorted(evg.games_per_seat.items())}
                 seat_str = " ".join(f"seat{s}:{w}/{n}"
                                     for s, (w, n) in greedy_by_seat.items())

@@ -17,6 +17,23 @@ import numpy as np
 # so that only conflates "very far" with "no path", which is the intent.
 DIST_NORM_MULTIPLE = 2
 
+# Tensor spec version. The distance-plane divisor changed between the two, which
+# rescales channels 8/9 by board_size/2 — 2.5x at 5x5, 4.5x at 9x9. A model only
+# ever sees the spec it trained under, so every checkpoint predating the change
+# must keep asking for V1; runs/MODELS.json records which one each was trained on.
+SPEC_V1_DIST_SQ = 1      # divisor = board_size ** 2
+SPEC_V2_DIST_2BS = 2     # divisor = DIST_NORM_MULTIPLE * board_size
+CURRENT_SPEC = SPEC_V2_DIST_2BS
+
+
+def dist_norm(board_size, spec_version=CURRENT_SPEC):
+    """Divisor the distance planes are normalized by, per tensor spec version."""
+    if spec_version == SPEC_V1_DIST_SQ:
+        return board_size * board_size
+    if spec_version == SPEC_V2_DIST_2BS:
+        return DIST_NORM_MULTIPLE * board_size
+    raise ValueError(f"unknown tensor spec version: {spec_version!r}")
+
 
 def wall_blocks(r, c, nr, nc, h_walls, v_walls, board_size):
     """Is the step (r, c) -> (nr, nc) blocked by a wall? Orthogonal steps only.
@@ -60,11 +77,13 @@ def wall_blocks(r, c, nr, nc, h_walls, v_walls, board_size):
     return False
 
 
-def distance_map(board_size, goal, h_walls, v_walls):
+def distance_map(board_size, goal, h_walls, v_walls, spec_version=CURRENT_SPEC):
     """Normalized BFS distance from every cell to a goal edge.
 
     goal is ('row', k) or ('col', k). Returns (board_size, board_size) float32
     in [0, 1]; unreachable cells and detours past the norm both read 1.0.
+    spec_version picks the divisor — pass a checkpoint's own spec, not the
+    current one, or the model sees planes on a scale it never trained on.
     """
     bs = board_size
     unreachable = bs * bs
@@ -91,4 +110,4 @@ def distance_map(board_size, goal, h_walls, v_walls):
             dist[nr, nc] = d + 1
             queue.append((nr, nc))
 
-    return np.clip(dist / (DIST_NORM_MULTIPLE * bs), 0.0, 1.0)
+    return np.clip(dist / dist_norm(bs, spec_version), 0.0, 1.0)

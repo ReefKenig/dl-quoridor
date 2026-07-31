@@ -9,7 +9,7 @@ All values in [0,1]. Indexed tensor[row, col, channel].
 """
 import numpy as np
 
-from src.env.pathing import distance_map
+from src.env.pathing import CURRENT_SPEC, distance_map
 
 
 def _pawn_plane(bs, pos):
@@ -37,7 +37,8 @@ def _remaining_plane(bs, rem, mx):
 
 
 def build_tensor_mp(board_size, positions, h_walls, v_walls, remaining,
-                    max_walls, goals, current_player):
+                    max_walls, goals, current_player,
+                    spec_version=CURRENT_SPEC):
     N = len(positions)
     bs = board_size
     planes = []
@@ -48,7 +49,8 @@ def build_tensor_mp(board_size, positions, h_walls, v_walls, remaining,
     for i in range(N):
         planes.append(_remaining_plane(bs, remaining[i], max_walls))
     for i in range(N):
-        planes.append(distance_map(bs, goals[i], set(h_walls), set(v_walls)))
+        planes.append(distance_map(bs, goals[i], set(h_walls), set(v_walls),
+                                   spec_version=spec_version))
     turn_val = current_player / (N - 1) if N > 1 else 0.0
     planes.append(np.full((bs, bs), turn_val, np.float32))
     return np.stack(planes, axis=-1)   # (bs, bs, 3N+3)

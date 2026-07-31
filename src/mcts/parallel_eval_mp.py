@@ -28,6 +28,7 @@ import sys
 import traceback
 from functools import partial
 
+from src.env.pathing import CURRENT_SPEC
 from src.mcts.batched_inference_mp import (DEFAULT_BATCH_WAIT_MS,
                                            make_batched_evaluate,
                                            make_batched_evaluate_many,
@@ -64,6 +65,7 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
             num_players=N,
             max_turns=config_dict["max_turns"],
             max_walls_per_player=config_dict["max_walls_per_player"],
+            spec_version=config_dict.get("spec_version", CURRENT_SPEC),
         )
         # leaf_batch>1 => leaf-parallel eval (waves of leaves per GPU forward); the
         # candidate (model_id 0) and champion (model_id 1) share one batcher.

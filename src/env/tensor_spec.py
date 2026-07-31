@@ -52,7 +52,7 @@ This keeps the spatial structure — convolutions can "see" wall extent.
 import numpy as np
 from typing import List, Tuple, Set
 
-from src.env.pathing import DIST_NORM_MULTIPLE, distance_map
+from src.env.pathing import CURRENT_SPEC, distance_map
 
 
 # Single source of truth for the network's input width: build_tensor() emits the
@@ -140,6 +140,7 @@ def compute_distance_map(
     goal_row: int,
     h_walls: Set[Tuple[int, int]],
     v_walls: Set[Tuple[int, int]],
+    spec_version: int = CURRENT_SPEC,
 ) -> np.ndarray:
     """
     Channel 8 or 9: BFS distance from each cell to the goal row,
@@ -153,12 +154,16 @@ def compute_distance_map(
         goal_row: target row (0 for P0, board_size-1 for P1)
         h_walls: set of (r, c) where horizontal walls are placed (any player)
         v_walls: set of (r, c) where vertical walls are placed (any player)
+        spec_version: tensor spec the consuming model was trained under; picks
+            the divisor (V1 = board_size**2, V2 = 2*board_size)
 
     Returns:
         (board_size, board_size) array, normalized to [0, 1].
-        Cells unreachable from goal get value 1.0 (maximum distance).
+        Cells unreachable from goal get value 1.0 (maximum distance); under V2
+        so do detours longer than the divisor.
     """
-    return distance_map(board_size, ("row", goal_row), h_walls, v_walls)
+    return distance_map(board_size, ("row", goal_row), h_walls, v_walls,
+                        spec_version=spec_version)
 
 
 def build_tensor(
@@ -172,6 +177,7 @@ def build_tensor(
     p0_walls_remaining: int,
     p1_walls_remaining: int,
     max_walls: int,
+    spec_version: int = CURRENT_SPEC,
 ) -> np.ndarray:
     """
     Build the complete 10-channel tensor from raw game state.
@@ -190,6 +196,7 @@ def build_tensor(
         p0_walls_remaining: walls P0 can still place
         p1_walls_remaining: walls P1 can still place
         max_walls: max walls per player (5 for 5x5, 10 for 9x9)
+        spec_version: tensor spec the consuming model trained under
 
     Returns:
         np.ndarray of shape (board_size, board_size, 10), dtype float32
@@ -220,13 +227,15 @@ def build_tensor(
 
     # P0 goal = row 0, P1 goal = row (board_size - 1)
     tensor[:, :, 8] = compute_distance_map(
-        board_size, goal_row=0, h_walls=all_h_walls, v_walls=all_v_walls
+        board_size, goal_row=0, h_walls=all_h_walls, v_walls=all_v_walls,
+        spec_version=spec_version
     )
     tensor[:, :, 9] = compute_distance_map(
         board_size,
         goal_row=board_size - 1,
         h_walls=all_h_walls,
         v_walls=all_v_walls,
+        spec_version=spec_version,
     )
 
     return tensor

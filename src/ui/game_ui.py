@@ -5,6 +5,7 @@ from typing import Optional
 import numpy as np
 import pygame
 
+from src.env.pathing import SPEC_V1_DIST_SQ
 from src.env.quoridor_env_mp import QuoridorEnvMP, QuoridorStateMP, ACTION_TO_MOVE
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.model.network_mp import QuoridorModelMP
@@ -268,7 +269,9 @@ def load_ai_and_run(num_players: int = 4, num_simulations: int = 100,
     print(
         f"Setting up {num_players}-player Quoridor on {board_size}x{board_size} board...")
 
-    env = QuoridorEnvMP(board_size=board_size, num_players=num_players)
+    # checkpoints_mp_n* are the 5x5 POC runs, all trained under tensor spec v1.
+    env = QuoridorEnvMP(board_size=board_size, num_players=num_players,
+                        spec_version=SPEC_V1_DIST_SQ)
     in_channels = 3 * num_players + 3
 
     print("Loading model...")

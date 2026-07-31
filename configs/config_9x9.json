@@ -72,8 +72,9 @@
             "games_per_iteration": 70,
             "eval_games": 160,
             "eval_random_games": 40,
-            "eval_greedy_games": 40,
-            "discount_unit": "ply"
+            "eval_greedy_games": 80,
+            "discount_unit": "ply",
+            "_eval_greedy_note": "80, not 40: the greedy eval rotates the candidate through all N seats, so at N=4 a 40-game eval is only 10 games per seat \u2014 and greedy_stop_patience keys on the BEST per-seat rate, which at n=10 has SE ~0.095, making the 20-pt abort threshold barely 2 sigma. 80 gives 20/seat, matching n2, where 20-pt is ~4 sigma. Costs ~20s an eval against a ~500s iteration."
         }
     }
 }

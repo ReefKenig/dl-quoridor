@@ -134,6 +134,9 @@ class TrainingConfigMP:
     greedy_stop_drop: float = 0.20
 
 
+BUFFER_FILE = "replay_buffer.npz"
+
+
 class ReplayBufferMP:
     def __init__(self, max_size=50_000):
         self.buffer = deque(maxlen=max_size)
@@ -152,6 +155,38 @@ class ReplayBufferMP:
         return S, P, V
 
     def __len__(self):
+        return len(self.buffer)
+
+    def save(self, checkpoint_dir):
+        """Persist the buffer so a resume keeps its samples. tmp+rename so a
+        kill mid-write leaves the previous buffer rather than a truncated one."""
+        path = os.path.join(checkpoint_dir, BUFFER_FILE)
+        tmp = path + ".tmp"
+        S = np.array([x[0] for x in self.buffer], np.float32)
+        P = np.array([x[1] for x in self.buffer], np.float32)
+        V = np.array([x[2] for x in self.buffer], np.float32)
+        with open(tmp, "wb") as f:
+            np.savez(f, S=S, P=P, V=V)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        return path
+
+    def load(self, checkpoint_dir, log=print):
+        """Samples restored from disk. Missing or unreadable leaves it empty,
+        which is the old resume behaviour rather than a failed run."""
+        path = os.path.join(checkpoint_dir, BUFFER_FILE)
+        if not os.path.exists(path):
+            return 0
+        try:
+            with np.load(path) as data:
+                S, P, V = data["S"], data["P"], data["V"]
+        except (OSError, ValueError, KeyError) as exc:
+            log(f"WARNING: could not read {path} ({exc}) — starting with an "
+                f"empty buffer, as if it had not been persisted.")
+            return 0
+        # maxlen trims the oldest if the run resumes at a smaller buffer size.
+        self.add(list(zip(S, P, V)))
         return len(self.buffer)
 
 
@@ -317,11 +352,56 @@ def _wall_mask(cfg, env, masked):
         cfg.walls_enabled = env.walls_enabled = True
 
 
+def read_frozen_config(checkpoint_dir):
+    """The run dir's recorded config, or None when absent or unreadable."""
+    path = os.path.join(checkpoint_dir, "config.json")
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def assert_resume_spec_matches(cfg, checkpoint_dir):
+    """Refuse to resume a run onto input planes it was not trained on. Run dirs
+    predating the versioning have no spec_version key — those are all v1."""
+    frozen = read_frozen_config(checkpoint_dir)
+    if frozen is None:
+        return
+    frozen_spec = frozen.get("spec_version", 1)
+    if frozen_spec != cfg.spec_version:
+        raise ValueError(
+            f"{checkpoint_dir} was trained under tensor spec v{frozen_spec} but "
+            f"this launch is configured for v{cfg.spec_version}. Resuming would "
+            f"feed the checkpoint planes on a scale it never saw. Start a fresh "
+            f"run dir, or set spec_version={frozen_spec} to continue the old one.")
+
+
 def freeze_config(cfg, checkpoint_dir, log=print):
     """Write the resolved config next to the checkpoints, so a run dir records
-    what it actually ran rather than relying on the shared config file."""
+    what it actually ran rather than relying on the shared config file.
+
+    First launch writes it; later launches only compare, so the record stays
+    the run's rather than the last relaunch's."""
     path = os.path.join(checkpoint_dir, "config.json")
     resolved = {k: v for k, v in vars(cfg).items() if not k.startswith("_")}
+    if os.path.exists(path):
+        frozen = read_frozen_config(checkpoint_dir)
+        if frozen is not None:
+            changed = {k: (frozen.get(k), v) for k, v in resolved.items()
+                       if k in frozen and frozen[k] != v}
+            added = sorted(set(resolved) - set(frozen))
+            if changed or added:
+                log(f"WARNING: config differs from {path}, which records what "
+                    f"the earlier iterations ran. Keeping the frozen copy; this "
+                    f"launch uses:")
+                for k, (was, now) in sorted(changed.items()):
+                    log(f"  {k}: frozen={was!r} -> now={now!r}")
+                if added:
+                    log(f"  new keys: {', '.join(added)}")
+            else:
+                log(f"Config matches the frozen copy -> {path}")
+            return path
     with open(path, "w") as f:
         json.dump(resolved, f, indent=2, default=str, sort_keys=True)
     log(f"Config frozen -> {path}")
@@ -410,14 +490,18 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     meta_path = os.path.join(checkpoint_dir, "meta.json")
     latest_path = os.path.join(checkpoint_dir, "latest.pt")
     if os.path.exists(meta_path) and os.path.exists(latest_path):
+        assert_resume_spec_matches(cfg, checkpoint_dir)
         with open(meta_path) as f:
             meta = json.load(f)
         start_iter = meta.get("completed_iterations", 0)
         model.load(latest_path)
         load_champion(best, model, checkpoint_dir, log=_log)
         history = meta.get("history", [])
+        n_buffered = buffer.load(checkpoint_dir, log=_log)
         _log(
-            f"Resumed from iteration {start_iter} (checkpoint: {checkpoint_dir})")
+            f"Resumed from iteration {start_iter} (checkpoint: {checkpoint_dir})",
+            f"Replay buffer restored: {n_buffered} samples" if n_buffered else
+            "Replay buffer not on disk — refilling from scratch")
     else:
         init_champion(best, model, checkpoint_dir, log=_log)
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
@@ -578,6 +662,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         evr_wr = None
 
         model.save(os.path.join(checkpoint_dir, "latest.pt"))
+        # Before _write_meta, so meta.json is never newer than the buffer.
+        t_buf = time.time()
+        buffer.save(checkpoint_dir)
+        buf_secs = time.time() - t_buf
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
                    win_vs_best=ev_wr, accepted=accepted,
                    win_vs_random=evr_wr, fair=fair, draw_rate=draw_rate,
@@ -586,7 +674,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    rand_decided_games=None, greedy_decided_games=None,
                    win_vs_greedy=None, greedy_by_seat=None,
                    secs=time.time() - t0, buffer=len(buffer),
-                   sp_secs=sp_secs, train_secs=train_secs,
+                   sp_secs=sp_secs, train_secs=train_secs, buf_secs=buf_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,
                    eval_ran=run_eval)
         history.append(row)

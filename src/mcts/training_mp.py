@@ -6,6 +6,7 @@ Self-contained: self-play with the current model's maxⁿ → train on vector ta
 random → checkpoint best/latest. Reduces to the standard duel at N=2.
 """
 import json
+import math
 import os
 import time
 import logging
@@ -132,6 +133,8 @@ class TrainingConfigMP:
     # least greedy_stop_drop below the best rate seen so far. 0 = disabled.
     greedy_stop_patience: int = 0
     greedy_stop_drop: float = 0.20
+    # Sigma the drop must also clear, so noise on a 20-game seat cannot strike.
+    greedy_stop_z: float = 2.0
 
 
 BUFFER_FILE = "replay_buffer.npz"
@@ -204,17 +207,32 @@ def _mcts(model, env, cfg, sims=None, dirichlet_epsilon=None):
     )
 
 
-def racing_decay_strike(best_seat, peak, below, drop):
+def drop_is_significant(peak, now, n_per_seat, z_min):
+    """Two-proportion z: is the fall bigger than n-game sampling noise?
+
+    The peak is a max over seats AND over evals, so it overshoots the true rate;
+    without this the threshold lands near the mean and a stable model strikes.
+    """
+    pooled = (peak + now) / 2
+    se = math.sqrt(2 * pooled * (1 - pooled) / n_per_seat) if n_per_seat else 0.0
+    return (peak - now) / se >= z_min if se else True
+
+
+def racing_decay_strike(best_seat, peak, below, drop, n_per_seat=0, z_min=0.0):
     """Advance the racing-decay watch by one greedy eval.
 
     Compares against the best rate ever seen, not the previous eval, so a slow
-    slide cannot hide. Returns (peak, consecutive_strikes).
+    slide cannot hide. A strike needs the drop to clear `drop` AND, when
+    n_per_seat/z_min are given, to be significant at that many sigma.
+    Returns (peak, consecutive_strikes).
     """
     if peak is None or best_seat > peak:
         return best_seat, 0
-    if best_seat <= peak - drop:
-        return peak, below + 1
-    return peak, 0
+    if best_seat > peak - drop:
+        return peak, 0
+    if z_min and not drop_is_significant(peak, best_seat, n_per_seat, z_min):
+        return peak, 0
+    return peak, below + 1
 
 
 SELF_PLAY_MODES = ("sequential", "parallel", "vectorized")
@@ -834,13 +852,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
                 # Racing decay: best per-seat rate against its own running peak.
                 if cfg.greedy_stop_patience:
-                    seat_rates = [w / n for w, n in greedy_by_seat.values() if n]
-                    best_seat = max(seat_rates) if seat_rates else 0.0
+                    seated = [(w / n, n) for w, n in greedy_by_seat.values() if n]
+                    best_seat, best_seat_n = max(seated) if seated else (0.0, 0)
                     row["greedy_best_seat"] = best_seat
                     prev_below = greedy_below_peak
                     greedy_peak, greedy_below_peak = racing_decay_strike(
                         best_seat, greedy_peak, greedy_below_peak,
-                        cfg.greedy_stop_drop)
+                        cfg.greedy_stop_drop, best_seat_n, cfg.greedy_stop_z)
                     if greedy_below_peak > prev_below:
                         _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: racing decay — "
                              f"best seat {100*best_seat:.0f}% is {100*(greedy_peak-best_seat):.0f} "

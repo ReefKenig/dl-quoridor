@@ -7,18 +7,21 @@ ceiling that a competent racer sits at.
 """
 import pytest
 
-from src.mcts.training_mp import TrainingConfigMP, racing_decay_strike
+from src.mcts.training_mp import (TrainingConfigMP, drop_is_significant,
+                                  racing_decay_strike)
 
 
-def _watch(rates, patience=2, drop=0.20):
+def _watch(rates, patience=2, drop=0.20, n_per_seat=0, z_min=0.0):
     """Replay the loop's decay check over a sequence of best-per-seat rates.
 
-    Returns the 1-based index of the eval it would stop on, or None.
+    n_per_seat=0 exercises the drop threshold alone; pass it with z_min to
+    include the significance gate. Returns the 1-based index it stops on.
     """
     cfg = TrainingConfigMP(greedy_stop_patience=patience, greedy_stop_drop=drop)
     peak, below = None, 0
     for i, r in enumerate(rates, start=1):
-        peak, below = racing_decay_strike(r, peak, below, cfg.greedy_stop_drop)
+        peak, below = racing_decay_strike(r, peak, below, cfg.greedy_stop_drop,
+                                          n_per_seat, z_min)
         if below >= cfg.greedy_stop_patience:
             return i
     return None
@@ -59,3 +62,53 @@ def test_peak_tracks_the_max_not_the_previous_eval(drop):
     # A slow slide from a high peak still trips: each eval is compared to the
     # best ever seen, not to its predecessor, so gradual decay cannot hide.
     assert _watch([1.0, 0.9, 0.8, 0.7, 0.6], patience=2, drop=drop) is not None
+
+
+# --- the significance gate ---------------------------------------------------
+#
+# Without it the peak — a max over seats AND evals — overshoots the true rate,
+# so the 20-pt line lands near the mean and a stable model strikes on noise.
+
+def test_z_gate_is_on_by_default():
+    assert TrainingConfigMP().greedy_stop_z == 2.0
+
+
+def test_noise_around_a_true_50_percent_no_longer_strikes():
+    # 0.80 then 0.55 at 20 games/seat: 25 pts down, but z = 1.7.
+    assert _watch([0.80, 0.55, 0.55], patience=2, n_per_seat=20, z_min=2.0) is None
+    # ...and it does strike without the gate, which is the old behaviour.
+    assert _watch([0.80, 0.55, 0.55], patience=2) == 3
+
+
+def test_the_v6_collapse_still_stops_the_run():
+    # local_9x9_v6 best-per-seat at 10 games/seat: 1.0 -> 0.2 is z = 3.7.
+    v6 = [1.0, 1.0, 1.0, 0.9, 0.2, 0.2]
+    assert _watch(v6, patience=2, n_per_seat=10, z_min=2.0) == 6
+
+
+def test_a_bigger_sample_makes_the_same_drop_significant():
+    # Identical rates; only the sample size differs.
+    rates = [0.80, 0.55, 0.55]
+    assert _watch(rates, patience=2, n_per_seat=20, z_min=2.0) is None
+    assert _watch(rates, patience=2, n_per_seat=200, z_min=2.0) == 3
+
+
+def test_gate_off_reproduces_the_drop_only_rule():
+    rates = [1.0, 0.7, 0.7]
+    assert _watch(rates, patience=2, z_min=0.0) == _watch(rates, patience=2)
+
+
+@pytest.mark.parametrize("peak,now,n,expected", [
+    (0.80, 0.55, 20, False),   # 25 pts, z = 1.69
+    (1.00, 0.20, 10, True),    # 80 pts, z = 3.65
+    (0.70, 0.45, 20, False),   # a real 25-pt slide is NOT detectable at n=20
+    (1.00, 0.80, 20, True),    # at the ceiling there is little variance to hide in
+])
+def test_significance_of_specific_drops(peak, now, n, expected):
+    assert drop_is_significant(peak, now, n, 2.0) is expected
+
+
+def test_zero_sample_size_cannot_veto_a_strike():
+    # No denominator recorded: fall back to the drop threshold rather than
+    # silently disabling the watch.
+    assert drop_is_significant(1.0, 0.2, 0, 2.0) is True

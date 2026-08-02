@@ -163,11 +163,13 @@ preflight
 #     Both 9x9 v3 runs died this way — a TypeError in the training-curves cell
 #     skipped every cell after it, including the checkpoint export.
 #   --ExecutePreprocessor.timeout=-1 : no per-cell timeout (training is long)
-#   --output : write the executed copy (with outputs) next to the logs
+#   --output-dir + --output : write the executed copy next to the logs.
+#     --output alone resolves against the NOTEBOOK's dir, not the cwd.
 NBCONVERT="$PYTHON -m jupyter nbconvert --to notebook --execute \
   --allow-errors \
   --ExecutePreprocessor.timeout=-1 \
-  --output '$OUT_NB' \
+  --output-dir '$LOG_DIR' \
+  --output '${TAG}.executed.ipynb' \
   '$NOTEBOOK'"
 
 # Retry loop: --allow-errors covers cell exceptions, but a *killed* kernel (OOM,

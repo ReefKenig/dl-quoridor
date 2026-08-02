@@ -9,9 +9,16 @@ so it is the first place progress shows up.
     PYTHONPATH=. .venv/bin/python scripts/run_local_9x9_masked.py          # N=2
     VARIANT=n4 PYTHONPATH=. .venv/bin/python scripts/run_local_9x9_masked.py
 
-Variant geometry (players, walls, game length, discount unit, explore moves)
-comes from configs/config_9x9.json, so this runs the same semantics the pod
-does; only the cost knobs are shrunk.
+On a GPU box, at the production network and search budget — so a zero cannot be
+blamed on the undersized laptop net:
+
+    VARIANT=n4 DEVICE=auto CHANNELS=128 BLOCKS=8 SIMS=600 GAMES=40 ITERS=14 \
+    EVAL_GREEDY=80 WORKERS=16 RUN_DIR=runs/probe_n4_masked \
+    PYTHONPATH=. python3 scripts/run_local_9x9_masked.py
+
+Variant geometry (players, walls, game length, discount unit, explore moves,
+mask length) comes from configs/config_9x9.json, so this runs the same
+semantics the pod does; only the cost knobs are shrunk.
 
 Everything runs under __main__: parallel self-play uses a spawn context, and
 spawn re-imports this file in every worker, so a module-level training_loop_mp
@@ -34,10 +41,14 @@ WALLS, MAX_MOVES = rc["max_walls_per_player"], rc["max_game_moves"]
 
 
 def make_model():
+    # Small net and CPU by default (laptop). On a GPU box pass the production
+    # shape — net size is a confound when the answer is "it scored zero".
     return QuoridorModelMP(
         board_size=BOARD, action_space_size=compute_action_space_size(BOARD),
-        in_channels=3 * N + 3, num_channels=64, num_res_blocks=4,
-        num_players=N, lr=1e-3, device="cpu",
+        in_channels=3 * N + 3,
+        num_channels=int(os.environ.get("CHANNELS", 64)),
+        num_res_blocks=int(os.environ.get("BLOCKS", 4)),
+        num_players=N, lr=1e-3, device=os.environ.get("DEVICE", "cpu"),
     )
 
 
@@ -60,7 +71,7 @@ def main():
         discount=rc["reward_decay"],
         discount_unit=rc["discount_unit"],
         # The whole point of the run: race-only self-play, then unmask.
-        wall_mask_iters=int(os.environ.get("MASK_ITERS", 8)),
+        wall_mask_iters=int(os.environ.get("MASK_ITERS", rc["wall_mask_iters"])),
         greedy_stop_patience=int(os.environ.get("STOP_PATIENCE", 2)),
         greedy_stop_drop=float(os.environ.get("STOP_DROP", 0.20)),
         greedy_stop_z=float(os.environ.get("STOP_Z", 2.0)),

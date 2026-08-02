@@ -29,6 +29,7 @@ from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
 from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
                                        evaluate_against_greedy_parallel_mp,
                                        evaluate_against_random_parallel_mp)
+from src.utils.config import read_frozen_config
 from src.utils.logger import make_progress_logger
 
 logger = logging.getLogger(__name__)
@@ -188,8 +189,10 @@ class ReplayBufferMP:
             log(f"WARNING: could not read {path} ({exc}) — starting with an "
                 f"empty buffer, as if it had not been persisted.")
             return 0
-        # maxlen trims the oldest if the run resumes at a smaller buffer size.
-        self.add(list(zip(S, P, V)))
+        # .copy() because iterating a stacked array yields views: one surviving
+        # view keeps the entire ~500 MB base alive. maxlen trims the oldest if
+        # the run resumes at a smaller buffer size.
+        self.add((s.copy(), p.copy(), v.copy()) for s, p, v in zip(S, P, V))
         return len(self.buffer)
 
 
@@ -213,9 +216,11 @@ def drop_is_significant(peak, now, n_per_seat, z_min):
     The peak is a max over seats AND over evals, so it overshoots the true rate;
     without this the threshold lands near the mean and a stable model strikes.
     """
+    if not n_per_seat:
+        return True
     pooled = (peak + now) / 2
-    se = math.sqrt(2 * pooled * (1 - pooled) / n_per_seat) if n_per_seat else 0.0
-    return (peak - now) / se >= z_min if se else True
+    se = math.sqrt(2 * pooled * (1 - pooled) / n_per_seat)
+    return se == 0 or (peak - now) >= z_min * se
 
 
 def racing_decay_strike(best_seat, peak, below, drop, n_per_seat=0, z_min=0.0):
@@ -230,7 +235,7 @@ def racing_decay_strike(best_seat, peak, below, drop, n_per_seat=0, z_min=0.0):
         return best_seat, 0
     if best_seat > peak - drop:
         return peak, 0
-    if z_min and not drop_is_significant(peak, best_seat, n_per_seat, z_min):
+    if not drop_is_significant(peak, best_seat, n_per_seat, z_min):
         return peak, 0
     return peak, below + 1
 
@@ -370,23 +375,13 @@ def _wall_mask(cfg, env, masked):
         cfg.walls_enabled = env.walls_enabled = True
 
 
-def read_frozen_config(checkpoint_dir):
-    """The run dir's recorded config, or None when absent or unreadable."""
-    path = os.path.join(checkpoint_dir, "config.json")
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
 def assert_resume_spec_matches(cfg, checkpoint_dir):
     """Refuse to resume a run onto input planes it was not trained on. Run dirs
     predating the versioning have no spec_version key — those are all v1."""
     frozen = read_frozen_config(checkpoint_dir)
     if frozen is None:
         return
-    frozen_spec = frozen.get("spec_version", 1)
+    frozen_spec = frozen["spec_version"]
     if frozen_spec != cfg.spec_version:
         raise ValueError(
             f"{checkpoint_dir} was trained under tensor spec v{frozen_spec} but "
@@ -403,23 +398,22 @@ def freeze_config(cfg, checkpoint_dir, log=print):
     the run's rather than the last relaunch's."""
     path = os.path.join(checkpoint_dir, "config.json")
     resolved = {k: v for k, v in vars(cfg).items() if not k.startswith("_")}
-    if os.path.exists(path):
-        frozen = read_frozen_config(checkpoint_dir)
-        if frozen is not None:
-            changed = {k: (frozen.get(k), v) for k, v in resolved.items()
-                       if k in frozen and frozen[k] != v}
-            added = sorted(set(resolved) - set(frozen))
-            if changed or added:
-                log(f"WARNING: config differs from {path}, which records what "
-                    f"the earlier iterations ran. Keeping the frozen copy; this "
-                    f"launch uses:")
-                for k, (was, now) in sorted(changed.items()):
-                    log(f"  {k}: frozen={was!r} -> now={now!r}")
-                if added:
-                    log(f"  new keys: {', '.join(added)}")
-            else:
-                log(f"Config matches the frozen copy -> {path}")
-            return path
+    frozen = read_frozen_config(checkpoint_dir)
+    if frozen is not None:
+        changed = {k: (frozen[k], v) for k, v in resolved.items()
+                   if k in frozen and frozen[k] != v}
+        added = sorted(set(resolved) - set(frozen))
+        if changed or added:
+            log(f"WARNING: config differs from {path}, which records what the "
+                f"earlier iterations ran. Keeping the frozen copy; this launch "
+                f"uses:")
+            for k, (was, now) in sorted(changed.items()):
+                log(f"  {k}: frozen={was!r} -> now={now!r}")
+            if added:
+                log(f"  new keys: {', '.join(added)}")
+        else:
+            log(f"Config matches the frozen copy -> {path}")
+        return path
     with open(path, "w") as f:
         json.dump(resolved, f, indent=2, default=str, sort_keys=True)
     log(f"Config frozen -> {path}")
@@ -690,6 +684,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # Racing evidence: under the wall mask this should fall
                    # toward a pure race. Was only ever in games.log.
                    avg_len=avg_len,
+                   # First iteration after a relaunch, so a reader of the loss
+                   # curve can tell a resume dip from learning dynamics.
+                   resumed=(it == start_iter and start_iter > 0),
                    # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
                    rand_decided_games=None, greedy_decided_games=None,

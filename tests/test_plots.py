@@ -11,9 +11,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pytest
 
-from src.utils.history import summary_lines
-from src.utils.plots import (plot_training_curves, plot_variant_comparison,
-                             restart_iters)
+from src.utils.history import restart_iters, series, summary_lines
+from src.utils.plots import plot_training_curves, plot_variant_comparison
 
 
 def _history(n=20, eval_every=5, **extra):
@@ -62,13 +61,22 @@ def test_renders_a_run_with_no_greedy_eval(tmp_path):
 
 
 def test_renders_the_legacy_5x5_shape(tmp_path):
-    # runs/n4_5x5_v3 has no eval bookkeeping at all — eval ran every iteration.
+    # runs/n4_5x5_v3 has no eval bookkeeping and no draw_rate column at all.
     rows = _history(eval_every=1)
     for row in rows:
-        del row["eval_ran"], row["eval_best_secs"]
+        del row["eval_ran"], row["eval_best_secs"], row["draw_rate"]
     out = tmp_path / "curves.png"
     plot_training_curves({"history": rows}, str(out), "T", fair=0.25)
     assert out.stat().st_size > 0
+
+
+def test_a_missing_column_is_not_plotted_as_zero():
+    # 5 of the 11 runs in runs/ have no draw_rate. `.get(key, 0)` would draw
+    # them a confident flat 0% — the failure src/utils/history.py exists for.
+    rows = _history()
+    for row in rows:
+        del row["draw_rate"]
+    assert series(rows, "draw_rate") == ([], [])
 
 
 def test_a_single_iteration_does_not_break_the_figure(tmp_path):
@@ -92,8 +100,15 @@ def test_variant_comparison_renders(tmp_path):
 
 # --- restart detection --------------------------------------------------------
 
-def test_restarts_are_the_buffer_collapses():
-    rows = _history(n=10)
+def test_a_recorded_resume_is_preferred_over_the_heuristic():
+    rows = _history(n=10, resumed=False)
+    rows[5]["resumed"] = True
+    rows[7]["buffer"] = 200          # a buffer dip the marker says is not a resume
+    assert restart_iters(rows) == [6]
+
+
+def test_older_runs_fall_back_to_the_buffer_collapse():
+    rows = _history(n=10)            # no `resumed` key anywhere
     rows[5]["buffer"] = 200          # killed and resumed: buffer rebuilt empty
     assert restart_iters(rows) == [6]
 

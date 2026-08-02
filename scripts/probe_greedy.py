@@ -14,12 +14,12 @@ import argparse
 import json
 import os
 
-from src.env.pathing import SPEC_V1_DIST_SQ
 from src.env.quoridor_env_mp import QuoridorEnvMP, compute_action_space_size
 from src.mcts.evaluator_mp import (NUM_MOVE_ACTIONS, eval_rng, greedy_agent,
                                    mcts_agent_mp, play_eval_game)
 from src.mcts.training_mp import TrainingConfigMP, _mcts
 from src.model.network_mp import QuoridorModelMP
+from src.utils.config import read_frozen_config
 from src.utils.checkpoint import resolve_ship_checkpoint
 
 
@@ -105,8 +105,10 @@ def main():
                     help="also play one game move by move and diagnose the loss")
     args = ap.parse_args()
 
-    cfg_path = os.path.join(args.run_dir, "config.json")
-    rc = json.load(open(cfg_path))
+    # Fills in spec_version for dirs frozen before it existed (all v1).
+    rc = read_frozen_config(args.run_dir)
+    if rc is None:
+        ap.error(f"no readable config.json in {args.run_dir}")
     N, board = rc["num_players"], rc["board_size"]
     sims = args.sims or rc.get("eval_simulations") or rc["mcts_simulations"]
 
@@ -119,11 +121,10 @@ def main():
     print(f"{args.run_dir}: {label}\n  N={N} board={board} sims={sims} "
           f"net={channels}x{blocks} ({args.games} games per seat)\n")
 
-    # Run dirs frozen before spec_version existed are all v1 by definition.
     env = QuoridorEnvMP(board_size=board, num_players=N,
                         max_turns=rc["max_game_moves"],
                         max_walls_per_player=rc["max_walls_per_player"],
-                        spec_version=rc.get("spec_version", SPEC_V1_DIST_SQ))
+                        spec_version=rc["spec_version"])
     model = QuoridorModelMP(
         board_size=board, action_space_size=compute_action_space_size(board),
         in_channels=3 * N + 3, num_channels=channels,

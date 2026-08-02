@@ -13,14 +13,25 @@ from src.mcts.training_mp import (BUFFER_FILE, ReplayBufferMP,
                                   freeze_config)
 
 
-def _samples(n, seed=0, players=2):
+def _samples(n, seed=0):
     rng = np.random.default_rng(seed)
     return [(rng.random((9, 9, 9), dtype=np.float32),
              rng.random(140, dtype=np.float32),
-             rng.random(players, dtype=np.float32)) for _ in range(n)]
+             rng.random(2, dtype=np.float32)) for _ in range(n)]
 
 
 # --- replay buffer persistence ------------------------------------------------
+
+def test_restored_samples_are_copies_not_views(tmp_path):
+    # Iterating a stacked array yields views; one surviving view would keep the
+    # whole ~500 MB base alive for the hours it takes the buffer to turn over.
+    buf = ReplayBufferMP(max_size=100)
+    buf.add(_samples(20))
+    buf.save(str(tmp_path))
+    restored = ReplayBufferMP(max_size=100)
+    restored.load(str(tmp_path))
+    assert all(part.base is None for sample in restored.buffer for part in sample)
+
 
 def test_buffer_round_trips_through_disk(tmp_path):
     buf = ReplayBufferMP(max_size=1000)

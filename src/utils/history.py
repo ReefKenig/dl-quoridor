@@ -53,3 +53,23 @@ def eval_series(history, key, scale=100.0):
     points = [(row["iter"], value * scale) for row in history
               if (value := eval_value(row, key)) is not None]
     return [p[0] for p in points], [p[1] for p in points]
+
+
+def summary_lines(history, fair):
+    """Short end-of-run report: the last of each metric, plus accept count."""
+    if not history:
+        return ["No iterations recorded."]
+    last = history[-1]
+    lines = [f"Iterations completed: {last['iter']}",
+             f"Policy loss: {last['loss_p']:.4f}   Value loss: {last['loss_v']:.4f}"]
+    for key, label in (("win_vs_random", "vs random"),
+                       ("win_vs_best", "vs best (gate)"),
+                       ("win_vs_greedy", "vs greedy (fixed)")):
+        iters, values = eval_series(history, key)
+        if values:
+            lines.append(f"{label:<18} {values[-1]:5.1f}%  (iter {iters[-1]})")
+    accepts = sum(1 for row in history if row.get("accepted"))
+    evals = sum(1 for row in history if eval_ran(row))
+    lines.append(f"Accepted {accepts} of {evals} evals "
+                 f"(fair share {100 * fair:.0f}%)")
+    return lines

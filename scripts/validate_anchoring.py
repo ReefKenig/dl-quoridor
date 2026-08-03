@@ -23,16 +23,23 @@ from src.mcts.training_mp import TrainingConfigMP, training_loop_mp
 from src.utils.schedule import game_is_masked, opponent_for_game
 
 N = int(os.environ.get("N", 2))
-BOARD = 5
+BOARD = int(os.environ.get("BOARD", 5))
 GAMES = int(os.environ.get("GAMES", 8))
 ITERS = int(os.environ.get("ITERS", 2))
+SIMS = int(os.environ.get("SIMS", 16))
 GREEDY_SHARE = float(os.environ.get("GREEDY_SHARE", 0.25))
+CHANNELS = int(os.environ.get("CHANNELS", 16))
+BLOCKS = int(os.environ.get("BLOCKS", 1))
+
+# Geometry from configs/config_9x9.json so the validation mirrors production.
+WALLS = 3 if BOARD == 5 else (10 if N == 2 else 5)
+MAX_MOVES = 60 if BOARD == 5 else (160 if N == 2 else 320)
 
 
 def make_model():
     return QuoridorModelMP(
         board_size=BOARD, action_space_size=compute_action_space_size(BOARD),
-        in_channels=3 * N + 3, num_channels=16, num_res_blocks=1,
+        in_channels=3 * N + 3, num_channels=CHANNELS, num_res_blocks=BLOCKS,
         num_players=N, device="cpu")
 
 
@@ -44,12 +51,12 @@ def check(label, ok, detail=""):
 def main():
     run_dir = tempfile.mkdtemp(prefix="validate_anchor_")
     env = QuoridorEnvMP(board_size=BOARD, num_players=N,
-                        max_walls_per_player=3, max_turns=60)
+                        max_walls_per_player=WALLS, max_turns=MAX_MOVES)
     cfg = TrainingConfigMP(
-        num_players=N, board_size=BOARD, max_walls_per_player=3,
-        max_game_moves=60, max_turns=60, explore_moves=5,
+        num_players=N, board_size=BOARD, max_walls_per_player=WALLS,
+        max_game_moves=MAX_MOVES, max_turns=MAX_MOVES, explore_moves=5,
         num_iterations=ITERS, games_per_iteration=GAMES,
-        mcts_simulations=16, eval_simulations=16,
+        mcts_simulations=SIMS, eval_simulations=SIMS,
         train_steps_per_iter=4, warmup_min_samples=1, replay_buffer_size=5000,
         eval_every=1, eval_games=4, eval_random_games=4,
         eval_greedy_games=2 * N, eval_minimax_games=2 * N, minimax_depth=2,
@@ -60,7 +67,8 @@ def main():
         parallel_self_play=True, parallel_eval=True, self_play_mode="parallel",
         num_workers=2, inference_batch_size=16,
     )
-    print(f"validating: N={N} {ITERS} iters x {GAMES} games, "
+    print(f"validating: {BOARD}x{BOARD} N={N}, {ITERS} iters x {GAMES} games, "
+          f"{SIMS} sims, walls={WALLS}, max_moves={MAX_MOVES}, "
           f"greedy_share={GREEDY_SHARE}, mask_fraction=0.5 -> {run_dir}\n")
     training_loop_mp(env, make_model(), make_model, cfg, checkpoint_dir=run_dir)
 

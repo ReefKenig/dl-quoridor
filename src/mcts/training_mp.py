@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from src.env.pathing import CURRENT_SPEC
+from src.env.quoridor_env_mp import NUM_MOVE_ACTIONS
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
 from src.utils.schedule import lr_at, wall_budget_at, game_is_masked
@@ -253,6 +254,48 @@ def drop_is_significant(peak, now, n_per_seat, z_min):
     pooled = (peak + now) / 2
     se = math.sqrt(2 * pooled * (1 - pooled) / n_per_seat)
     return se == 0 or (peak - now) >= z_min * se
+
+
+def sample_diagnostics(samples, num_players, model=None, max_states=512):
+    """What the iteration actually trained on, and how well the value head knows it.
+
+    Channels N and N+1 are the wall planes (see build_tensor_mp), so a position
+    is "walled" iff either is non-zero. Splitting value error that way measures
+    the coverage gap directly: a masked phase leaves the head with no walled
+    states, and exploration then drives self-play straight into them.
+    """
+    if not samples:
+        return {}
+    wall_ch = slice(num_players, num_players + 2)
+    walled, wall_counts, policy_wall = [], [], []
+    for tensor, policy, _v in samples:
+        planes = tensor[:, :, wall_ch]
+        n_walls = int(np.count_nonzero(planes))
+        wall_counts.append(n_walls)
+        walled.append(n_walls > 0)
+        policy_wall.append(float(policy[NUM_MOVE_ACTIONS:].sum()))
+    out = {
+        # The 0.00024 -> 0.245 quantity from the curriculum analysis, but on the
+        # POLICY TARGET rather than the prior: this is what training consumes.
+        "policy_wall_mass": float(np.mean(policy_wall)),
+        "walled_state_share": float(np.mean(walled)),
+        "walls_on_board_mean": float(np.mean(wall_counts)),
+    }
+    if model is None:
+        return out
+    idx = np.random.choice(len(samples), min(max_states, len(samples)),
+                           replace=False)
+    err_walled, err_free = [], []
+    for i in idx:
+        tensor, _p, target = samples[int(i)]
+        _policy, value = model.predict(tensor)
+        err = float(np.mean(np.abs(np.asarray(value) - np.asarray(target))))
+        (err_walled if walled[int(i)] else err_free).append(err)
+    if err_walled:
+        out["value_mae_walled"] = float(np.mean(err_walled))
+    if err_free:
+        out["value_mae_wallfree"] = float(np.mean(err_free))
+    return out
 
 
 def stalled_below_floor(best_seat, floor, below):
@@ -709,6 +752,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         train_secs = time.time() - t_train
         _log(f"[iter {it+1}/{cfg.num_iterations}] training done: "
              f"loss_p={lp:.3f} loss_v={lv:.3f} ({train_secs:.0f}s)")
+        # After training, so the value error describes the head the next
+        # iteration will actually self-play with.
+        diagnostics = sample_diagnostics(sp_samples, cfg.num_players, model)
+        if diagnostics:
+            _log(f"[iter {it+1}/{cfg.num_iterations}] data: "
+                 f"policy_wall_mass={diagnostics['policy_wall_mass']:.3f} "
+                 f"walled_states={100*diagnostics['walled_state_share']:.0f}% "
+                 f"walls_on_board={diagnostics['walls_on_board_mean']:.1f} "
+                 f"value_mae walled={diagnostics.get('value_mae_walled', float('nan')):.3f} "
+                 f"free={diagnostics.get('value_mae_wallfree', float('nan')):.3f}")
 
         # --- 2b. Checkpoint immediately after training, BEFORE eval. ---
         # Eval is a long (~hours), sequential, best-effort phase. If the process
@@ -753,6 +806,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # the data the iteration actually trained on.
                    opponent_mix=sp_stats.get("opponent_mix") or None,
                    samples_by_source=sp_stats.get("samples_by_source") or None,
+                   **diagnostics,
                    # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
                    rand_decided_games=None, greedy_decided_games=None,

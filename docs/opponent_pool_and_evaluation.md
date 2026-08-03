@@ -73,19 +73,27 @@ Training samples are collected **only for the model's own seats**; a scripted
 opponent's moves are not policy targets.
 
 **The share is over games, but the gradient is over samples, and the two differ
-a lot.** An anchored game contributes only the model's own plies — 1/2 of them
-at N=2, **1/4 at N=4** — and a scripted racer also *ends the game sooner*, since
-it heads straight for its goal instead of wandering. Measured locally at 5x5
-with an untrained net: 6.0 samples per anchored game against 50.3 per self-play
-game, an 8x gap rather than the 2x the seat count alone predicts. The gap
-narrows as the model learns to race (both kinds of game then run to similar
-length), but it never closes.
+by an order of magnitude.** An anchored game contributes only the model's own
+plies — 1/2 of them at N=2, **1/4 at N=4** — and a scripted racer also *ends the
+game sooner*, since it heads straight for its goal instead of wandering.
+Measured end to end with an untrained net:
 
-So a 15% *game* share can be a ~2-4% *sample* share, which is likely too weak to
-move the seat the anchoring exists to fix. `samples_by_source` is the number to
-tune against, not `opponent_mix`; check it on the first evaluated iteration and
-raise `opponent_greedy_share` until the anchored sample share is in the intended
-range.
+| board | samples/anchored game | samples/self-play game | ratio | 25% game share becomes |
+|---|---|---|---|---|
+| 5x5 N=2 | 6.0 | 50.3 | 8x | 3.8% of samples |
+| **9x9 N=2** | **14.0** | **127.0** | **9x** | **3.5% of samples** |
+
+Solving for the share needed at a 9x ratio: a **20% sample** share wants roughly
+a **70% game** share. That is an early-training figure — as the model learns to
+race, self-play games shorten toward the anchored length and the ratio falls
+toward the seat count (2x at N=2, 4x at N=4) — but early training is exactly
+when the anchoring has to bite.
+
+So the doc's original 15% is far too low. Start nearer **0.35 at N=2** and
+higher at N=4, and treat `samples_by_source` as the feedback signal: check it on
+the first evaluated iteration and raise `opponent_greedy_share` until the
+anchored sample share is where you want it. `opponent_mix` counts games and will
+always look reassuringly larger.
 
 ### 3.2 Why this is expected to help each variant
 

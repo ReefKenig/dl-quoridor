@@ -19,7 +19,7 @@ import numpy as np
 from src.env.pathing import CURRENT_SPEC
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
-from src.utils.schedule import lr_at
+from src.utils.schedule import lr_at, wall_budget_at, game_is_masked
 from src.mcts.batched_inference_mp import DEFAULT_BATCH_WAIT_MS
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
@@ -124,6 +124,12 @@ class TrainingConfigMP:
     # both player counts; see academic_experiences.md 8.6.
     wall_mask_iters: int = 0
     wall_ramp_hold: int = 0
+    # Fraction of EVERY iteration's games played wall-free, mixed in alongside
+    # full-wall games. A masked phase that ends leaves the value head with no
+    # coverage of walled states, and root noise drives self-play straight into
+    # them; mixing keeps both distributions in the buffer for the whole run.
+    # 0 = off (use the phase/ramp above instead).
+    wall_mask_fraction: float = 0.0
     # Set per iteration onto cfg.wall_budget, which the workers read.
     wall_budget: int = None
     # Input-plane spec the run trains under; frozen into the run dir's config.json
@@ -144,6 +150,9 @@ class TrainingConfigMP:
     # masked curriculum is over. Decay cannot catch a run that never climbed.
     # 0 = off; shares greedy_stop_patience.
     greedy_min_seat: float = 0.0
+    # Iterations before that floor arms. Defaults to the masked phase, but a
+    # mixed curriculum has no phase to end, so it needs its own grace window.
+    greedy_min_seat_after: int = 0
 
 
 BUFFER_FILE = "replay_buffer.npz"
@@ -379,20 +388,6 @@ def resource_banner(cfg):
     return lines
 
 
-def wall_budget_at(it, mask_iters, ramp_hold, max_walls):
-    """Walls each player starts self-play with at iteration `it` (0-based).
-
-    0 while masked, then one more wall every `ramp_hold` iterations. A step
-    lasted a single iteration before, which was too fast: probe_n2_ramp held
-    the race floor at 1 wall and collapsed at 2. 0 = full allowance at once.
-    """
-    if it < mask_iters:
-        return 0
-    if ramp_hold <= 0:
-        return max_walls
-    return min(max_walls, 1 + (it - mask_iters) // ramp_hold)
-
-
 @contextmanager
 def _wall_budget(cfg, env, budget):
     """Apply the curriculum's wall budget to self-play only.
@@ -564,9 +559,15 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         budget = wall_budget_at(it, cfg.wall_mask_iters, cfg.wall_ramp_hold,
                                 cfg.max_walls_per_player)
         with _wall_budget(cfg, env, budget):
+            frac = getattr(cfg, "wall_mask_fraction", 0.0) or 0.0
             curriculum = ("" if budget == cfg.max_walls_per_player else
                           f", WALLS MASKED" if budget == 0 else
                           f", {budget}/{cfg.max_walls_per_player} WALLS")
+            if frac:
+                n_masked = sum(game_is_masked(g, frac)
+                               for g in range(cfg.games_per_iteration))
+                curriculum = (f", MIXED {n_masked}/{cfg.games_per_iteration} "
+                              f"race-only")
             _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
                  f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims"
                  f"{curriculum})...")
@@ -728,6 +729,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # Walls self-play ran with, so the curriculum is legible in
                    # the record rather than only in games.log.
                    wall_budget=budget,
+                   wall_mask_fraction=frac or None,
                    # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
                    rand_decided_games=None, greedy_decided_games=None,
@@ -900,7 +902,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     greedy_peak, greedy_below_peak = racing_decay_strike(
                         best_seat, greedy_peak, greedy_below_peak,
                         cfg.greedy_stop_drop, best_seat_n, cfg.greedy_stop_z)
-                    if cfg.greedy_min_seat and it >= cfg.wall_mask_iters:
+                    floor_after = max(cfg.wall_mask_iters,
+                                      getattr(cfg, "greedy_min_seat_after", 0))
+                    if cfg.greedy_min_seat and it >= floor_after:
                         # Armed only once the curriculum has had its chance —
                         # every run is below the floor while still untrained.
                         greedy_below_floor = stalled_below_floor(
@@ -910,9 +914,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                                 f"never acquired racing: best per-seat greedy rate "
                                 f"{100*best_seat:.0f}% stayed under the "
                                 f"{100*cfg.greedy_min_seat:.0f}% floor for "
-                                f"{greedy_below_floor} consecutive evals after the "
-                                f"masked phase. The curriculum is not delivering at "
-                                f"this setting; more iterations will not fix it.")
+                                f"{greedy_below_floor} consecutive evals after "
+                                f"iteration {floor_after}. The curriculum is not "
+                                f"delivering at this setting; more iterations will "
+                                f"not fix it.")
                     if greedy_below_peak > prev_below:
                         _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: racing decay — "
                              f"best seat {100*best_seat:.0f}% is {100*(greedy_peak-best_seat):.0f} "

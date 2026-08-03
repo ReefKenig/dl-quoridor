@@ -9,6 +9,7 @@ import pytest
 
 from src.env.quoridor_env_mp import QuoridorEnvMP, compute_action_space_size
 from src.mcts.training_mp import TrainingConfigMP, _wall_budget, wall_budget_at
+from src.utils.schedule import game_is_masked
 
 
 def _num_wall_actions(board_size):
@@ -98,8 +99,8 @@ def test_each_step_is_held_for_ramp_hold_iterations():
 
 
 def test_a_long_hold_may_never_reach_the_full_allowance():
-    # Deliberate: probe_n2_ramp collapsed at 2 walls, so a 150-iteration run
-    # holding 20 per step tops out at 7 of 10. Eval always plays the full game.
+    # A 150-iteration run holding 20 per step tops out at 7 of 10. Eval always
+    # plays the full game regardless.
     assert wall_budget_at(149, 10, 20, 10) == 7
 
 
@@ -117,6 +118,67 @@ def test_no_hold_reproduces_the_old_hard_switch():
 
 def test_no_curriculum_at_all_is_always_full():
     assert [wall_budget_at(i, 0, 0, 5) for i in range(3)] == [5, 5, 5]
+
+
+# --- the mixed curriculum -----------------------------------------------------
+# Ramping the budget cannot reintroduce walls gradually (see
+# test_a_partial_budget_still_offers_every_wall_placement: budget 1 and budget 10
+# expose the same 131 actions). Mixing race-only games into every iteration is
+# what keeps racing AND walled states in the buffer for the whole run.
+
+def test_no_fraction_means_no_masked_games():
+    assert [game_is_masked(g, 0.0) for g in range(5)] == [False] * 5
+
+
+def test_a_full_fraction_masks_every_game():
+    assert [game_is_masked(g, 1.0) for g in range(5)] == [True] * 5
+
+
+@pytest.mark.parametrize("fraction,total", [(0.5, 40), (0.25, 40), (0.75, 40),
+                                            (0.3, 160), (0.5, 7)])
+def test_the_mix_hits_the_requested_share(fraction, total):
+    # floor, so a half-game remainder is spent on walls rather than racing.
+    n = sum(game_is_masked(g, fraction) for g in range(total))
+    assert n == int(total * fraction + 1e-9)
+
+
+def test_the_mix_is_spread_not_front_loaded():
+    # Workers claim games off a shared counter, so an iteration that ends early
+    # (or a worker that dies) must still have seen both kinds of game.
+    fraction, total = 0.5, 40
+    for prefix in (4, 10, 20):
+        n = sum(game_is_masked(g, fraction) for g in range(prefix))
+        assert abs(n - prefix * fraction) <= 1
+
+
+def test_masked_and_walled_games_differ_in_the_action_space():
+    # The point of the mix: both distributions reach the buffer every iteration.
+    masked = QuoridorEnvMP(board_size=9, num_players=2, max_walls_per_player=10,
+                           wall_budget=0)
+    walled = QuoridorEnvMP(board_size=9, num_players=2, max_walls_per_player=10,
+                           wall_budget=10)
+    assert len(masked.get_valid_actions(masked.reset())) == 3
+    assert len(walled.get_valid_actions(walled.reset())) == 131
+
+
+def test_worker_config_carries_the_mix_fraction():
+    from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
+    import inspect
+
+    src = inspect.getsource(generate_parallel_self_play_mp)
+    assert '"wall_mask_fraction"' in src
+    assert TrainingConfigMP().wall_mask_fraction == 0.0
+
+
+def test_the_worker_sets_the_budget_per_game():
+    """The mix is per game, so the worker must re-set the budget inside its game
+    loop rather than relying on the env it built once at startup."""
+    from src.mcts import parallel_self_play_mp
+    import inspect
+
+    src = inspect.getsource(parallel_self_play_mp)
+    assert "game_is_masked(game_index, mask_fraction)" in src
+    assert "env.wall_budget = 0" in src
 
 
 # --- self-play only -----------------------------------------------------------

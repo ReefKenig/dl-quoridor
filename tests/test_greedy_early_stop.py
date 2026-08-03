@@ -8,7 +8,7 @@ ceiling that a competent racer sits at.
 import pytest
 
 from src.mcts.training_mp import (TrainingConfigMP, drop_is_significant,
-                                  racing_decay_strike)
+                                  racing_decay_strike, stalled_below_floor)
 
 
 def _watch(rates, patience=2, drop=0.20, n_per_seat=0, z_min=0.0):
@@ -112,3 +112,39 @@ def test_zero_sample_size_cannot_veto_a_strike():
     # No denominator recorded: fall back to the drop threshold rather than
     # silently disabling the watch.
     assert drop_is_significant(1.0, 0.2, 0, 2.0) is True
+
+
+# --- the never-acquired watch -------------------------------------------------
+#
+# Decay can only fire on a fall from a peak. probe_n4_ramp peaked at 0.10 against
+# a 0.20 drop, so `best <= peak - drop` was `0.0 <= -0.10` — never true — and the
+# run continued 10 hours past the point its answer was known.
+
+def test_decay_cannot_fire_when_the_peak_is_below_the_drop():
+    # The N=4 trajectory: 0.05, 0.10, then zero forever.
+    assert _watch([0.05, 0.10, 0.0, 0.0, 0.0, 0.0], patience=2, drop=0.20) is None
+
+
+def test_the_floor_watch_catches_what_decay_cannot():
+    below = 0
+    for rate in (0.05, 0.10, 0.0, 0.0):
+        below = stalled_below_floor(rate, 0.25, below)
+    assert below == 4
+
+
+def test_reaching_the_floor_clears_the_counter():
+    below = stalled_below_floor(0.10, 0.25, 3)
+    assert below == 4
+    assert stalled_below_floor(0.30, 0.25, below) == 0
+
+
+def test_a_healthy_run_never_strikes_the_floor():
+    # probe_n2_ramp's masked phase sat at 0.90.
+    below = 0
+    for rate in (0.90, 0.90, 0.90):
+        below = stalled_below_floor(rate, 0.25, below)
+    assert below == 0
+
+
+def test_the_floor_is_off_by_default():
+    assert TrainingConfigMP().greedy_min_seat == 0.0

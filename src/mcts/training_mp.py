@@ -119,11 +119,11 @@ class TrainingConfigMP:
     # Wall curriculum for SELF-PLAY only; eval always plays the full game so the
     # gate and the greedy baseline stay comparable across the whole run.
     # wall_mask_iters opening iterations at 0 walls (a pure race), then
-    # wall_ramp_iters spent climbing to max_walls_per_player. 0/0 = off.
+    # one more wall every wall_ramp_hold iterations. 0/0 = off.
     # Handing back all the walls at once relapsed the policy in one iteration at
     # both player counts; see academic_experiences.md 8.6.
     wall_mask_iters: int = 0
-    wall_ramp_iters: int = 0
+    wall_ramp_hold: int = 0
     # Set per iteration onto cfg.wall_budget, which the workers read.
     wall_budget: int = None
     # Input-plane spec the run trains under; frozen into the run dir's config.json
@@ -140,6 +140,10 @@ class TrainingConfigMP:
     greedy_stop_drop: float = 0.20
     # Sigma the drop must also clear, so noise on a 20-game seat cannot strike.
     greedy_stop_z: float = 2.0
+    # Companion watch: stop if the best per-seat rate never REACHES this once the
+    # masked curriculum is over. Decay cannot catch a run that never climbed.
+    # 0 = off; shares greedy_stop_patience.
+    greedy_min_seat: float = 0.0
 
 
 BUFFER_FILE = "replay_buffer.npz"
@@ -225,6 +229,17 @@ def drop_is_significant(peak, now, n_per_seat, z_min):
     pooled = (peak + now) / 2
     se = math.sqrt(2 * pooled * (1 - pooled) / n_per_seat)
     return se == 0 or (peak - now) >= z_min * se
+
+
+def stalled_below_floor(best_seat, floor, below):
+    """Advance the never-acquired watch. Returns consecutive evals under floor.
+
+    racing_decay_strike can only fire on a fall from a peak, so a run that never
+    climbs is invisible to it: probe_n4_ramp peaked at 0.10 against a 0.20 drop,
+    making a strike arithmetically impossible, and it ran 10 hours past the point
+    the answer was known.
+    """
+    return below + 1 if best_seat < floor else 0
 
 
 def racing_decay_strike(best_seat, peak, below, drop, n_per_seat=0, z_min=0.0):
@@ -364,17 +379,18 @@ def resource_banner(cfg):
     return lines
 
 
-def wall_budget_at(it, mask_iters, ramp_iters, max_walls):
+def wall_budget_at(it, mask_iters, ramp_hold, max_walls):
     """Walls each player starts self-play with at iteration `it` (0-based).
 
-    0 while masked, then one wall at a time up to max_walls, then max_walls.
+    0 while masked, then one more wall every `ramp_hold` iterations. A step
+    lasted a single iteration before, which was too fast: probe_n2_ramp held
+    the race floor at 1 wall and collapsed at 2. 0 = full allowance at once.
     """
     if it < mask_iters:
         return 0
-    step = it - mask_iters
-    if ramp_iters <= 0 or step >= ramp_iters:
+    if ramp_hold <= 0:
         return max_walls
-    return max(1, math.ceil(max_walls * (step + 1) / ramp_iters))
+    return min(max_walls, 1 + (it - mask_iters) // ramp_hold)
 
 
 @contextmanager
@@ -539,12 +555,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     # Racing-decay watch (see cfg.greedy_stop_patience).
     greedy_peak = None
     greedy_below_peak = 0
+    greedy_below_floor = 0
     stop_reason = None
 
     for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
         # --- 1. self-play ---
-        budget = wall_budget_at(it, cfg.wall_mask_iters, cfg.wall_ramp_iters,
+        budget = wall_budget_at(it, cfg.wall_mask_iters, cfg.wall_ramp_hold,
                                 cfg.max_walls_per_player)
         with _wall_budget(cfg, env, budget):
             curriculum = ("" if budget == cfg.max_walls_per_player else
@@ -883,6 +900,19 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     greedy_peak, greedy_below_peak = racing_decay_strike(
                         best_seat, greedy_peak, greedy_below_peak,
                         cfg.greedy_stop_drop, best_seat_n, cfg.greedy_stop_z)
+                    if cfg.greedy_min_seat and it >= cfg.wall_mask_iters:
+                        # Armed only once the curriculum has had its chance —
+                        # every run is below the floor while still untrained.
+                        greedy_below_floor = stalled_below_floor(
+                            best_seat, cfg.greedy_min_seat, greedy_below_floor)
+                        if greedy_below_floor >= cfg.greedy_stop_patience:
+                            stop_reason = (
+                                f"never acquired racing: best per-seat greedy rate "
+                                f"{100*best_seat:.0f}% stayed under the "
+                                f"{100*cfg.greedy_min_seat:.0f}% floor for "
+                                f"{greedy_below_floor} consecutive evals after the "
+                                f"masked phase. The curriculum is not delivering at "
+                                f"this setting; more iterations will not fix it.")
                     if greedy_below_peak > prev_below:
                         _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: racing decay — "
                              f"best seat {100*best_seat:.0f}% is {100*(greedy_peak-best_seat):.0f} "

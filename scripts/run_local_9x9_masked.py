@@ -73,10 +73,11 @@ def main():
         discount_unit=rc["discount_unit"],
         # The whole point of the run: race-only self-play, then ramp walls back.
         wall_mask_iters=int(os.environ.get("MASK_ITERS", rc["wall_mask_iters"])),
-        wall_ramp_iters=int(os.environ.get("RAMP_ITERS", rc["wall_ramp_iters"])),
+        wall_ramp_hold=int(os.environ.get("RAMP_HOLD", rc["wall_ramp_hold"])),
         greedy_stop_patience=int(os.environ.get("STOP_PATIENCE", 2)),
         greedy_stop_drop=float(os.environ.get("STOP_DROP", 0.20)),
         greedy_stop_z=float(os.environ.get("STOP_Z", 2.0)),
+        greedy_min_seat=float(os.environ.get("MIN_SEAT", rc["greedy_min_seat"])),
         eval_every=int(os.environ.get("EVAL_EVERY", 4)),
         eval_games=int(os.environ.get("EVAL_GAMES", 40)),
         eval_random_games=int(os.environ.get("EVAL_RANDOM", 20)),
@@ -95,7 +96,7 @@ def main():
     print(f"local 9x9 smoke [{VARIANT}]: N={N} walls={WALLS} max_moves={MAX_MOVES} "
           f"discount={cfg.discount}/{cfg.discount_unit} | {cfg.num_iterations} iters, "
           f"{cfg.games_per_iteration} games/iter, mask {cfg.wall_mask_iters} "
-          f"+ ramp {cfg.wall_ramp_iters} -> {run_dir}", flush=True)
+          f"+ {cfg.wall_ramp_hold}/wall -> {run_dir}", flush=True)
     training_loop_mp(env, make_model(), make_model, cfg, checkpoint_dir=run_dir)
 
 

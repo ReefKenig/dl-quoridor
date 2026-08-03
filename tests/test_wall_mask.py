@@ -87,25 +87,31 @@ def test_a_zero_budget_game_plays_to_a_winner_without_walls():
 # --- the schedule -------------------------------------------------------------
 
 def test_the_mask_comes_first_then_one_wall_at_a_time():
-    sched = [wall_budget_at(i, 3, 5, 5) for i in range(11)]
-    assert sched == [0, 0, 0, 1, 2, 3, 4, 5, 5, 5, 5]
+    assert [wall_budget_at(i, 3, 1, 5) for i in range(11)] == \
+        [0, 0, 0, 1, 2, 3, 4, 5, 5, 5, 5]
 
 
-def test_a_ramp_longer_than_the_wall_count_repeats_steps():
-    # N=4 has 5 walls over a 10-iteration ramp, so each step lasts two iters.
-    assert [wall_budget_at(i, 0, 10, 5) for i in range(10)] == \
-        [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]
+def test_each_step_is_held_for_ramp_hold_iterations():
+    # hold=3: three iterations at each wall count before the next.
+    assert [wall_budget_at(i, 0, 3, 3) for i in range(10)] == \
+        [1, 1, 1, 2, 2, 2, 3, 3, 3, 3]
+
+
+def test_a_long_hold_may_never_reach_the_full_allowance():
+    # Deliberate: probe_n2_ramp collapsed at 2 walls, so a 150-iteration run
+    # holding 20 per step tops out at 7 of 10. Eval always plays the full game.
+    assert wall_budget_at(149, 10, 20, 10) == 7
 
 
 def test_the_ramp_never_skips_straight_back_to_full():
     # The relapse this exists to prevent: 0 walls one iteration, all of them
     # the next.
-    sched = [wall_budget_at(i, 10, 10, 10) for i in range(20)]
+    sched = [wall_budget_at(i, 10, 20, 10) for i in range(150)]
     assert sched[9] == 0 and sched[10] == 1
     assert max(b - a for a, b in zip(sched, sched[1:])) == 1
 
 
-def test_no_ramp_reproduces_the_old_hard_switch():
+def test_no_hold_reproduces_the_old_hard_switch():
     assert [wall_budget_at(i, 3, 0, 5) for i in range(5)] == [0, 0, 0, 5, 5]
 
 

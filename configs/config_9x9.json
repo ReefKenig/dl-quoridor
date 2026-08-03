@@ -40,8 +40,10 @@
         "greedy_stop_patience": 2,
         "greedy_stop_drop": 0.2,
         "greedy_stop_z": 2.0,
-        "_wall_ramp_note": "10, NOT 0. Handing back all the walls at once relapsed the policy in a single iteration at both player counts: at N=4 (probe_n4_masked) avg_len went 30 -> 64 -> 91 plies, draws 0% -> 22%, and the gate fell 45% ACCEPT -> 12.5% reject the iteration walls returned. The ramp adds one wall at a time instead. See academic_experiences.md 8.6.",
-        "wall_ramp_iters": 10
+        "_wall_ramp_note": "wall_ramp_hold = iterations per wall, NOT total ramp length. One wall per iteration was too fast: probe_n2_ramp held the race floor at 1 wall (avg_len 21.1, seats 19/21 — seat 0 solving its tempo deficit with its single wall, exactly the 5x5 model's play) and collapsed at 2 walls. 20 gives each step time to consolidate. Note a run may never reach max_walls; eval always plays the full game regardless.",
+        "wall_ramp_hold": 20,
+        "_greedy_min_seat_note": "Companion to the decay watch, which can only fire on a fall from a peak. probe_n4_ramp peaked at 0.10 against a 0.20 drop, so a strike was arithmetically impossible and it ran 10 h past the point the answer was known. 0.25 is a deliberately low bar: after the masked phase the model should own the seat racing wins. Armed only once the mask ends, since every run is below it while untrained.",
+        "greedy_min_seat": 0.25
     },
     "parallel": {
         "_num_workers_note": "Match the pod's cgroup cpu quota (16). Above it the jupyter server stops answering its own health check, whose entrypoint runs pkill -9 on failure.",

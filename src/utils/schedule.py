@@ -54,14 +54,30 @@ def wall_budget_at(it, mask_iters, ramp_hold, max_walls):
     return min(max_walls, 1 + (it - mask_iters) // ramp_hold)
 
 
-def game_is_masked(game_index, fraction):
-    """Whether game `game_index` of an iteration plays wall-free.
+def takes_share(index, fraction):
+    """Whether item `index` falls in `fraction` of the stream.
 
-    Spread evenly across the iteration (Bresenham), so any prefix of the games is
-    already near the target mix and a short/interrupted iteration stays balanced.
+    Spread evenly (Bresenham), so any prefix is already near the target share
+    and a short or interrupted iteration stays balanced.
     """
     if fraction <= 0:
         return False
     if fraction >= 1:
         return True
-    return int((game_index + 1) * fraction) > int(game_index * fraction)
+    return int((index + 1) * fraction) > int(index * fraction)
+
+
+def game_is_masked(game_index, fraction):
+    """Whether game `game_index` of an iteration plays wall-free."""
+    return takes_share(game_index, fraction)
+
+
+def opponent_for_game(game_index, greedy_share):
+    """Which opponent game `game_index` trains against: 'greedy' or 'self'.
+
+    Anchored games put the model in one seat against a scripted racer, which is
+    the distribution the greedy baseline scores and the one pure self-play
+    drifts away from — at N=4 it converges on jump-camping, which wins among
+    four identical agents and loses to three racers.
+    """
+    return "greedy" if takes_share(game_index, greedy_share) else "self"

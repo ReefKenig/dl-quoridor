@@ -592,6 +592,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     _log(
                         f"[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...")
 
+            # Only the parallel engine samples an opponent pool; the others
+            # report an empty mix rather than a wrong one.
+            sp_stats = {}
             if sp_mode == "vectorized":
                 # In-process vectorized self-play (Option B): G games share one
                 # predict_batch; exact sequential MCTS per game.
@@ -612,7 +615,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 n_new_samples = len(sp_samples)
             elif sp_mode == "parallel":
                 # GPU-batched parallel self-play
-                sp_samples, wins = generate_parallel_self_play_mp(
+                sp_samples, wins, sp_stats = generate_parallel_self_play_mp(
                     model, cfg,
                     num_workers=cfg.num_workers,
                     total_games=cfg.games_per_iteration,
@@ -745,6 +748,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # the record rather than only in games.log.
                    wall_budget=budget,
                    wall_mask_fraction=frac or None,
+                   # Realised, not configured — the two diverge if the sampler
+                   # or a worker misbehaves, and only the realised one explains
+                   # the data the iteration actually trained on.
+                   opponent_mix=sp_stats.get("opponent_mix") or None,
+                   samples_by_source=sp_stats.get("samples_by_source") or None,
                    # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
                    rand_decided_games=None, greedy_decided_games=None,

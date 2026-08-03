@@ -72,6 +72,21 @@ adaptive weighting is a later refinement and would confound the first ablation.
 Training samples are collected **only for the model's own seats**; a scripted
 opponent's moves are not policy targets.
 
+**The share is over games, but the gradient is over samples, and the two differ
+a lot.** An anchored game contributes only the model's own plies — 1/2 of them
+at N=2, **1/4 at N=4** — and a scripted racer also *ends the game sooner*, since
+it heads straight for its goal instead of wandering. Measured locally at 5x5
+with an untrained net: 6.0 samples per anchored game against 50.3 per self-play
+game, an 8x gap rather than the 2x the seat count alone predicts. The gap
+narrows as the model learns to race (both kinds of game then run to similar
+length), but it never closes.
+
+So a 15% *game* share can be a ~2-4% *sample* share, which is likely too weak to
+move the seat the anchoring exists to fix. `samples_by_source` is the number to
+tune against, not `opponent_mix`; check it on the first evaluated iteration and
+raise `opponent_greedy_share` until the anchored sample share is in the intended
+range.
+
 ### 3.2 Why this is expected to help each variant
 
 Different diseases, same medicine:

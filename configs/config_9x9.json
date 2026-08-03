@@ -43,6 +43,9 @@
         "wall_ramp_hold": 0,
         "_greedy_min_seat_note": "Companion to the decay watch, which can only fire on a fall from a peak. probe_n4_ramp peaked at 0.10 against a 0.20 drop, so a strike was arithmetically impossible and it ran 10 h past the point the answer was known. 0.25 is a deliberately low bar: after the masked phase the model should own the seat racing wins. Armed only once the mask ends, since every run is below it while untrained.",
         "greedy_min_seat": 0.25,
+        "_minimax_note": "The HELD-OUT baseline. Once the opponent pool anchors on greedy, win_vs_greedy measures fit rather than generalisation, and nothing else is held out: vs_random saturates at 100% by iteration 5 and the gate is relative to a moving champion. minimax is depth-limited maxn on MovesToFinish(nearest rival) - MovesToFinish(self), the conventional Quoridor baseline, and unlike greedy it PLACES WALLS -- measured 11 wins in 12 games against greedy at 9x9 N=2 with 6.3 walls/game. Wall candidates are restricted to slots touching some player's shortest path, which is what makes depth 2 affordable: ~19 s per 40-game eval at both player counts.",
+        "minimax_depth": 2,
+        "minimax_wall_candidates": 16,
         "_greedy_min_seat_after_note": "The floor arms at max(wall_mask_iters, this). A mixed run sets wall_mask_iters=0, so without this the floor would arm at iteration 0 and — at eval_every 4, patience 2 — could abort a healthy run at iteration 8 before it has trained. 12 gives three evals of grace.",
         "greedy_min_seat_after": 12,
         "_eval_every_note": "4, not 5: probe_n2_ramp peaked at iteration 4 (45% vs greedy, seat 1 18/20) and the gate must land ON it to put it in best.pt. The peak is early; missing it costs the deliverable.",
@@ -72,6 +75,7 @@
             "eval_games": 160,
             "eval_random_games": 40,
             "eval_greedy_games": 40,
+            "eval_minimax_games": 40,
             "discount_unit": "round",
             "_sizing_note": "60 x 80, not 150 x 160. Under the pure-masked probe the peak arrived at iteration 4, so the run is sized to reach a racer early and then keep it while walls are learned alongside — not to grind. The racing-decay and never-acquired stops end it early if the curriculum fails, so 60 is a ceiling not a plan. ~14 h at 16 workers."
         },
@@ -86,6 +90,7 @@
             "eval_games": 160,
             "eval_random_games": 40,
             "eval_greedy_games": 80,
+            "eval_minimax_games": 80,
             "discount_unit": "ply",
             "_eval_greedy_note": "80, not 40: the greedy eval rotates the candidate through all N seats, so at N=4 a 40-game eval is only 10 games per seat — and greedy_stop_patience keys on the BEST per-seat rate, which at n=10 has SE ~0.095, making the 20-pt abort threshold barely 2 sigma. 80 gives 20/seat, matching n2, where 20-pt is ~4 sigma. Costs ~20s an eval against a ~500s iteration.",
             "_sizing_note": "40 x 40, smaller than n2's 60 x 80 because N=4 games run to a 320-ply cap and cost roughly twice as much per game. Both earlier N=4 probes used the phase/ramp curriculum now known to be inert, so the mixed curriculum is untried here — this run is a real test, not a repeat. The racing-decay and never-acquired stops bound it."

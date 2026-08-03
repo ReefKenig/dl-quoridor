@@ -56,7 +56,8 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
         from src.env.quoridor_env_mp import QuoridorEnvMP
         from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, eval_rng,
                                            greedy_agent, mcts_agent_mp,
-                                           play_eval_game, random_agent)
+                                           minimax_agent, play_eval_game,
+                                           random_agent)
         from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 
         N = config_dict["num_players"]
@@ -103,6 +104,11 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
                                       opening_plies=opening_plies)
         elif mode == "vs_greedy":
             opp_agent = greedy_agent()
+        elif mode == "vs_minimax":
+            opp_agent = minimax_agent(
+                depth=int(config_dict.get("minimax_depth", 2)),
+                max_wall_candidates=int(
+                    config_dict.get("minimax_wall_candidates", 16)))
         else:  # vs_random
             opp_agent = random_agent()
 
@@ -193,5 +199,20 @@ def evaluate_against_greedy_parallel_mp(cand_model, config_dict, num_games=24,
     from `evaluator_mp.greedy_agent`, which does not saturate the way random does.
     """
     return _run_eval({0: cand_model}, "vs_greedy", config_dict,
+                     num_games, num_workers, batch_size, on_progress, base_seed,
+                     log, response_timeout)
+
+
+def evaluate_against_minimax_parallel_mp(cand_model, config_dict, num_games=24,
+                                         num_workers=8, batch_size=64,
+                                         on_progress=None, base_seed=0, log=print,
+                                         response_timeout=300.0):
+    """Parallel candidate-vs-minimax eval — the HELD-OUT yardstick.
+
+    Unlike greedy this opponent places walls, and unlike greedy it is never a
+    training opponent, so it keeps measuring generalisation after the opponent
+    pool starts anchoring on greedy. See docs/opponent_pool_and_evaluation.md.
+    """
+    return _run_eval({0: cand_model}, "vs_minimax", config_dict,
                      num_games, num_workers, batch_size, on_progress, base_seed,
                      log, response_timeout)

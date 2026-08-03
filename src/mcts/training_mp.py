@@ -25,9 +25,10 @@ from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
 from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
                                    evaluate_against_random_mp, greedy_agent,
-                                   mcts_agent_mp)
+                                   mcts_agent_mp, minimax_agent)
 from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
                                        evaluate_against_greedy_parallel_mp,
+                                       evaluate_against_minimax_parallel_mp,
                                        evaluate_against_random_parallel_mp)
 from src.utils.config import read_frozen_config
 from src.utils.logger import make_progress_logger
@@ -153,6 +154,20 @@ class TrainingConfigMP:
     # Iterations before that floor arms. Defaults to the masked phase, but a
     # mixed curriculum has no phase to end, so it needs its own grace window.
     greedy_min_seat_after: int = 0
+    # Held-out baseline. greedy becomes a training opponent once the pool
+    # anchors on it, so it stops measuring generalisation; minimax never trains
+    # and it places walls. 0 games = off.
+    eval_minimax_games: int = 0
+    minimax_depth: int = 2
+    minimax_wall_candidates: int = 16
+    # Self-play opponent pool. Shares of each iteration's games; the remainder
+    # after past/greedy is played against the current model, i.e. plain
+    # self-play. A single fixed opponent overfits and pure self-play at N=4
+    # converges on a jump-camping equilibrium the evaluation never rewards.
+    opponent_past_share: float = 0.0
+    opponent_greedy_share: float = 0.0
+    # Champion snapshots kept for the past-opponent share.
+    champion_pool_size: int = 5
 
 
 BUFFER_FILE = "replay_buffer.npz"
@@ -768,6 +783,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "virtual_loss": cfg.virtual_loss,
                 "eval_opening_plies": cfg.eval_opening_plies,
                 "batch_wait_ms": cfg.batch_wait_ms,
+                "minimax_depth": cfg.minimax_depth,
+                "minimax_wall_candidates": cfg.minimax_wall_candidates,
             }
             t_eval_best = time.time()
             _log(
@@ -891,8 +908,49 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 row.update(win_vs_greedy=evg_wr, eval_greedy_secs=eval_greedy_secs,
                            greedy_decided_games=evg.decided_games,
                            greedy_by_seat=greedy_by_seat,
+                           # Whether this number still measures generalisation.
+                           greedy_in_training=bool(cfg.opponent_greedy_share),
                            secs=time.time() - t0)
 
+            if cfg.eval_minimax_games:
+                t_eval_mm = time.time()
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs minimax "
+                     f"(depth {cfg.minimax_depth}, {cfg.eval_minimax_games} games)...")
+
+                def _eval_mm_progress(done, total, r):
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs minimax: "
+                         f"{done}/{total} games ({r.candidate_win_rate:.0%})")
+
+                if cfg.parallel_eval:
+                    evm = evaluate_against_minimax_parallel_mp(
+                        model, eval_config_dict, num_games=cfg.eval_minimax_games,
+                        num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
+                        on_progress=_eval_mm_progress,
+                        base_seed=it * 100_003 + 90_001, log=_log)
+                else:
+                    evm = evaluate_mp(
+                        env, cand,
+                        minimax_agent(cfg.minimax_depth, cfg.minimax_wall_candidates),
+                        num_games=cfg.eval_minimax_games,
+                        max_moves=cfg.max_game_moves,
+                        on_progress=_eval_mm_progress,
+                        base_seed=it * 100_003 + 90_001)
+                eval_minimax_secs = time.time() - t_eval_mm
+                minimax_by_seat = {str(s): [evm.seat_wins.get(s, 0), n]
+                                   for s, n in sorted(evm.games_per_seat.items())}
+                mm_seat_str = " ".join(f"seat{s}:{w}/{n}"
+                                       for s, (w, n) in minimax_by_seat.items())
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs minimax done: "
+                     f"{100*evm.candidate_win_rate:.1f}% of {evm.decided_games} "
+                     f"decided [{mm_seat_str}] ({eval_minimax_secs:.0f}s)")
+                row.update(win_vs_minimax=evm.candidate_win_rate,
+                           eval_minimax_secs=eval_minimax_secs,
+                           minimax_decided_games=evm.decided_games,
+                           minimax_by_seat=minimax_by_seat,
+                           minimax_depth=cfg.minimax_depth,
+                           secs=time.time() - t0)
+
+            if cfg.eval_greedy_games:
                 # Racing decay: best per-seat rate against its own running peak.
                 if cfg.greedy_stop_patience:
                     seated = [(w / n, n) for w, n in greedy_by_seat.values() if n]

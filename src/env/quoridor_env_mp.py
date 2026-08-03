@@ -14,6 +14,7 @@ from typing import List, Optional, Set, Tuple
 import numpy as np
 
 from src.env.env_interface import QuoridorEnvInterface
+from src.env.pathing import CURRENT_SPEC
 from src.env.tensor_spec_mp import build_tensor_mp
 
 
@@ -59,10 +60,19 @@ class QuoridorStateMP:
 
 class QuoridorEnvMP(QuoridorEnvInterface):
     def __init__(self, board_size=5, num_players=4, max_turns=300,
-                 debug=False, max_walls_per_player=None):
+                 debug=False, max_walls_per_player=None, wall_budget=None,
+                 spec_version=CURRENT_SPEC):
         assert 2 <= num_players <= 4
         self.board_size = board_size
         self.num_players = num_players
+        # Walls each player STARTS with; None = max_walls_per_player. The
+        # early-training curriculum ramps this up from 0 (a pure race), because
+        # at 9x9 walls are 128 of 140 actions and an untrained policy walls
+        # ~91% of the time. max_walls_per_player stays fixed either way so the
+        # walls-remaining plane keeps one scale.
+        self.wall_budget = wall_budget
+        # Must match the spec the consuming model trained under; see pathing.py.
+        self.spec_version = spec_version
         if max_walls_per_player is not None:
             self.max_walls_per_player = max_walls_per_player
         else:
@@ -82,13 +92,20 @@ class QuoridorEnvMP(QuoridorEnvInterface):
     def action_space_size(self) -> int:
         return compute_action_space_size(self.board_size)
 
+    @property
+    def starting_walls(self):
+        """Walls each player begins with — the curriculum budget, or the max."""
+        if self.wall_budget is None:
+            return self.max_walls_per_player
+        return max(0, min(self.wall_budget, self.max_walls_per_player))
+
     def reset(self) -> QuoridorStateMP:
         starts = [s for s, _ in self._specs]
         goals = [g for _, g in self._specs]
         return QuoridorStateMP(
             board_size=self.board_size, num_players=self.num_players,
             positions=list(starts), h_walls=set(), v_walls=set(),
-            walls_remaining=[self.max_walls_per_player] * self.num_players,
+            walls_remaining=[self.starting_walls] * self.num_players,
             max_walls=self.max_walls_per_player, goals=goals,
             current_player=0, turn_count=0, game_over=False, winner=None,
         )
@@ -165,6 +182,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
             h_walls=state.h_walls, v_walls=state.v_walls,
             remaining=state.walls_remaining, max_walls=state.max_walls,
             goals=state.goals, current_player=state.current_player,
+            spec_version=self.spec_version,
         )
 
     # ---------- helpers ----------

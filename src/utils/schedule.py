@@ -1,4 +1,4 @@
-"""Learning-rate schedules for the training loop.
+"""Learning-rate and wall-curriculum schedules for the training loop.
 
 The optimizer was constructed once with a constant lr=1e-3 and no scheduler
 anywhere. That is fine for a 15-iteration 5x5 proof-of-concept and a real gap
@@ -36,3 +36,32 @@ def lr_at(schedule: str, base_lr: float, step: int, total_steps: int,
     if schedule == "constant":
         return base_lr
     return cosine_lr(base_lr, base_lr * final_frac, step, total_steps)
+
+
+def wall_budget_at(it, mask_iters, ramp_hold, max_walls):
+    """Walls each player starts self-play with at iteration `it` (0-based).
+
+    0 while masked, then one more wall every `ramp_hold` iterations.
+    Note a budget of 1 already exposes the FULL 128-wall action space — the env
+    gates walls on `walls_remaining > 0` — so ramping above 1 changes nothing the
+    policy can see. Kept for reproducing the earlier probes; prefer
+    `wall_mask_fraction`. 0 = full allowance at once.
+    """
+    if it < mask_iters:
+        return 0
+    if ramp_hold <= 0:
+        return max_walls
+    return min(max_walls, 1 + (it - mask_iters) // ramp_hold)
+
+
+def game_is_masked(game_index, fraction):
+    """Whether game `game_index` of an iteration plays wall-free.
+
+    Spread evenly across the iteration (Bresenham), so any prefix of the games is
+    already near the target mix and a short/interrupted iteration stays balanced.
+    """
+    if fraction <= 0:
+        return False
+    if fraction >= 1:
+        return True
+    return int((game_index + 1) * fraction) > int(game_index * fraction)

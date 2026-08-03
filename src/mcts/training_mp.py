@@ -6,17 +6,20 @@ Self-contained: self-play with the current model's maxⁿ → train on vector ta
 random → checkpoint best/latest. Reduces to the standard duel at N=2.
 """
 import json
+import math
 import os
 import time
 import logging
 from collections import deque
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import numpy as np
 
+from src.env.pathing import CURRENT_SPEC
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
-from src.utils.schedule import lr_at
+from src.utils.schedule import lr_at, wall_budget_at, game_is_masked
 from src.mcts.batched_inference_mp import DEFAULT_BATCH_WAIT_MS
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
@@ -26,6 +29,7 @@ from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
 from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
                                        evaluate_against_greedy_parallel_mp,
                                        evaluate_against_random_parallel_mp)
+from src.utils.config import read_frozen_config
 from src.utils.logger import make_progress_logger
 
 logger = logging.getLogger(__name__)
@@ -112,6 +116,46 @@ class TrainingConfigMP:
     board_size: int = 5
     max_walls_per_player: int = 3
     max_turns: int = 300
+    # Wall curriculum for SELF-PLAY only; eval always plays the full game so the
+    # gate and the greedy baseline stay comparable across the whole run.
+    # wall_mask_iters opening iterations at 0 walls (a pure race), then
+    # one more wall every wall_ramp_hold iterations. 0/0 = off.
+    # Handing back all the walls at once relapsed the policy in one iteration at
+    # both player counts; see academic_experiences.md 8.6.
+    wall_mask_iters: int = 0
+    wall_ramp_hold: int = 0
+    # Fraction of EVERY iteration's games played wall-free, mixed in alongside
+    # full-wall games. A masked phase that ends leaves the value head with no
+    # coverage of walled states, and root noise drives self-play straight into
+    # them; mixing keeps both distributions in the buffer for the whole run.
+    # 0 = off (use the phase/ramp above instead).
+    wall_mask_fraction: float = 0.0
+    # Set per iteration onto cfg.wall_budget, which the workers read.
+    wall_budget: int = None
+    # Input-plane spec the run trains under; frozen into the run dir's config.json
+    # so the resulting checkpoint can be replayed on the planes it actually saw.
+    spec_version: int = CURRENT_SPEC
+    # Early stop on racing decay. Greedy always has one seat a pure racer wins
+    # outright (seat 1 at N=2, seat 0 at N=4 — whoever the head-on pawn jump
+    # favours), so the BEST per-seat greedy rate is a hard-ceiling probe: it
+    # cannot drift up, and a sustained fall means the policy stopped racing.
+    # The gate cannot see this — in local_9x9_v6 it kept accepting (69%, 60%)
+    # while greedy went 60% -> 10%. Stop after this many consecutive evals at
+    # least greedy_stop_drop below the best rate seen so far. 0 = disabled.
+    greedy_stop_patience: int = 0
+    greedy_stop_drop: float = 0.20
+    # Sigma the drop must also clear, so noise on a 20-game seat cannot strike.
+    greedy_stop_z: float = 2.0
+    # Companion watch: stop if the best per-seat rate never REACHES this once the
+    # masked curriculum is over. Decay cannot catch a run that never climbed.
+    # 0 = off; shares greedy_stop_patience.
+    greedy_min_seat: float = 0.0
+    # Iterations before that floor arms. Defaults to the masked phase, but a
+    # mixed curriculum has no phase to end, so it needs its own grace window.
+    greedy_min_seat_after: int = 0
+
+
+BUFFER_FILE = "replay_buffer.npz"
 
 
 class ReplayBufferMP:
@@ -134,6 +178,40 @@ class ReplayBufferMP:
     def __len__(self):
         return len(self.buffer)
 
+    def save(self, checkpoint_dir):
+        """Persist the buffer so a resume keeps its samples. tmp+rename so a
+        kill mid-write leaves the previous buffer rather than a truncated one."""
+        path = os.path.join(checkpoint_dir, BUFFER_FILE)
+        tmp = path + ".tmp"
+        S = np.array([x[0] for x in self.buffer], np.float32)
+        P = np.array([x[1] for x in self.buffer], np.float32)
+        V = np.array([x[2] for x in self.buffer], np.float32)
+        with open(tmp, "wb") as f:
+            np.savez(f, S=S, P=P, V=V)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        return path
+
+    def load(self, checkpoint_dir, log=print):
+        """Samples restored from disk. Missing or unreadable leaves it empty,
+        which is the old resume behaviour rather than a failed run."""
+        path = os.path.join(checkpoint_dir, BUFFER_FILE)
+        if not os.path.exists(path):
+            return 0
+        try:
+            with np.load(path) as data:
+                S, P, V = data["S"], data["P"], data["V"]
+        except (OSError, ValueError, KeyError) as exc:
+            log(f"WARNING: could not read {path} ({exc}) — starting with an "
+                f"empty buffer, as if it had not been persisted.")
+            return 0
+        # .copy() because iterating a stacked array yields views: one surviving
+        # view keeps the entire ~500 MB base alive. maxlen trims the oldest if
+        # the run resumes at a smaller buffer size.
+        self.add((s.copy(), p.copy(), v.copy()) for s, p, v in zip(S, P, V))
+        return len(self.buffer)
+
 
 def _mcts(model, env, cfg, sims=None, dirichlet_epsilon=None):
     # dirichlet_epsilon override: pass 0.0 for eval (deterministic best-play, no
@@ -147,6 +225,47 @@ def _mcts(model, env, cfg, sims=None, dirichlet_epsilon=None):
         evaluate_fn=lambda st: model.predict(env.state_to_tensor(st)),
         num_players=cfg.num_players,
     )
+
+
+def drop_is_significant(peak, now, n_per_seat, z_min):
+    """Two-proportion z: is the fall bigger than n-game sampling noise?
+
+    The peak is a max over seats AND over evals, so it overshoots the true rate;
+    without this the threshold lands near the mean and a stable model strikes.
+    """
+    if not n_per_seat:
+        return True
+    pooled = (peak + now) / 2
+    se = math.sqrt(2 * pooled * (1 - pooled) / n_per_seat)
+    return se == 0 or (peak - now) >= z_min * se
+
+
+def stalled_below_floor(best_seat, floor, below):
+    """Advance the never-acquired watch. Returns consecutive evals under floor.
+
+    racing_decay_strike can only fire on a fall from a peak, so a run that never
+    climbs is invisible to it: probe_n4_ramp peaked at 0.10 against a 0.20 drop,
+    making a strike arithmetically impossible, and it ran 10 hours past the point
+    the answer was known.
+    """
+    return below + 1 if best_seat < floor else 0
+
+
+def racing_decay_strike(best_seat, peak, below, drop, n_per_seat=0, z_min=0.0):
+    """Advance the racing-decay watch by one greedy eval.
+
+    Compares against the best rate ever seen, not the previous eval, so a slow
+    slide cannot hide. A strike needs the drop to clear `drop` AND, when
+    n_per_seat/z_min are given, to be significant at that many sigma.
+    Returns (peak, consecutive_strikes).
+    """
+    if peak is None or best_seat > peak:
+        return best_seat, 0
+    if best_seat > peak - drop:
+        return peak, 0
+    if not drop_is_significant(peak, best_seat, n_per_seat, z_min):
+        return peak, 0
+    return peak, below + 1
 
 
 SELF_PLAY_MODES = ("sequential", "parallel", "vectorized")
@@ -269,11 +388,60 @@ def resource_banner(cfg):
     return lines
 
 
+@contextmanager
+def _wall_budget(cfg, env, budget):
+    """Apply the curriculum's wall budget to self-play only.
+
+    Restores on the way out even if self-play raises — eval, gating and the
+    greedy baseline must always play the full game, and the caller may keep
+    using this env after a failed iteration.
+    """
+    cfg.wall_budget = env.wall_budget = budget
+    try:
+        yield
+    finally:
+        cfg.wall_budget = env.wall_budget = None
+
+
+def assert_resume_spec_matches(cfg, checkpoint_dir):
+    """Refuse to resume a run onto input planes it was not trained on. Run dirs
+    predating the versioning have no spec_version key — those are all v1."""
+    frozen = read_frozen_config(checkpoint_dir)
+    if frozen is None:
+        return
+    frozen_spec = frozen["spec_version"]
+    if frozen_spec != cfg.spec_version:
+        raise ValueError(
+            f"{checkpoint_dir} was trained under tensor spec v{frozen_spec} but "
+            f"this launch is configured for v{cfg.spec_version}. Resuming would "
+            f"feed the checkpoint planes on a scale it never saw. Start a fresh "
+            f"run dir, or set spec_version={frozen_spec} to continue the old one.")
+
+
 def freeze_config(cfg, checkpoint_dir, log=print):
     """Write the resolved config next to the checkpoints, so a run dir records
-    what it actually ran rather than relying on the shared config file."""
+    what it actually ran rather than relying on the shared config file.
+
+    First launch writes it; later launches only compare, so the record stays
+    the run's rather than the last relaunch's."""
     path = os.path.join(checkpoint_dir, "config.json")
     resolved = {k: v for k, v in vars(cfg).items() if not k.startswith("_")}
+    frozen = read_frozen_config(checkpoint_dir)
+    if frozen is not None:
+        changed = {k: (frozen[k], v) for k, v in resolved.items()
+                   if k in frozen and frozen[k] != v}
+        added = sorted(set(resolved) - set(frozen))
+        if changed or added:
+            log(f"WARNING: config differs from {path}, which records what the "
+                f"earlier iterations ran. Keeping the frozen copy; this launch "
+                f"uses:")
+            for k, (was, now) in sorted(changed.items()):
+                log(f"  {k}: frozen={was!r} -> now={now!r}")
+            if added:
+                log(f"  new keys: {', '.join(added)}")
+        else:
+            log(f"Config matches the frozen copy -> {path}")
+        return path
     with open(path, "w") as f:
         json.dump(resolved, f, indent=2, default=str, sort_keys=True)
     log(f"Config frozen -> {path}")
@@ -320,6 +488,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     make_model : zero-arg callable returning a fresh QuoridorModelMP (for `best`)
     """
     assert env.num_players == cfg.num_players
+    # The workers rebuild the env from cfg, so a disagreement here would have the
+    # parent and the workers training one model on two different plane scales.
+    if env.spec_version != cfg.spec_version:
+        raise ValueError(
+            f"env tensor spec v{env.spec_version} != cfg spec v{cfg.spec_version}; "
+            "resuming a run started under an older spec needs the env built with "
+            "that run's config.json spec_version")
     os.makedirs(checkpoint_dir, exist_ok=True)
     buffer = ReplayBufferMP(cfg.replay_buffer_size)
     best = make_model()
@@ -355,95 +530,118 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     meta_path = os.path.join(checkpoint_dir, "meta.json")
     latest_path = os.path.join(checkpoint_dir, "latest.pt")
     if os.path.exists(meta_path) and os.path.exists(latest_path):
+        assert_resume_spec_matches(cfg, checkpoint_dir)
         with open(meta_path) as f:
             meta = json.load(f)
         start_iter = meta.get("completed_iterations", 0)
         model.load(latest_path)
         load_champion(best, model, checkpoint_dir, log=_log)
         history = meta.get("history", [])
+        n_buffered = buffer.load(checkpoint_dir, log=_log)
         _log(
-            f"Resumed from iteration {start_iter} (checkpoint: {checkpoint_dir})")
+            f"Resumed from iteration {start_iter} (checkpoint: {checkpoint_dir})",
+            f"Replay buffer restored: {n_buffered} samples" if n_buffered else
+            "Replay buffer not on disk — refilling from scratch")
     else:
         init_champion(best, model, checkpoint_dir, log=_log)
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")
 
+    # Racing-decay watch (see cfg.greedy_stop_patience).
+    greedy_peak = None
+    greedy_below_peak = 0
+    greedy_below_floor = 0
+    stop_reason = None
+
     for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
         # --- 1. self-play ---
-        _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
-             f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims)...")
+        budget = wall_budget_at(it, cfg.wall_mask_iters, cfg.wall_ramp_hold,
+                                cfg.max_walls_per_player)
+        with _wall_budget(cfg, env, budget):
+            frac = getattr(cfg, "wall_mask_fraction", 0.0) or 0.0
+            curriculum = ("" if budget == cfg.max_walls_per_player else
+                          f", WALLS MASKED" if budget == 0 else
+                          f", {budget}/{cfg.max_walls_per_player} WALLS")
+            if frac:
+                n_masked = sum(game_is_masked(g, frac)
+                               for g in range(cfg.games_per_iteration))
+                curriculum = (f", MIXED {n_masked}/{cfg.games_per_iteration} "
+                              f"race-only")
+            _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
+                 f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims"
+                 f"{curriculum})...")
 
-        def _on_progress(done, total, w):
-            if done % 5 == 0 or done == total:
-                _log(
-                    f"[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...")
+            def _on_progress(done, total, w):
+                if done % 5 == 0 or done == total:
+                    _log(
+                        f"[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...")
 
-        if sp_mode == "vectorized":
-            # In-process vectorized self-play (Option B): G games share one
-            # predict_batch; exact sequential MCTS per game.
-            sp_samples, wins = generate_vectorized_self_play_mp(
-                model, cfg,
-                total_games=cfg.games_per_iteration,
-                vec_games=(cfg.vec_games or None),
-                batch_size=cfg.inference_batch_size,
-                on_games_complete=_on_progress,
-                base_seed=it * cfg.games_per_iteration,
-                log=_log,
-            )
-            if not sp_samples:
-                raise RuntimeError(zero_sample_reason(
-                    it + 1, "vectorized", wins, cfg.games_per_iteration,
-                    checkpoint_dir))
-            buffer.add(sp_samples)
-            n_new_samples = len(sp_samples)
-        elif sp_mode == "parallel":
-            # GPU-batched parallel self-play
-            sp_samples, wins = generate_parallel_self_play_mp(
-                model, cfg,
-                num_workers=cfg.num_workers,
-                total_games=cfg.games_per_iteration,
-                batch_size=cfg.inference_batch_size,
-                on_games_complete=_on_progress,
-                # Seeds are per-game (base_seed + game_index, index in
-                # [0, games_per_iteration)); stride by games_per_iteration so
-                # iterations never reuse each other's seeds.
-                base_seed=it * cfg.games_per_iteration,
-                log=_log,
-            )
-            if not sp_samples:
-                # Either self-play stalled (usually: the GPU inference thread died
-                # and workers hung until the queue timeout) or every game timed
-                # out. Abort loudly instead of "training" on an empty buffer and
-                # silently advancing completed_iterations — the run can then be
-                # resumed from the last good checkpoint.
-                raise RuntimeError(zero_sample_reason(
-                    it + 1, "parallel", wins, cfg.games_per_iteration,
-                    checkpoint_dir))
-            buffer.add(sp_samples)
-            n_new_samples = len(sp_samples)
-        else:
-            # Sequential self-play (original path)
-            sp_mcts = _mcts(model, env, cfg)
-            wins = {}
-            n_new_samples = 0
-            for g in range(cfg.games_per_iteration):
-                samples, w = play_one_game(env, sp_mcts, cfg.num_players,
-                                           max_moves=cfg.max_game_moves,
-                                           discount=cfg.discount,
-                                           explore_moves=cfg.explore_moves)
-                buffer.add(samples)
-                n_new_samples += len(samples)
-                wins[w] = wins.get(w, 0) + 1
-                # Log every 5 games so long iterations don't look stuck.
-                if (g + 1) % 5 == 0 or (g + 1) == cfg.games_per_iteration:
-                    elapsed = time.time() - t0
-                    rate = (g + 1) / elapsed if elapsed > 0 else 0
-                    _log(f"[iter {it+1}/{cfg.num_iterations}] self-play: "
-                         f"{g+1}/{cfg.games_per_iteration} games "
-                         f"({elapsed:.0f}s, {rate*60:.1f} games/min)")
+            if sp_mode == "vectorized":
+                # In-process vectorized self-play (Option B): G games share one
+                # predict_batch; exact sequential MCTS per game.
+                sp_samples, wins = generate_vectorized_self_play_mp(
+                    model, cfg,
+                    total_games=cfg.games_per_iteration,
+                    vec_games=(cfg.vec_games or None),
+                    batch_size=cfg.inference_batch_size,
+                    on_games_complete=_on_progress,
+                    base_seed=it * cfg.games_per_iteration,
+                    log=_log,
+                )
+                if not sp_samples:
+                    raise RuntimeError(zero_sample_reason(
+                        it + 1, "vectorized", wins, cfg.games_per_iteration,
+                        checkpoint_dir))
+                buffer.add(sp_samples)
+                n_new_samples = len(sp_samples)
+            elif sp_mode == "parallel":
+                # GPU-batched parallel self-play
+                sp_samples, wins = generate_parallel_self_play_mp(
+                    model, cfg,
+                    num_workers=cfg.num_workers,
+                    total_games=cfg.games_per_iteration,
+                    batch_size=cfg.inference_batch_size,
+                    on_games_complete=_on_progress,
+                    # Seeds are per-game (base_seed + game_index, index in
+                    # [0, games_per_iteration)); stride by games_per_iteration so
+                    # iterations never reuse each other's seeds.
+                    base_seed=it * cfg.games_per_iteration,
+                    log=_log,
+                )
+                if not sp_samples:
+                    # Either self-play stalled (usually: the GPU inference thread died
+                    # and workers hung until the queue timeout) or every game timed
+                    # out. Abort loudly instead of "training" on an empty buffer and
+                    # silently advancing completed_iterations — the run can then be
+                    # resumed from the last good checkpoint.
+                    raise RuntimeError(zero_sample_reason(
+                        it + 1, "parallel", wins, cfg.games_per_iteration,
+                        checkpoint_dir))
+                buffer.add(sp_samples)
+                n_new_samples = len(sp_samples)
+            else:
+                # Sequential self-play (original path)
+                sp_mcts = _mcts(model, env, cfg)
+                wins = {}
+                n_new_samples = 0
+                for g in range(cfg.games_per_iteration):
+                    samples, w = play_one_game(env, sp_mcts, cfg.num_players,
+                                               max_moves=cfg.max_game_moves,
+                                               discount=cfg.discount,
+                                               explore_moves=cfg.explore_moves)
+                    buffer.add(samples)
+                    n_new_samples += len(samples)
+                    wins[w] = wins.get(w, 0) + 1
+                    # Log every 5 games so long iterations don't look stuck.
+                    if (g + 1) % 5 == 0 or (g + 1) == cfg.games_per_iteration:
+                        elapsed = time.time() - t0
+                        rate = (g + 1) / elapsed if elapsed > 0 else 0
+                        _log(f"[iter {it+1}/{cfg.num_iterations}] self-play: "
+                             f"{g+1}/{cfg.games_per_iteration} games "
+                             f"({elapsed:.0f}s, {rate*60:.1f} games/min)")
 
-        sp_secs = time.time() - t0
+            sp_secs = time.time() - t0
         # Win distribution across seats (None = draw/timeout). A healthy self-play
         # iteration is roughly balanced; a lopsided split or all-draws is an early
         # warning of seat bias or a degenerate policy.
@@ -515,15 +713,29 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         evr_wr = None
 
         model.save(os.path.join(checkpoint_dir, "latest.pt"))
+        # Before _write_meta, so meta.json is never newer than the buffer.
+        t_buf = time.time()
+        buffer.save(checkpoint_dir)
+        buf_secs = time.time() - t_buf
         row = dict(iter=it + 1, loss_p=lp, loss_v=lv,
                    win_vs_best=ev_wr, accepted=accepted,
                    win_vs_random=evr_wr, fair=fair, draw_rate=draw_rate,
+                   # Racing evidence: under the wall mask this should fall
+                   # toward a pure race. Was only ever in games.log.
+                   avg_len=avg_len,
+                   # First iteration after a relaunch, so a reader of the loss
+                   # curve can tell a resume dip from learning dynamics.
+                   resumed=(it == start_iter and start_iter > 0),
+                   # Walls self-play ran with, so the curriculum is legible in
+                   # the record rather than only in games.log.
+                   wall_budget=budget,
+                   wall_mask_fraction=frac or None,
                    # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
                    rand_decided_games=None, greedy_decided_games=None,
-                   win_vs_greedy=None,
+                   win_vs_greedy=None, greedy_by_seat=None,
                    secs=time.time() - t0, buffer=len(buffer),
-                   sp_secs=sp_secs, train_secs=train_secs,
+                   sp_secs=sp_secs, train_secs=train_secs, buf_secs=buf_secs,
                    eval_best_secs=eval_best_secs, eval_rand_secs=eval_rand_secs,
                    eval_ran=run_eval)
         history.append(row)
@@ -547,6 +759,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "board_size": getattr(cfg, "board_size", None) or model.board_size,
                 "max_walls_per_player": getattr(cfg, "max_walls_per_player", 3),
                 "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),
+                # Without this a resumed v1 run would self-play on v1 planes and
+                # gate on v2 ones, comparing both models on a scale neither saw.
+                "spec_version": getattr(cfg, "spec_version", CURRENT_SPEC),
                 "eval_simulations": eval_sims,
                 "max_game_moves": cfg.max_game_moves,
                 "leaf_batch": cfg.leaf_batch,
@@ -659,12 +874,62 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                                       base_seed=it * 100_003 + 70_000)
                 eval_greedy_secs = time.time() - t_eval_greedy
                 evg_wr = evg.candidate_win_rate
+                # Per seat, because the seats are not symmetric: two racers meeting
+                # head-on let the SECOND one jump the first, so seat 0 must spend a
+                # wall to win while seat 1 wins by racing. A pooled number hides
+                # which of the two the model has failed to learn.
+                # str keys: json.dump stringifies int keys anyway, so building
+                # them that way keeps the in-memory row and the reloaded
+                # meta.json the same shape.
+                greedy_by_seat = {str(s): [evg.seat_wins.get(s, 0), n]
+                                  for s, n in sorted(evg.games_per_seat.items())}
+                seat_str = " ".join(f"seat{s}:{w}/{n}"
+                                    for s, (w, n) in greedy_by_seat.items())
                 _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs greedy done: "
                      f"{100*evg_wr:.1f}% of {evg.decided_games} decided "
-                     f"({eval_greedy_secs:.0f}s)")
+                     f"[{seat_str}] ({eval_greedy_secs:.0f}s)")
                 row.update(win_vs_greedy=evg_wr, eval_greedy_secs=eval_greedy_secs,
                            greedy_decided_games=evg.decided_games,
+                           greedy_by_seat=greedy_by_seat,
                            secs=time.time() - t0)
+
+                # Racing decay: best per-seat rate against its own running peak.
+                if cfg.greedy_stop_patience:
+                    seated = [(w / n, n) for w, n in greedy_by_seat.values() if n]
+                    best_seat, best_seat_n = max(seated) if seated else (0.0, 0)
+                    row["greedy_best_seat"] = best_seat
+                    prev_below = greedy_below_peak
+                    greedy_peak, greedy_below_peak = racing_decay_strike(
+                        best_seat, greedy_peak, greedy_below_peak,
+                        cfg.greedy_stop_drop, best_seat_n, cfg.greedy_stop_z)
+                    floor_after = max(cfg.wall_mask_iters,
+                                      getattr(cfg, "greedy_min_seat_after", 0))
+                    if cfg.greedy_min_seat and it >= floor_after:
+                        # Armed only once the curriculum has had its chance —
+                        # every run is below the floor while still untrained.
+                        greedy_below_floor = stalled_below_floor(
+                            best_seat, cfg.greedy_min_seat, greedy_below_floor)
+                        if greedy_below_floor >= cfg.greedy_stop_patience:
+                            stop_reason = (
+                                f"never acquired racing: best per-seat greedy rate "
+                                f"{100*best_seat:.0f}% stayed under the "
+                                f"{100*cfg.greedy_min_seat:.0f}% floor for "
+                                f"{greedy_below_floor} consecutive evals after "
+                                f"iteration {floor_after}. The curriculum is not "
+                                f"delivering at this setting; more iterations will "
+                                f"not fix it.")
+                    if greedy_below_peak > prev_below:
+                        _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: racing decay — "
+                             f"best seat {100*best_seat:.0f}% is {100*(greedy_peak-best_seat):.0f} "
+                             f"pts below the peak {100*greedy_peak:.0f}% "
+                             f"({greedy_below_peak}/{cfg.greedy_stop_patience} evals)")
+                        if greedy_below_peak >= cfg.greedy_stop_patience:
+                            stop_reason = (
+                                f"racing decay: best per-seat greedy rate {100*best_seat:.0f}% "
+                                f"stayed >={100*cfg.greedy_stop_drop:.0f} pts below its peak "
+                                f"{100*greedy_peak:.0f}% for {greedy_below_peak} consecutive "
+                                f"evals. best.pt holds the peak; resume by raising "
+                                f"greedy_stop_patience if this was noise.")
                 _write_meta()
         else:
             _log(
@@ -683,4 +948,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
              f"sp={sp_secs:.0f}s train={train_secs:.0f}s "
              f"eval_best={eval_best_secs:.0f}s eval_rand={eval_rand_secs:.0f}s | "
              f"total={row['secs']:.0f}s")
+
+        if stop_reason:
+            # meta.json and both checkpoints are already written for this
+            # iteration, so the run resumes from here untouched if wanted.
+            _log(f"STOPPING EARLY at iteration {it+1}/{cfg.num_iterations} — {stop_reason}")
+            break
     return history

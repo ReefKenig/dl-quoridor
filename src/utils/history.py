@@ -10,7 +10,54 @@ Rows now store None for un-evaluated iterations. These helpers also recognise
 the legacy shape so figures can still be produced from existing runs.
 """
 
-EVAL_KEYS = ("win_vs_best", "win_vs_random", "win_vs_greedy")
+# One label per series, so a figure legend and a printed summary can never
+# disagree about what a column is called.
+EVAL_LABELS = {
+    "win_vs_random": "vs random",
+    "win_vs_best": "vs best (gate)",
+    "win_vs_greedy": "vs greedy (fixed)",
+}
+EVAL_KEYS = tuple(EVAL_LABELS)
+
+
+def load_meta(run_dir):
+    """A run's meta.json. Here rather than beside the plotting code so reading
+    a run does not require matplotlib."""
+    import json
+    import os
+    with open(os.path.join(run_dir, "meta.json")) as f:
+        return json.load(f)
+
+
+def series(history, key, scale=1.0):
+    """(iters, values) for rows that actually carry `key`.
+
+    For non-eval columns. A missing column means "not recorded", never zero:
+    5 of the 11 runs in runs/ have no draw_rate at all, and `.get(key, 0)`
+    would draw them a confident flat zero.
+    """
+    points = [(row["iter"], row[key] * scale) for row in history
+              if row.get(key) is not None]
+    return [p[0] for p in points], [p[1] for p in points]
+
+
+def restart_iters(history):
+    """Iterations the run resumed on, i.e. was killed and relaunched.
+
+    Rows written since the buffer became durable carry `resumed`. Older runs
+    are inferred from the buffer collapsing, which is what a restart used to
+    look like — that fallback misses back-to-back restarts, where the second
+    kill lands before the buffer has refilled.
+    """
+    if any("resumed" in row for row in history):
+        return [row["iter"] for row in history if row.get("resumed")]
+    hits, prev = [], None
+    for row in history:
+        size = row.get("buffer")
+        if prev and size and size < prev * 0.6:
+            hits.append(row["iter"])
+        prev = size or prev
+    return hits
 
 
 def eval_ran(row) -> bool:
@@ -53,3 +100,23 @@ def eval_series(history, key, scale=100.0):
     points = [(row["iter"], value * scale) for row in history
               if (value := eval_value(row, key)) is not None]
     return [p[0] for p in points], [p[1] for p in points]
+
+
+def summary_lines(history, fair):
+    """Short end-of-run report: the last of each metric, plus accept count."""
+    if not history:
+        return ["No iterations recorded."]
+    last = history[-1]
+    lines = [f"Iterations completed: {last['iter']}",
+             f"Policy loss: {last['loss_p']:.4f}   Value loss: {last['loss_v']:.4f}"]
+    for key, label in (("win_vs_random", "vs random"),
+                       ("win_vs_best", "vs best (gate)"),
+                       ("win_vs_greedy", "vs greedy (fixed)")):
+        iters, values = eval_series(history, key)
+        if values:
+            lines.append(f"{label:<18} {values[-1]:5.1f}%  (iter {iters[-1]})")
+    accepts = sum(1 for row in history if row.get("accepted"))
+    evals = sum(1 for row in history if eval_ran(row))
+    lines.append(f"Accepted {accepts} of {evals} evals "
+                 f"(fair share {100 * fair:.0f}%)")
+    return lines

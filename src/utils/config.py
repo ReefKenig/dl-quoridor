@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import logging
+
+from src.env.pathing import SPEC_V1_DIST_SQ
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -190,3 +192,18 @@ def load_config(path: str = "configs/config_5x5.json") -> AppConfig:
     )
 
     return AppConfig(is_poc=is_poc, board_size=board_size, raw=raw)
+
+
+def read_frozen_config(run_dir):
+    """A run dir's config.json, or None when absent or unreadable.
+
+    Normalizes spec_version here rather than at each call site: dirs written
+    before the tensor spec was versioned have no key, and those are all v1.
+    """
+    try:
+        with open(Path(run_dir) / "config.json") as f:
+            frozen = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    frozen.setdefault("spec_version", SPEC_V1_DIST_SQ)
+    return frozen

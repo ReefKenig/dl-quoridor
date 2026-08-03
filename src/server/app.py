@@ -33,7 +33,11 @@ ACTION_SIZE = compute_action_space_size(BOARD_SIZE)
 
 # ── Load 2-player model ──
 cfg_2p = MODEL_REGISTRY["2p_vector"]
-env_2p = QuoridorEnvMP(board_size=BOARD_SIZE, num_players=2, max_walls_per_player=3)
+# spec_version from the registry, not the default: these checkpoints were trained
+# under tensor spec v1 and read the distance planes on that scale.
+env_2p = QuoridorEnvMP(board_size=BOARD_SIZE,
+                       num_players=2, max_walls_per_player=3,
+                       spec_version=cfg_2p["tensor_spec"])
 model_2p = QuoridorModelMP(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE,
                            in_channels=cfg_2p["in_channels"],
                            num_channels=64, num_res_blocks=4,
@@ -57,10 +61,12 @@ def make_mcts_2p(settings):
                      dirichlet_epsilon=settings["dirichlet_epsilon"])
     return MCTS(config=cfg, evaluate_fn=eval_2p)
 
+
 # ── Load 4-player model ──
 cfg_4p = MODEL_REGISTRY["4p_ship"]
 env_4p = QuoridorEnvMP(board_size=BOARD_SIZE, num_players=4,
-                       max_turns=300, max_walls_per_player=4)
+                       max_turns=300, max_walls_per_player=4,
+                       spec_version=cfg_4p["tensor_spec"])
 model_4p = QuoridorModelMP(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE,
                            in_channels=cfg_4p["in_channels"],
                            num_channels=64, num_res_blocks=4,
@@ -190,10 +196,12 @@ def process_move(board_size):
             if current_temperature < 0.1:
                 ai_action = int(np.argmax(action_probs))
             else:
-                ai_action = int(np.random.choice(len(action_probs), p=action_probs))
+                ai_action = int(np.random.choice(
+                    len(action_probs), p=action_probs))
             current_game_state, reward, done, info = current_env.step(
                 current_game_state, ai_action)
-            ai_steps.append(_extract_positions(current_env, current_game_state))
+            ai_steps.append(_extract_positions(
+                current_env, current_game_state))
             if done:
                 return jsonify(
                     {

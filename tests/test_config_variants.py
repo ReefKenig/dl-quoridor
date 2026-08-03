@@ -129,7 +129,9 @@ def test_run_config_flattens_every_section(cfg9):
     assert rc["board_size"] == 9                  # top level
     assert rc["num_simulations"] == cfg9["mcts"]["num_simulations"]
     assert rc["num_channels"] == cfg9["network"]["num_channels"]
-    assert rc["num_workers"] == cfg9["parallel"]["num_workers"]
+    # inference_batch_size, not num_workers: both variants override the worker
+    # count so they can run concurrently inside one cpu quota.
+    assert rc["inference_batch_size"] == cfg9["parallel"]["inference_batch_size"]
     assert rc["batch_size"] == cfg9["training"]["batch_size"]
     assert rc["num_players"] == 4                 # variant
 
@@ -138,10 +140,11 @@ def test_run_config_variant_overrides_win(cfg9):
     n2, n4 = resolve_run_config(cfg9, "n2"), resolve_run_config(cfg9, "n4")
 
     assert (n2["max_game_moves"], n4["max_game_moves"]) == (160, 320)
-    # games_per_iteration is deliberately sized per variant (N=4 games run ~1.6x
-    # longer). num_iterations is not a witness for this: the variants may share
-    # a value, as they do when both are set to the same relaunch budget.
-    assert n2["games_per_iteration"] != n4["games_per_iteration"]
+    assert (n2["num_iterations"], n4["num_iterations"]) == (60, 40)
+    # A variant key beats the section it also lives in — the two runs share a
+    # 16-cpu quota, so neither may take the parallel section's worker count.
+    assert n2["num_workers"] == n4["num_workers"] == 8
+    assert n2["num_workers"] != cfg9["parallel"]["num_workers"]
     assert n2["num_simulations"] == n4["num_simulations"]   # shared
 
 

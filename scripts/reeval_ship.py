@@ -22,16 +22,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 NUM_GAMES = 240
 MCTS_SIMS = 100
 
+# tensor_spec mirrors runs/MODELS.json — both ship.pt files predate the v2
+# distance-plane divisor, so they must be fed v1 planes to score meaningfully.
 MODELS = {
     "2p_vector": {
         "path": "runs/n2_5x5_v1/ship.pt",
         "board_size": 5, "num_players": 2, "in_channels": 9,
         "action_space_size": 44, "num_channels": 64, "num_res_blocks": 4,
+        "tensor_spec": 1,
     },
     "4p_ship": {
         "path": "runs/n4_5x5_v3/ship.pt",
         "board_size": 5, "num_players": 4, "in_channels": 15,
         "action_space_size": 44, "num_channels": 64, "num_res_blocks": 4,
+        "tensor_spec": 1,
     },
 }
 
@@ -63,7 +67,8 @@ def eval_model(name, spec):
     )
     model.load(spec["path"])
     env = QuoridorEnvMP(board_size=spec["board_size"],
-                        num_players=spec["num_players"], max_turns=300)
+                        num_players=spec["num_players"], max_turns=300,
+                        spec_version=spec["tensor_spec"])
     mcts = MCTSMaxN(
         config=MCTSConfig(num_simulations=MCTS_SIMS, c_puct=1.41,
                           dirichlet_epsilon=0.0),

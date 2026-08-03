@@ -29,6 +29,30 @@ MOVE_MAP = {
 }
 ACTION_TO_MOVE = {v: k for k, v in MOVE_MAP.items()}
 
+NUM_MOVE_ACTIONS = 12
+
+
+def wall_offsets(board_size: int):
+    """(horizontal_offset, vertical_offset) into the action space."""
+    return NUM_MOVE_ACTIONS, NUM_MOVE_ACTIONS + (board_size - 1) ** 2
+
+
+def wall_action(is_h: bool, r: int, c: int, board_size: int) -> int:
+    """Action index for the wall slot at (r, c)."""
+    h_off, v_off = wall_offsets(board_size)
+    return (h_off if is_h else v_off) + r * (board_size - 1) + c
+
+
+def decode_wall_action(action: int, board_size: int):
+    """(is_h, r, c) for a wall action, or None for a pawn move."""
+    h_off, v_off = wall_offsets(board_size)
+    if action < h_off:
+        return None
+    W = board_size - 1
+    is_h = action < v_off
+    w = action - (h_off if is_h else v_off)
+    return is_h, w // W, w % W
+
 
 def seat_specs(board_size: int):
     """Return list of (start_pos, goal) for seats 0..3. goal=('row'|'col', k)."""
@@ -126,21 +150,14 @@ class QuoridorEnvMP(QuoridorEnvInterface):
     def step(self, state, action):
         ns = self.clone_state(state)
         cp = ns.current_player
-        W = self.board_size - 1
-        h_off, v_off = 12, 12 + W ** 2
-        if action < 12:
+        slot = decode_wall_action(action, self.board_size)
+        if slot is None:
             dr, dc = ACTION_TO_MOVE[action]
             r, c = ns.positions[cp]
             ns.positions[cp] = (r + dr, c + dc)
-        elif action < v_off:
-            w = action - h_off
-            r, c = w // W, w % W
-            ns.h_walls.add((r, c))
-            ns.walls_remaining[cp] -= 1
         else:
-            w = action - v_off
-            r, c = w // W, w % W
-            ns.v_walls.add((r, c))
+            is_h, r, c = slot
+            (ns.h_walls if is_h else ns.v_walls).add((r, c))
             ns.walls_remaining[cp] -= 1
         reward, done = self._check_terminal(ns)
         ns.current_player = (cp + 1) % ns.num_players
@@ -162,18 +179,17 @@ class QuoridorEnvMP(QuoridorEnvInterface):
             valid.append(MOVE_MAP[(tgt[0] - pos[0], tgt[1] - pos[1])])
         if state.walls_remaining[cp] > 0:
             W = self.board_size - 1
-            h_off, v_off = 12, 12 + W ** 2
             blockers = self._player_blockers(state, h, v)
             for r in range(W):
                 for c in range(W):
                     if self._valid_h(r, c, h, v):
                         if self._paths_survive(state, blockers, True, r, c,
                                                h | {(r, c)}, v):
-                            valid.append(h_off + r * W + c)
+                            valid.append(wall_action(True, r, c, self.board_size))
                     if self._valid_v(r, c, h, v):
                         if self._paths_survive(state, blockers, False, r, c,
                                                h, v | {(r, c)}):
-                            valid.append(v_off + r * W + c)
+                            valid.append(wall_action(False, r, c, self.board_size))
         return np.array(valid, dtype=np.int64)
 
     def state_to_tensor(self, state):

@@ -9,7 +9,7 @@
         "dirichlet_alpha": 0.1,
         "dirichlet_epsilon": 0.25,
         "max_rollout_depth": 200,
-        "_num_simulations_note": "600. The visits-per-action argument for 1200 (140 actions / 600 sims = 4.3 visits) assumed a prior spread uniformly over 128 wall actions \u2014 wall_mask_iters removes that premise, since the masked phase has ~4 legal actions and the unmasked phase starts from a move-concentrated prior. Self-play is 93% of the iteration, so 600 roughly halves the run: N=2 ~32h vs ~62h at 150 iters."
+        "_num_simulations_note": "600. The visits-per-action argument for 1200 (140 actions / 600 sims = 4.3 visits) assumed a prior spread uniformly over 128 wall actions — wall_mask_iters removes that premise, since the masked phase has ~4 legal actions and the unmasked phase starts from a move-concentrated prior. Self-play is 93% of the iteration, so 600 roughly halves the run: N=2 ~32h vs ~62h at 150 iters."
     },
     "network": {
         "num_res_blocks": 8,
@@ -19,27 +19,29 @@
         "_iters_note": "num_iterations/games_per_iteration are per variant; N=4 games run ~3x longer so it buys fewer of them for the same wall clock",
         "batch_size": 128,
         "training_epochs": 600,
-        "_replay_buffer_note": "100k ~= 7 iterations of coverage at N=2 \u2014 the regime runs/n2_5x5_buf10k_v1 validated.",
+        "_replay_buffer_note": "100k ~= 7 iterations of coverage at N=2 — the regime runs/n2_5x5_buf10k_v1 validated.",
         "replay_buffer_size": 100000,
         "learning_rate": 0.001,
         "lr_schedule": "cosine",
         "lr_final_frac": 0.1,
         "weight_decay": 0.0001,
-        "_ply_counted_note": "max_game_moves and explore_moves both count plies, not rounds \u2014 set per variant so each player gets the same budget; see variants.n2/n4",
+        "_ply_counted_note": "max_game_moves and explore_moves both count plies, not rounds — set per variant so each player gets the same budget; see variants.n2/n4",
         "warmup_min_samples": 5000,
         "accept_margin": 0.08,
         "eval_every": 5,
         "reward_decay": 0.99,
         "_discount_unit_note": "Per-variant: 'round' decays per the mover's own turns, 'ply' per move by anybody. Measured better at N=2, worse at N=4.",
         "_accept_margin_note": "0.08 at eval_games=160. The old 0.05 at 80 games was +0.9 sigma = 19% false accepts, and v4's post-iter-15 accepts were consistent with pure noise. Sigma depends on DECIDED games, not eval_games: N=4 decides 94% (+2.3 sigma), N=2 only 78% (+1.8 sigma, ~4%) because gate games time out at max_game_moves far more than self-play games do.",
-        "_wall_mask_note": "Race-only self-play for the opening iterations. Walls are 128 of 140 actions at 9x9 (32 of 44 at 5x5), so an untrained policy walls ~91% of the time and never learns the race. Eval always plays the full game. 0 = off.",
+        "_wall_mask_note": "Race-only self-play for the opening iterations, then a ramp back to the full wall count. Walls are 128 of 140 actions at 9x9, so an untrained policy walls ~91% of the time and never learns the race. Eval always plays the full game. 0/0 = off.",
         "wall_mask_iters": 10,
         "_reward_decay_note": "0.99, NOT 0.97. Probed both 5x5 arms vs greedy at tensor spec v1, 20 games/seat: gamma=0.99 goes 40/40 (seat 0 with exactly 1 wall/game), gamma=0.97 goes 20/40, losing seat 0 entirely (0/20) by over-walling at 3/game. Seat 0 is won only by spending a turn on a wall that pays off later, and a steeper discount makes that lose to advancing now. The 2026-06 gamma ablation measured loss_v drift only and says nothing about playing strength.",
         "_greedy_stop_note": "Abort on racing decay, which the gate cannot see: in local_9x9_v6 it accepted at 69% and 60% while greedy fell 60% -> 10% over the same window. One seat is always winnable by racing alone (seat 1 at N=2, seat 0 at N=4), so the best per-seat rate has a hard ceiling and only falls if the policy stops racing. Warns on the first eval 20+ pts below the peak, stops on the second. best.pt holds the peak, so an early stop still ships the good model.",
         "_greedy_stop_z_note": "A strike needs the drop to clear BOTH greedy_stop_drop and greedy_stop_z sigma. Without the sigma test a model whose true rate never changes aborts 53-92% of the time, because the peak is a max over seats and evals (see academic_experiences.md 8.5). At 20 games/seat only a collapse is detectable; that is what racing decay looks like.",
         "greedy_stop_patience": 2,
         "greedy_stop_drop": 0.2,
-        "greedy_stop_z": 2.0
+        "greedy_stop_z": 2.0,
+        "_wall_ramp_note": "10, NOT 0. Handing back all the walls at once relapsed the policy in a single iteration at both player counts: at N=4 (probe_n4_masked) avg_len went 30 -> 64 -> 91 plies, draws 0% -> 22%, and the gate fell 45% ACCEPT -> 12.5% reject the iteration walls returned. The ramp adds one wall at a time instead. See academic_experiences.md 8.6.",
+        "wall_ramp_iters": 10
     },
     "parallel": {
         "_num_workers_note": "Match the pod's cgroup cpu quota (16). Above it the jupyter server stops answering its own health check, whose entrypoint runs pkill -9 on failure.",
@@ -76,7 +78,7 @@
             "eval_random_games": 40,
             "eval_greedy_games": 80,
             "discount_unit": "ply",
-            "_eval_greedy_note": "80, not 40: the greedy eval rotates the candidate through all N seats, so at N=4 a 40-game eval is only 10 games per seat \u2014 and greedy_stop_patience keys on the BEST per-seat rate, which at n=10 has SE ~0.095, making the 20-pt abort threshold barely 2 sigma. 80 gives 20/seat, matching n2, where 20-pt is ~4 sigma. Costs ~20s an eval against a ~500s iteration."
+            "_eval_greedy_note": "80, not 40: the greedy eval rotates the candidate through all N seats, so at N=4 a 40-game eval is only 10 games per seat — and greedy_stop_patience keys on the BEST per-seat rate, which at n=10 has SE ~0.095, making the 20-pt abort threshold barely 2 sigma. 80 gives 20/seat, matching n2, where 20-pt is ~4 sigma. Costs ~20s an eval against a ~500s iteration."
         }
     }
 }

@@ -116,12 +116,16 @@ class TrainingConfigMP:
     board_size: int = 5
     max_walls_per_player: int = 3
     max_turns: int = 300
-    # Mask wall actions out of SELF-PLAY for this many opening iterations, so the
-    # policy learns to race before it can wall. Eval always allows walls, so the
+    # Wall curriculum for SELF-PLAY only; eval always plays the full game so the
     # gate and the greedy baseline stay comparable across the whole run.
-    # 0 = off. Set per iteration onto cfg.walls_enabled, which the workers read.
+    # wall_mask_iters opening iterations at 0 walls (a pure race), then
+    # wall_ramp_iters spent climbing to max_walls_per_player. 0/0 = off.
+    # Handing back all the walls at once relapsed the policy in one iteration at
+    # both player counts; see academic_experiences.md 8.6.
     wall_mask_iters: int = 0
-    walls_enabled: bool = True
+    wall_ramp_iters: int = 0
+    # Set per iteration onto cfg.wall_budget, which the workers read.
+    wall_budget: int = None
     # Input-plane spec the run trains under; frozen into the run dir's config.json
     # so the resulting checkpoint can be replayed on the planes it actually saw.
     spec_version: int = CURRENT_SPEC
@@ -360,19 +364,32 @@ def resource_banner(cfg):
     return lines
 
 
-@contextmanager
-def _wall_mask(cfg, env, masked):
-    """Race-only self-play for the opening iterations, so the policy is not
-    initialised into a 91%-walls action prior (9x9: walls are 128 of 140
-    actions). Restores on the way out even if self-play raises — eval, gating
-    and the greedy baseline must always play the full game, and the caller may
-    keep using this env after a failed iteration.
+def wall_budget_at(it, mask_iters, ramp_iters, max_walls):
+    """Walls each player starts self-play with at iteration `it` (0-based).
+
+    0 while masked, then one wall at a time up to max_walls, then max_walls.
     """
-    cfg.walls_enabled = env.walls_enabled = not masked
+    if it < mask_iters:
+        return 0
+    step = it - mask_iters
+    if ramp_iters <= 0 or step >= ramp_iters:
+        return max_walls
+    return max(1, math.ceil(max_walls * (step + 1) / ramp_iters))
+
+
+@contextmanager
+def _wall_budget(cfg, env, budget):
+    """Apply the curriculum's wall budget to self-play only.
+
+    Restores on the way out even if self-play raises — eval, gating and the
+    greedy baseline must always play the full game, and the caller may keep
+    using this env after a failed iteration.
+    """
+    cfg.wall_budget = env.wall_budget = budget
     try:
         yield
     finally:
-        cfg.walls_enabled = env.walls_enabled = True
+        cfg.wall_budget = env.wall_budget = None
 
 
 def assert_resume_spec_matches(cfg, checkpoint_dir):
@@ -527,11 +544,15 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
         # --- 1. self-play ---
-        walls_masked = it < cfg.wall_mask_iters
-        with _wall_mask(cfg, env, walls_masked):
+        budget = wall_budget_at(it, cfg.wall_mask_iters, cfg.wall_ramp_iters,
+                                cfg.max_walls_per_player)
+        with _wall_budget(cfg, env, budget):
+            curriculum = ("" if budget == cfg.max_walls_per_player else
+                          f", WALLS MASKED" if budget == 0 else
+                          f", {budget}/{cfg.max_walls_per_player} WALLS")
             _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
                  f"({cfg.games_per_iteration} games, {cfg.mcts_simulations} sims"
-                 f"{', WALLS MASKED' if walls_masked else ''})...")
+                 f"{curriculum})...")
 
             def _on_progress(done, total, w):
                 if done % 5 == 0 or done == total:
@@ -687,6 +708,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # First iteration after a relaunch, so a reader of the loss
                    # curve can tell a resume dip from learning dynamics.
                    resumed=(it == start_iter and start_iter > 0),
+                   # Walls self-play ran with, so the curriculum is legible in
+                   # the record rather than only in games.log.
+                   wall_budget=budget,
                    # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
                    rand_decided_games=None, greedy_decided_games=None,

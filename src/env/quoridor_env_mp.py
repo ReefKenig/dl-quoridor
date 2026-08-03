@@ -60,16 +60,17 @@ class QuoridorStateMP:
 
 class QuoridorEnvMP(QuoridorEnvInterface):
     def __init__(self, board_size=5, num_players=4, max_turns=300,
-                 debug=False, max_walls_per_player=None, walls_enabled=True,
+                 debug=False, max_walls_per_player=None, wall_budget=None,
                  spec_version=CURRENT_SPEC):
         assert 2 <= num_players <= 4
         self.board_size = board_size
         self.num_players = num_players
-        # False masks every wall action out of get_valid_actions, turning the
-        # game into a pure race. Used as an early-training curriculum: at 9x9
-        # walls are 128 of 140 actions, so an untrained policy walls ~91% of
-        # the time and self-play never selects for racing.
-        self.walls_enabled = walls_enabled
+        # Walls each player STARTS with; None = max_walls_per_player. The
+        # early-training curriculum ramps this up from 0 (a pure race), because
+        # at 9x9 walls are 128 of 140 actions and an untrained policy walls
+        # ~91% of the time. max_walls_per_player stays fixed either way so the
+        # walls-remaining plane keeps one scale.
+        self.wall_budget = wall_budget
         # Must match the spec the consuming model trained under; see pathing.py.
         self.spec_version = spec_version
         if max_walls_per_player is not None:
@@ -91,13 +92,20 @@ class QuoridorEnvMP(QuoridorEnvInterface):
     def action_space_size(self) -> int:
         return compute_action_space_size(self.board_size)
 
+    @property
+    def starting_walls(self):
+        """Walls each player begins with — the curriculum budget, or the max."""
+        if self.wall_budget is None:
+            return self.max_walls_per_player
+        return max(0, min(self.wall_budget, self.max_walls_per_player))
+
     def reset(self) -> QuoridorStateMP:
         starts = [s for s, _ in self._specs]
         goals = [g for _, g in self._specs]
         return QuoridorStateMP(
             board_size=self.board_size, num_players=self.num_players,
             positions=list(starts), h_walls=set(), v_walls=set(),
-            walls_remaining=[self.max_walls_per_player] * self.num_players,
+            walls_remaining=[self.starting_walls] * self.num_players,
             max_walls=self.max_walls_per_player, goals=goals,
             current_player=0, turn_count=0, game_over=False, winner=None,
         )
@@ -152,7 +160,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
         valid = []
         for tgt in self._pawn_moves(pos, others, h, v):
             valid.append(MOVE_MAP[(tgt[0] - pos[0], tgt[1] - pos[1])])
-        if self.walls_enabled and state.walls_remaining[cp] > 0:
+        if state.walls_remaining[cp] > 0:
             W = self.board_size - 1
             h_off, v_off = 12, 12 + W ** 2
             blockers = self._player_blockers(state, h, v)
@@ -219,7 +227,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
         if self._pawn_moves(pos, others, state.h_walls, state.v_walls):
             return True
         # No pawn moves; check if any wall placement is legal
-        if self.walls_enabled and state.walls_remaining[cp] > 0:
+        if state.walls_remaining[cp] > 0:
             W = self.board_size - 1
             for r in range(W):
                 for c in range(W):

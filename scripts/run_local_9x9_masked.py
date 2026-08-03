@@ -1,10 +1,11 @@
 """Local smoke run: does the wall curriculum make a 9x9 model race?
 
 Small net, low sims, few iterations — sized for a laptop, not for strength. The
-question it answers is directional: with walls masked out of early self-play,
-does the policy learn to advance? Watch avg_len (should fall toward a pure race
-while masked) and the per-seat greedy line — one seat is won outright by racing,
-so it is the first place progress shows up.
+question it answers is directional: with walls masked out of early self-play and
+then ramped back one at a time, does the policy learn to advance and keep it?
+Watch avg_len (should fall toward a pure race while masked, and NOT balloon when
+the walls return) and the per-seat greedy line — one seat is won outright by
+racing, so it is the first place progress shows up.
 
     PYTHONPATH=. .venv/bin/python scripts/run_local_9x9_masked.py          # N=2
     VARIANT=n4 PYTHONPATH=. .venv/bin/python scripts/run_local_9x9_masked.py
@@ -70,8 +71,9 @@ def main():
         explore_moves=rc["explore_moves"],
         discount=rc["reward_decay"],
         discount_unit=rc["discount_unit"],
-        # The whole point of the run: race-only self-play, then unmask.
+        # The whole point of the run: race-only self-play, then ramp walls back.
         wall_mask_iters=int(os.environ.get("MASK_ITERS", rc["wall_mask_iters"])),
+        wall_ramp_iters=int(os.environ.get("RAMP_ITERS", rc["wall_ramp_iters"])),
         greedy_stop_patience=int(os.environ.get("STOP_PATIENCE", 2)),
         greedy_stop_drop=float(os.environ.get("STOP_DROP", 0.20)),
         greedy_stop_z=float(os.environ.get("STOP_Z", 2.0)),
@@ -92,8 +94,8 @@ def main():
     )
     print(f"local 9x9 smoke [{VARIANT}]: N={N} walls={WALLS} max_moves={MAX_MOVES} "
           f"discount={cfg.discount}/{cfg.discount_unit} | {cfg.num_iterations} iters, "
-          f"{cfg.games_per_iteration} games/iter, mask for {cfg.wall_mask_iters} "
-          f"-> {run_dir}", flush=True)
+          f"{cfg.games_per_iteration} games/iter, mask {cfg.wall_mask_iters} "
+          f"+ ramp {cfg.wall_ramp_iters} -> {run_dir}", flush=True)
     training_loop_mp(env, make_model(), make_model, cfg, checkpoint_dir=run_dir)
 
 

@@ -63,6 +63,7 @@ def main():
         # The three features under test, all on at once, as they will be remotely.
         wall_mask_fraction=0.5,
         opponent_greedy_share=GREEDY_SHARE,
+        anchored_sample_share=float(os.environ.get('SAMPLE_SHARE', 0.3)),
         greedy_stop_patience=0,
         parallel_self_play=True, parallel_eval=True, self_play_mode="parallel",
         num_workers=2, inference_batch_size=16,
@@ -111,6 +112,20 @@ def main():
                     f"{per_anchor:.1f} vs {per_self:.1f} samples/game")
     else:
         print("  [SKIP] need both kinds of game in the last iteration")
+
+    print("\n=== 4b. the batch sampler can reach the target share ===")
+    from src.mcts.training_mp import ReplayBufferMP
+    import numpy as np
+    probe = ReplayBufferMP(20000)
+    mk = lambda tag: (np.full((3, 3, 1), tag, np.float32),
+                      np.zeros(4, np.float32), np.zeros(2, np.float32))
+    probe.add([mk(0.0) for _ in range(9000)], sources=["self"] * 9000)
+    probe.add([mk(1.0) for _ in range(1000)], sources=["greedy"] * 1000)
+    target = 0.3
+    S, _P, _V = probe.sample_batch(200, source="greedy", source_share=target)
+    got = float(np.mean([s.max() > 0.5 for s in S]))
+    ok &= check("a 10% buffer still yields a 30% batch",
+                abs(got - target) < 0.03, f"target {target}, got {got:.2f}")
 
     print("\n=== 5. curriculum still recorded ===")
     ok &= check("wall_mask_fraction", rows[-1].get("wall_mask_fraction") == 0.5,

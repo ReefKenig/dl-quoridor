@@ -171,6 +171,12 @@ class TrainingConfigMP:
     # converges on a jump-camping equilibrium the evaluation never rewards.
     opponent_past_share: float = 0.0
     opponent_greedy_share: float = 0.0
+    # Target share of each TRAINING BATCH drawn from anchored games. The shares
+    # above govern how many games are produced; this governs how much gradient
+    # they get, and the two diverge by ~9x at N=2 and ~20x at N=4. 0 = uniform,
+    # which let 35% of games become ~10% of the gradient — enough to acquire
+    # racing at iteration 8 and not enough to still have it at iteration 12.
+    anchored_sample_share: float = 0.0
     # Champion snapshots kept for the past-opponent share.
     champion_pool_size: int = 5
 
@@ -189,17 +195,65 @@ class TrainingConfigMP:
 BUFFER_FILE = "replay_buffer.npz"
 
 
+SELF_SOURCE = "self"
+
+
 class ReplayBufferMP:
+    """Replay buffer that can draw a batch at a TARGET source mix.
+
+    Uniform sampling makes the gradient share a consequence of how many samples
+    each opponent happened to produce, which is not what the config asks for: an
+    anchored game yields only the model's own plies and ends sooner, so 35% of
+    games came out as ~10% of the gradient and the anchored signal was too weak
+    to hold. Sampling to a target share decouples production from consumption.
+    """
+
     def __init__(self, max_size=50_000):
         self.buffer = deque(maxlen=max_size)
+        # Parallel deque: same maxlen, appended and evicted in lockstep, so a
+        # source always describes the sample at the same index.
+        self.sources = deque(maxlen=max_size)
 
-    def add(self, samples):
-        # each sample: (state_hwc, policy, value_vec)
+    def add(self, samples, sources=None):
+        samples = list(samples)
         self.buffer.extend(samples)
+        if sources is None:
+            self.sources.extend([SELF_SOURCE] * len(samples))
+        else:
+            sources = list(sources)
+            if len(sources) != len(samples):
+                raise ValueError(
+                    f"{len(sources)} sources for {len(samples)} samples — the "
+                    f"two deques must stay index-aligned.")
+            self.sources.extend(sources)
 
-    def sample_batch(self, batch_size):
+    def indices_by_source(self, source):
+        return [i for i, s in enumerate(self.sources) if s == source]
+
+    def sample_batch(self, batch_size, source=None, source_share=0.0):
+        """A batch, optionally drawing `source_share` of it from `source`.
+
+        Falls back to whatever is available rather than failing: early
+        iterations may hold fewer anchored samples than the target asks for.
+        """
         n = min(batch_size, len(self.buffer))
-        idx = np.random.choice(len(self.buffer), n, replace=False)
+        if source and source_share > 0:
+            wanted = int(round(n * min(source_share, 1.0)))
+            pool = self.indices_by_source(source)
+            take = min(wanted, len(pool))
+            chosen = list(np.random.choice(pool, take, replace=False)) if take else []
+            rest = [i for i in range(len(self.buffer)) if self.sources[i] != source]
+            need = n - len(chosen)
+            if need > 0:
+                if len(rest) >= need:
+                    chosen += list(np.random.choice(rest, need, replace=False))
+                else:                       # not enough of the other source yet
+                    spare = [i for i in range(len(self.buffer)) if i not in set(chosen)]
+                    chosen += list(np.random.choice(
+                        spare, min(need, len(spare)), replace=False))
+            idx = np.array(chosen, dtype=int)
+        else:
+            idx = np.random.choice(len(self.buffer), n, replace=False)
         b = [self.buffer[i] for i in idx]
         S = np.array([x[0] for x in b], np.float32)
         P = np.array([x[1] for x in b], np.float32)
@@ -217,8 +271,9 @@ class ReplayBufferMP:
         S = np.array([x[0] for x in self.buffer], np.float32)
         P = np.array([x[1] for x in self.buffer], np.float32)
         V = np.array([x[2] for x in self.buffer], np.float32)
+        src = np.array(list(self.sources), dtype="U16")
         with open(tmp, "wb") as f:
-            np.savez(f, S=S, P=P, V=V)
+            np.savez(f, S=S, P=P, V=V, src=src)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
@@ -233,6 +288,9 @@ class ReplayBufferMP:
         try:
             with np.load(path) as data:
                 S, P, V = data["S"], data["P"], data["V"]
+                # Buffers written before source tagging have no "src"; treating
+                # them as self-play is what they were.
+                src = data["src"] if "src" in data else None
         except (OSError, ValueError, KeyError) as exc:
             log(f"WARNING: could not read {path} ({exc}) — starting with an "
                 f"empty buffer, as if it had not been persisted.")
@@ -240,7 +298,8 @@ class ReplayBufferMP:
         # .copy() because iterating a stacked array yields views: one surviving
         # view keeps the entire ~500 MB base alive. maxlen trims the oldest if
         # the run resumes at a smaller buffer size.
-        self.add((s.copy(), p.copy(), v.copy()) for s, p, v in zip(S, P, V))
+        self.add([(s.copy(), p.copy(), v.copy()) for s, p, v in zip(S, P, V)],
+                 sources=(list(src) if src is not None else None))
         return len(self.buffer)
 
 
@@ -753,7 +812,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     raise RuntimeError(zero_sample_reason(
                         it + 1, "parallel", wins, cfg.games_per_iteration,
                         checkpoint_dir))
-                buffer.add(sp_samples)
+                buffer.add(sp_samples, sources=sp_stats.get("sources"))
                 n_new_samples = len(sp_samples)
             else:
                 # Sequential self-play (original path)
@@ -817,7 +876,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             _log(f"[iter {it+1}/{cfg.num_iterations}] training skipped — "
                  f"buffer {len(buffer)} < warmup {warmup} (filling)")
         for _ in range(steps):
-            S, P, V = buffer.sample_batch(cfg.batch_size)
+            S, P, V = buffer.sample_batch(
+                cfg.batch_size, source="greedy",
+                source_share=cfg.anchored_sample_share)
             a, b = model.train_step(S, P, V)
             lp += a
             lv += b

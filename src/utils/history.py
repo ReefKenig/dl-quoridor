@@ -19,16 +19,19 @@ EVAL_LABELS = {
     "win_vs_minimax": "vs minimax (held out)",
 }
 EVAL_KEYS = tuple(EVAL_LABELS)
-# The two scripted baselines a racer cannot beat past its seat share. The gate
-# and random opponents carry no such cap, so normalising them would mislead.
-CEILING_KEYS = ("win_vs_greedy", "win_vs_minimax")
+# Greedy ONLY. The 1/N cap comes from greedy-vs-greedy being decided purely by
+# seat (200/200 at 9x9). Minimax places walls, so it is not seat-determined —
+# measured 40/60 at N=2 and 23/23/27/27 at N=4 — and a model can in principle
+# beat it from every seat. Normalising it by 1/N would overstate a result twofold.
+CEILING_KEYS = ("win_vs_greedy",)
 
 
 def racer_ceiling(num_players):
-    """Highest pooled win rate a pure racer can reach against a scripted racer.
+    """Highest pooled win rate a pure racer can reach AGAINST GREEDY.
 
     Greedy vs greedy is decided by seat — the player who jumps takes the tempo
     and wins 200/200 at 9x9 — so a racer scores only from that 1 seat in N.
+    Specific to greedy: see CEILING_KEYS.
     """
     return 1.0 / num_players
 

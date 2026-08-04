@@ -240,10 +240,13 @@ def test_summary_reports_the_raw_rate_and_the_normalised_one():
     assert "120% of achievable" in n4 and "ceiling 25%" in n4
 
 
-def test_the_held_out_baseline_is_normalised_too():
+def test_the_held_out_baseline_is_reported_raw():
+    """Minimax is NOT seat-determined (40/60 at N=2, 23/23/27/27 at N=4), so it
+    carries no 1/N cap and must not be normalised by one."""
     lines = "\n".join(summary_lines(_mechanism_history(), 0.25))
     assert "vs minimax (held out)" in lines
-    assert "40% of achievable" in lines                  # 10% of a 25% ceiling
+    minimax_line = next(l for l in lines.split("\n") if l.startswith("vs minimax"))
+    assert "of achievable" not in minimax_line
 
 
 def test_the_ceiling_is_drawn_and_the_endpoint_carries_both_numbers():
@@ -251,8 +254,10 @@ def test_the_ceiling_is_drawn_and_the_endpoint_carries_both_numbers():
                                "anchored", fair=0.25)
     texts = [t.get_text() for t in fig.axes[0].texts]
 
-    assert any("pure-racer ceiling 25%" in t for t in texts)
-    assert any("10%" in t and "40% of achievable" in t for t in texts)
+    assert any("pure-racer ceiling vs greedy 25%" in t for t in texts)
+    # Greedy carries the normalised figure; the held-out endpoint stays raw.
+    assert any("of achievable" in t for t in texts)
+    assert not any("of achievable" in t and t.startswith("10%") for t in texts)
 
 
 @pytest.mark.parametrize("fair", [0.5, 0.25])
@@ -278,3 +283,23 @@ def test_a_run_with_no_fixed_baseline_draws_no_ceiling():
 
     texts = [t.get_text() for t in fig.axes[0].texts]
     assert not any("ceiling" in t for t in texts)
+
+
+def test_the_ceiling_is_greedy_only_not_minimax():
+    """The 1/N cap comes from greedy-vs-greedy being decided purely by seat
+    (200/200 at 9x9). Minimax places walls and is NOT seat-determined —
+    measured 40/60 at N=2 and 23/23/27/27 at N=4 — so a model can beat it from
+    every seat and normalising it by 1/N would overstate the result twofold."""
+    from src.utils.history import CEILING_KEYS
+    assert CEILING_KEYS == ("win_vs_greedy",)
+
+
+def test_summary_normalises_greedy_but_leaves_minimax_raw():
+    from src.utils.history import summary_lines
+    rows = _mechanism_history()
+    lines = summary_lines(rows, fair=0.5)
+    greedy = next(l for l in lines if l.startswith("vs greedy"))
+    minimax = next(l for l in lines if l.startswith("vs minimax"))
+    assert "of achievable" in greedy
+    assert "of achievable" not in minimax, \
+        "minimax has no 1/N ceiling — it is not seat-determined"

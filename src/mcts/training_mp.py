@@ -170,6 +170,22 @@ class TrainingConfigMP:
     # Champion snapshots kept for the past-opponent share.
     champion_pool_size: int = 5
 
+    def __post_init__(self):
+        # Self-play serves one model through the batcher (model_id 0); a past
+        # champion needs a second. Fail loudly rather than silently training
+        # pure self-play while the config claims a pool.
+        if self.opponent_past_share:
+            raise NotImplementedError(
+                "opponent_past_share is configured but not implemented — "
+                "self-play runs a single model through the inference batcher. "
+                "Use opponent_greedy_share, or implement the champion pool "
+                "first (see docs/opponent_pool_and_evaluation.md).")
+        total = self.opponent_past_share + self.opponent_greedy_share
+        if total > 1.0:
+            raise ValueError(
+                f"opponent shares sum to {total:.2f}; they are fractions of "
+                f"each iteration's games and cannot exceed 1.0.")
+
 
 BUFFER_FILE = "replay_buffer.npz"
 

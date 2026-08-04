@@ -16,6 +16,7 @@ EVAL_LABELS = {
     "win_vs_random": "vs random",
     "win_vs_best": "vs best (gate)",
     "win_vs_greedy": "vs greedy (fixed)",
+    "win_vs_minimax": "vs minimax (held out)",
 }
 EVAL_KEYS = tuple(EVAL_LABELS)
 

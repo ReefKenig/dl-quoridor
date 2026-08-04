@@ -91,6 +91,15 @@ def main():
         wall_ramp_hold=int(os.environ.get("RAMP_HOLD", rc["wall_ramp_hold"])),
         wall_mask_fraction=float(os.environ.get(
             "MASK_FRACTION", rc.get("wall_mask_fraction", 0.0))),
+        # Opponent pool. The share is over GAMES; the gradient is over SAMPLES,
+        # and an anchored game yields ~9x fewer at N=2 and ~20x fewer at N=4.
+        # Tune against samples_by_source, not opponent_mix.
+        opponent_greedy_share=float(os.environ.get("GREEDY_SHARE", 0.0)),
+        # Held-out baseline: never a training opponent, and it places walls.
+        eval_minimax_games=int(os.environ.get(
+            "EVAL_MINIMAX", rc.get("eval_minimax_games", 0))),
+        minimax_depth=int(os.environ.get("MINIMAX_DEPTH",
+                                         rc.get("minimax_depth", 2))),
         greedy_stop_patience=int(os.environ.get("STOP_PATIENCE", 2)),
         greedy_stop_drop=float(os.environ.get("STOP_DROP", 0.20)),
         greedy_stop_z=float(os.environ.get("STOP_Z", 2.0)),

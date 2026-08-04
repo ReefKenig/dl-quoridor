@@ -28,74 +28,99 @@ MODELS_PATH = os.path.join(root_dir, "runs", "MODELS.json")
 with open(MODELS_PATH) as f:
     MODEL_REGISTRY = json.load(f)["models"]
 
-BOARD_SIZE = 5
-ACTION_SIZE = compute_action_space_size(BOARD_SIZE)
-
-# ── Load 2-player model ──
-cfg_2p = MODEL_REGISTRY["2p_vector"]
-# spec_version from the registry, not the default: these checkpoints were trained
-# under tensor spec v1 and read the distance planes on that scale.
-env_2p = QuoridorEnvMP(board_size=BOARD_SIZE,
-                       num_players=2, max_walls_per_player=3,
-                       spec_version=cfg_2p["tensor_spec"])
-model_2p = QuoridorModelMP(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE,
-                           in_channels=cfg_2p["in_channels"],
-                           num_channels=64, num_res_blocks=4,
-                           num_players=cfg_2p["num_players"])
-if os.path.exists(cfg_2p["path"]):
-    model_2p.load(cfg_2p["path"])
-    print(f"[2P] Loaded: {cfg_2p['path']}")
-else:
-    print(f"[2P] WARNING: {cfg_2p['path']} not found")
+# Which registry entry + env settings back each (board_size, num_players) combo.
+# 5x5 is the POC (64ch/4blocks, scaled-down walls); 9x9 is the full-size board
+# (128ch/8blocks, official wall counts).
+BOARD_VARIANTS = {
+    (5, 2): {"registry_key": "2p_vector", "max_walls": 3, "max_turns": 300,
+             "num_channels": 64, "num_res_blocks": 4},
+    (5, 4): {"registry_key": "4p_ship", "max_walls": 4, "max_turns": 300,
+             "num_channels": 64, "num_res_blocks": 4},
+    (9, 2): {"registry_key": "2p_9x9", "max_walls": 10, "max_turns": 200,
+             "num_channels": 128, "num_res_blocks": 8},
+    (9, 4): {"registry_key": "4p_9x9", "max_walls": 5, "max_turns": 200,
+             "num_channels": 128, "num_res_blocks": 8},
+}
 
 
-def eval_2p(state):
-    tensor = env_2p.state_to_tensor(state)
-    policy, value_vec = model_2p.predict(tensor)
-    return policy, float(value_vec[state.current_player])
+def _build_agent(board_size, num_players, spec):
+    """Build one env + actor factory (MCTS over the trained net) for a combo.
+
+    An actor is a callable (env, state) -> action.
+    """
+    cfg = MODEL_REGISTRY[spec["registry_key"]]
+    action_size = compute_action_space_size(board_size)
+    # spec_version from the registry: each checkpoint reads its distance planes
+    # on the tensor scale it was trained under (see MODELS.json _tensor_spec_note).
+    env = QuoridorEnvMP(board_size=board_size, num_players=num_players,
+                        max_turns=spec["max_turns"],
+                        max_walls_per_player=spec["max_walls"],
+                        spec_version=cfg["tensor_spec"])
+    model = QuoridorModelMP(board_size=board_size, action_space_size=action_size,
+                            in_channels=cfg["in_channels"],
+                            num_channels=spec["num_channels"],
+                            num_res_blocks=spec["num_res_blocks"],
+                            num_players=num_players)
+    tag = f"[{board_size}x{board_size} N={num_players}]"
+    if os.path.exists(cfg["path"]):
+        model.load(cfg["path"])
+        print(f"{tag} Loaded: {cfg['path']}")
+    else:
+        print(f"{tag} WARNING: {cfg['path']} not found")
+
+    if num_players == 2:
+        # Negamax at N=2: score the current player's own value component.
+        def evaluate(state):
+            policy, value_vec = model.predict(env.state_to_tensor(state))
+            return policy, float(value_vec[state.current_player])
+
+        def make_mcts(settings):
+            return MCTS(config=MCTSConfig(
+                num_simulations=settings["num_simulations"],
+                c_puct=settings["c_puct"],
+                dirichlet_epsilon=settings["dirichlet_epsilon"]),
+                evaluate_fn=evaluate)
+    else:
+        def evaluate(state):
+            return model.predict(env.state_to_tensor(state))
+
+        def make_mcts(settings):
+            # Narrow search to the walls that can change a distance to goal, so
+            # a high sim count actually resolves the position instead of
+            # spreading ~5 visits over 131 actions.
+            return MCTSMaxN(config=MCTSConfigMaxN(
+                num_simulations=settings["num_simulations"],
+                c_puct=settings["c_puct"],
+                dirichlet_epsilon=settings["dirichlet_epsilon"],
+                wall_candidates=settings.get("wall_candidates", 16)),
+                evaluate_fn=evaluate, num_players=num_players)
+
+    def make_actor(settings):
+        mcts = make_mcts(settings)
+        temp = settings["temperature"]
+
+        def act(e, s):
+            probs = mcts.search(e, s, temperature=temp)
+            if temp < 0.1:
+                return int(np.argmax(probs))
+            return int(np.random.choice(len(probs), p=probs))
+
+        return act
+
+    return {"env": env, "make_actor": make_actor}
 
 
-def make_mcts_2p(settings):
-    cfg = MCTSConfig(num_simulations=settings["num_simulations"],
-                     c_puct=settings["c_puct"],
-                     dirichlet_epsilon=settings["dirichlet_epsilon"])
-    return MCTS(config=cfg, evaluate_fn=eval_2p)
-
-
-# ── Load 4-player model ──
-cfg_4p = MODEL_REGISTRY["4p_ship"]
-env_4p = QuoridorEnvMP(board_size=BOARD_SIZE, num_players=4,
-                       max_turns=300, max_walls_per_player=4,
-                       spec_version=cfg_4p["tensor_spec"])
-model_4p = QuoridorModelMP(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE,
-                           in_channels=cfg_4p["in_channels"],
-                           num_channels=64, num_res_blocks=4,
-                           num_players=cfg_4p["num_players"])
-if os.path.exists(cfg_4p["path"]):
-    model_4p.load(cfg_4p["path"])
-    print(f"[4P] Loaded: {cfg_4p['path']}")
-else:
-    print(f"[4P] WARNING: {cfg_4p['path']} not found")
-
-
-def eval_4p(state):
-    tensor = env_4p.state_to_tensor(state)
-    return model_4p.predict(tensor)
-
-
-def make_mcts_4p(settings):
-    cfg = MCTSConfigMaxN(num_simulations=settings["num_simulations"],
-                         c_puct=settings["c_puct"],
-                         dirichlet_epsilon=settings["dirichlet_epsilon"])
-    return MCTSMaxN(config=cfg, evaluate_fn=eval_4p, num_players=4)
+AGENTS = {key: _build_agent(bs, np_, spec)
+          for key in BOARD_VARIANTS
+          for (bs, np_), spec in [(key, BOARD_VARIANTS[key])]}
 
 
 # ── Game state ──
 current_game_state = None
 current_num_players = 2
-current_env = env_2p
-current_mcts = make_mcts_2p(DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY])
-current_temperature = DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY]["temperature"]
+current_env = AGENTS[(5, 2)]["env"]
+current_actor = AGENTS[(5, 2)]["make_actor"](
+    DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY])
 
 
 # --- WEB ROUTES ---
@@ -112,7 +137,7 @@ def serve_static(path):
 # --- GAME API ROUTES ---
 @app.route("/api/<board_size>/reset", methods=["POST"])
 def reset_game(board_size):
-    global current_game_state, current_num_players, current_env, current_mcts, current_temperature
+    global current_game_state, current_num_players, current_env, current_actor
     data = request.json or {}
     num_players = data.get("num_players", 2)
     difficulty = data.get("difficulty", DEFAULT_DIFFICULTY)
@@ -120,16 +145,20 @@ def reset_game(board_size):
     if difficulty not in DIFFICULTY_SETTINGS:
         difficulty = DEFAULT_DIFFICULTY
     settings = DIFFICULTY_SETTINGS[difficulty]
-    current_temperature = settings["temperature"]
 
-    if num_players == 4:
-        current_num_players = 4
-        current_env = env_4p
-        current_mcts = make_mcts_4p(settings)
-    else:
-        current_num_players = 2
-        current_env = env_2p
-        current_mcts = make_mcts_2p(settings)
+    # board_size arrives as e.g. "5x5" or "9x9"; take the leading dimension.
+    try:
+        bs = int(str(board_size).lower().split("x")[0])
+    except (ValueError, IndexError):
+        bs = 5
+    num_players = 4 if num_players == 4 else 2
+    if (bs, num_players) not in AGENTS:
+        bs = 5
+
+    agent = AGENTS[(bs, num_players)]
+    current_num_players = num_players
+    current_env = agent["env"]
+    current_actor = agent["make_actor"](settings)
 
     current_game_state = current_env.reset()
     return jsonify(_extract_positions(current_env, current_game_state))
@@ -191,13 +220,7 @@ def process_move(board_size):
 
         ai_steps = []
         while current_env.get_current_player(current_game_state) != 0 and not current_game_state.game_over:
-            action_probs = current_mcts.search(
-                current_env, current_game_state, temperature=current_temperature)
-            if current_temperature < 0.1:
-                ai_action = int(np.argmax(action_probs))
-            else:
-                ai_action = int(np.random.choice(
-                    len(action_probs), p=action_probs))
+            ai_action = current_actor(current_env, current_game_state)
             current_game_state, reward, done, info = current_env.step(
                 current_game_state, ai_action)
             ai_steps.append(_extract_positions(
@@ -265,4 +288,4 @@ def _extract_positions(env, state):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

@@ -194,6 +194,49 @@ class QuoridorEnvMP(QuoridorEnvInterface):
                             valid.append(wall_action(False, r, c, self.board_size))
         return np.array(valid, dtype=np.int64)
 
+    def get_search_actions(self, state, max_walls=0):
+        """Legal actions worth SEARCHING: pawn moves + walls that cut a path.
+
+        Always a subset of get_valid_actions — this narrows what MCTS expands,
+        never what the rules allow. At 9x9 the opening offers 131 legal actions,
+        so 600 simulations buy 4.6 visits each and the visit histogram cannot
+        move away from the prior that seeded it. Restricting to the walls that
+        can actually change someone's distance to goal raises that an order of
+        magnitude.
+
+        A wall missing every shortest path cannot change any distance on this
+        move, so `_path_blockers` (already computed for wall legality) is an
+        exact filter rather than a heuristic. max_walls <= 0 disables it.
+        """
+        valid = self.get_valid_actions(state)
+        if max_walls <= 0 or state.game_over:
+            return valid
+        walls = [int(a) for a in valid if a >= NUM_MOVE_ACTIONS]
+        if len(walls) <= max_walls:
+            return valid
+        blockers = self._player_blockers(state, state.h_walls, state.v_walls)
+        if blockers is None:          # someone is walled in — do not narrow
+            return valid
+        # How many players' paths each slot cuts; a double block is worth more.
+        cuts = {}
+        for h_slots, v_slots in blockers:
+            for slot in h_slots:
+                cuts[(True, slot)] = cuts.get((True, slot), 0) + 1
+            for slot in v_slots:
+                cuts[(False, slot)] = cuts.get((False, slot), 0) + 1
+        scored = []
+        for a in walls:
+            is_h, r, c = decode_wall_action(a, self.board_size)
+            n = cuts.get((is_h, (r, c)), 0)
+            if n:
+                scored.append((-n, a))
+        if not scored:
+            return valid
+        scored.sort()
+        moves = [int(a) for a in valid if a < NUM_MOVE_ACTIONS]
+        keep = [a for _n, a in scored[:max_walls]]
+        return np.array(moves + sorted(keep), dtype=np.int64)
+
     def state_to_tensor(self, state):
         return build_tensor_mp(
             board_size=state.board_size, positions=state.positions,

@@ -32,6 +32,11 @@ class MCTSConfig:
     # batching entirely (the sequential path, byte-identical to the original).
     leaf_batch: int = 1
     virtual_loss: float = 1.0
+    # Expand only pawn moves + this many walls (those cutting a shortest path).
+    # 0 = expand every legal action. Narrows SEARCH, never the rules: 131 legal
+    # actions at the 9x9 opening leave 4.6 visits each at 600 sims, so the visit
+    # histogram cannot move away from the prior it was seeded with.
+    wall_candidates: int = 0
 
 
 class Node:
@@ -144,9 +149,18 @@ class MCTSMaxN:
         return value
 
     def _expand_valids(self, node, env, state):
-        """Set node.current_player + valid_actions; return the valid action list."""
+        """Set node.current_player + valid_actions; return the actions to expand.
+
+        The single choke point for every engine — sequential, root-batched,
+        leaf-parallel descend and vectorized all come through here, so the
+        candidate restriction applies everywhere from one place.
+        """
         node.current_player = env.get_current_player(state)
-        valid_actions = env.get_valid_actions(state)
+        k = self.config.wall_candidates
+        if k > 0 and hasattr(env, "get_search_actions"):
+            valid_actions = env.get_search_actions(state, k)
+        else:
+            valid_actions = env.get_valid_actions(state)
         node.valid_actions = valid_actions
         return valid_actions
 

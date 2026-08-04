@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 
 from src.utils.config import read_frozen_config
-from src.utils.history import (EVAL_LABELS, eval_series, load_meta,
+from src.utils.history import (EVAL_LABELS, ceiling_fraction, eval_series,
+                               load_meta, players_from_fair, racer_ceiling,
                                restart_iters, series)
 
 # Validated categorical slots 1-2; vs-random is deliberately gray, since the
@@ -123,16 +124,27 @@ def _win_rate_panel(ax, history, fair_pct, accept_margin=0.0, mask_iters=0,
     if accept_margin:
         _ref_line(ax, fair_pct + 100 * accept_margin, dashes=(1, 3))
 
+    # A pure racer only wins from the seat that jumps, so a fixed baseline is
+    # read against 1/N, not 100% — the same height as the fair share, hence the
+    # label on the opposite side. Drawn only when such a series is plotted.
+    num_players = players_from_fair(fair_pct / 100.0)
+    ceiling_pct = 100.0 * racer_ceiling(num_players)
+    if endpoint:
+        _ref_line(ax, ceiling_pct, f"pure-racer ceiling {ceiling_pct:.0f}%",
+                  ha="right")
+
     ax.set_ylim(-4, 112)
     _style(ax, title, "Win rate (%)", pad=26 if legend else 8)
     ax.set_yticks([0, 25, 50, 75, 100])
     _mask_band(ax, mask_iters)
 
-    # Direct-label only the series the figure is about.
+    # Direct-label only the series the figure is about, raw over normalised.
     if endpoint:
-        ax.annotate(f"{endpoint[1]:.0f}%", endpoint, textcoords="offset points",
-                    xytext=(9, 6), va="center", fontsize=9.5,
-                    color=endpoint_color, weight="bold")
+        share = ceiling_fraction(endpoint[1] / 100.0, num_players)
+        ax.annotate(f"{endpoint[1]:.0f}%\n{100 * share:.0f}% of achievable",
+                    endpoint, textcoords="offset points", xytext=(9, 6),
+                    va="center", fontsize=9.5, color=endpoint_color,
+                    weight="bold")
     # A band between title and plot, so neither can collide with the legend.
     if legend and ax.get_legend_handles_labels()[0]:
         ax.legend(frameon=False, fontsize=8.5, ncol=4, loc="lower left",
@@ -319,7 +331,7 @@ def run_settings(run_dir, meta):
     """
     cfg = read_frozen_config(run_dir) or {}
     history = meta.get("history", [])
-    n = cfg.get("num_players") or round(1 / history[-1].get("fair", 0.5))
+    n = cfg.get("num_players") or players_from_fair(history[-1].get("fair", 0.5))
     board = cfg.get("board_size", 9)
     title = (f"Quoridor {board}×{board} N={n} — "
              f"{os.path.basename(os.path.normpath(run_dir))}")

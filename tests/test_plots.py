@@ -14,7 +14,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pytest
 
-from src.utils.history import restart_iters, series, summary_lines
+from src.utils.history import (ceiling_fraction, racer_ceiling, restart_iters,
+                               series, summary_lines)
 from src.utils.plots import (plot_mechanism, plot_run_mechanism,
                              plot_training_curves, plot_variant_comparison)
 
@@ -202,3 +203,78 @@ def test_mechanism_figure_survives_a_partial_run(tmp_path):
     out = tmp_path / "partial.png"
     plot_mechanism({"history": rows}, out, "partial")
     assert out.exists() and out.stat().st_size > 0
+
+
+# --- the pure-racer ceiling ---------------------------------------------------
+
+def test_the_ceiling_is_one_seat_in_n():
+    # Greedy vs greedy is decided by seat, 200/200 at 9x9 for both counts.
+    assert racer_ceiling(2) == 0.5
+    assert racer_ceiling(4) == 0.25
+
+
+def test_ceiling_fraction_reads_a_rate_against_what_is_reachable():
+    assert ceiling_fraction(0.45, 2) == pytest.approx(0.9)
+    assert ceiling_fraction(0.02, 4) == pytest.approx(0.08)
+    assert ceiling_fraction(0.0, 4) == 0.0
+
+
+def test_an_unmeasured_rate_stays_unmeasured():
+    """None must not normalise to 0.0 — the failure this module exists for."""
+    assert ceiling_fraction(None, 2) is None
+    assert ceiling_fraction(None, 4) is None
+
+
+def test_beating_the_ceiling_is_not_clamped_away():
+    """Above the ceiling means the model stopped pure-racing; capping at 100%
+    would hide exactly the result the metric is meant to find."""
+    assert ceiling_fraction(0.6, 2) == pytest.approx(1.2)
+
+
+def test_summary_reports_the_raw_rate_and_the_normalised_one():
+    n2 = "\n".join(summary_lines(_history(), 0.5))       # 30% vs greedy
+    n4 = "\n".join(summary_lines(_history(), 0.25))
+
+    assert "vs greedy (fixed)" in n2 and " 30.0%" in n2
+    assert "60% of achievable" in n2 and "ceiling 50%" in n2
+    assert "120% of achievable" in n4 and "ceiling 25%" in n4
+
+
+def test_the_held_out_baseline_is_normalised_too():
+    lines = "\n".join(summary_lines(_mechanism_history(), 0.25))
+    assert "vs minimax (held out)" in lines
+    assert "40% of achievable" in lines                  # 10% of a 25% ceiling
+
+
+def test_the_ceiling_is_drawn_and_the_endpoint_carries_both_numbers():
+    fig = plot_training_curves({"history": _mechanism_history()}, io.BytesIO(),
+                               "anchored", fair=0.25)
+    texts = [t.get_text() for t in fig.axes[0].texts]
+
+    assert any("pure-racer ceiling 25%" in t for t in texts)
+    assert any("10%" in t and "40% of achievable" in t for t in texts)
+
+
+@pytest.mark.parametrize("fair", [0.5, 0.25])
+def test_the_figure_renders_for_both_player_counts(tmp_path, fair):
+    out = tmp_path / f"curves_{fair}.png"
+    plot_training_curves({"history": _mechanism_history()}, out, "T", fair=fair)
+    assert out.stat().st_size > 0
+
+
+def test_a_legacy_run_without_the_new_keys_still_renders(tmp_path):
+    # No win_vs_minimax and no greedy_in_training: every run before this branch.
+    out = tmp_path / "legacy.png"
+    plot_training_curves({"history": _history()}, out, "T", fair=0.5)
+    assert out.stat().st_size > 0
+
+
+def test_a_run_with_no_fixed_baseline_draws_no_ceiling():
+    """Nothing races the scripted baseline here, so the line would be clutter."""
+    rows = _history()
+    for row in rows:
+        row["win_vs_greedy"] = None
+    fig = plot_training_curves({"history": rows}, io.BytesIO(), "T", fair=0.5)
+
+    texts = [t.get_text() for t in fig.axes[0].texts]
+    assert not any("ceiling" in t for t in texts)

@@ -141,3 +141,67 @@ def test_no_seat_agents_is_ordinary_self_play():
     samples, winner = play_one_game(env, mcts, 2, max_moves=60, discount=0.99,
                                     explore_moves=5)
     assert winner is not None and len(samples) == 2 * mcts.searches
+
+
+# --- the champion pool --------------------------------------------------------
+
+def test_the_past_share_is_scheduled_alongside_greedy():
+    picks = [opponent_for_game(i, 0.25, 0.25) for i in range(40)]
+    assert picks.count("greedy") == 10
+    assert picks.count("past") > 0
+    assert picks.count("greedy") + picks.count("past") + picks.count("self") == 40
+
+
+@pytest.mark.parametrize("g,p", [(0.25, 0.25), (0.2, 0.1), (0.35, 0.15),
+                                 (0.1, 0.4), (0.15, 0.25), (0.5, 0.4)])
+@pytest.mark.parametrize("n", [40, 80])
+def test_both_shares_are_allocated_exactly(g, p, n):
+    """Equal shares are the case that broke: tested independently, the two
+    Bresenham schedules fire on the same games and past never plays at all."""
+    picks = [opponent_for_game(i, g, p) for i in range(n)]
+    assert picks.count("greedy") == round(n * g)
+    assert picks.count("past") == round(n * p)
+    assert picks.count("self") == n - round(n * g) - round(n * p)
+
+
+def test_no_past_share_never_selects_past():
+    assert "past" not in [opponent_for_game(i, 0.3, 0.0) for i in range(40)]
+
+
+def test_snapshots_are_capped_and_the_oldest_goes_first(tmp_path):
+    from src.mcts.training_mp import champion_pool_paths, snapshot_champion
+
+    class _Stub:
+        def save(self, path):
+            open(path, "w").write("x")
+
+    best = _Stub()
+    for it in range(1, 8):
+        snapshot_champion(best, str(tmp_path), it, pool_size=3)
+    kept = [p.split("_iter")[-1] for p in champion_pool_paths(str(tmp_path))]
+    assert kept == ["0005.pt", "0006.pt", "0007.pt"]
+
+
+def test_the_pool_is_recovered_from_disk_on_resume(tmp_path):
+    from src.mcts.training_mp import champion_pool_paths, snapshot_champion
+
+    class _Stub:
+        def save(self, path):
+            open(path, "w").write("x")
+
+    assert champion_pool_paths(str(tmp_path)) == []
+    snapshot_champion(_Stub(), str(tmp_path), 3, pool_size=5)
+    assert len(champion_pool_paths(str(tmp_path))) == 1
+
+
+def test_a_past_share_without_the_parallel_engine_is_refused():
+    from src.mcts.training_mp import TrainingConfigMP
+    with pytest.raises(NotImplementedError):
+        TrainingConfigMP(opponent_past_share=0.2, parallel_self_play=False)
+
+
+def test_shares_over_one_are_refused():
+    from src.mcts.training_mp import TrainingConfigMP
+    with pytest.raises(ValueError):
+        TrainingConfigMP(opponent_past_share=0.7, opponent_greedy_share=0.5,
+                         parallel_self_play=True)

@@ -72,12 +72,26 @@ def game_is_masked(game_index, fraction):
     return takes_share(game_index, fraction)
 
 
-def opponent_for_game(game_index, greedy_share):
-    """Which opponent game `game_index` trains against: 'greedy' or 'self'.
+def opponent_for_game(game_index, greedy_share, past_share=0.0):
+    """Which opponent game `game_index` trains against: 'greedy', 'past', 'self'.
 
     Anchored games put the model in one seat against a scripted racer, which is
     the distribution the greedy baseline scores and the one pure self-play
     drifts away from — at N=4 it converges on jump-camping, which wins among
-    four identical agents and loses to three racers.
+    four identical agents and loses to three racers. 'past' plays a frozen
+    earlier champion, which is what keeps a self-play run from cycling.
+
+    past is drawn from the games greedy did NOT take, at the rate that share
+    implies over the remainder. Testing the two schedules independently on the
+    same index does not work: with equal shares they fire on exactly the same
+    games and past is never chosen at all.
     """
-    return "greedy" if takes_share(game_index, greedy_share) else "self"
+    if takes_share(game_index, greedy_share):
+        return "greedy"
+    if greedy_share >= 1.0 or past_share <= 0:
+        return "self"
+    # Position within the non-greedy substream, and the rate over it.
+    remaining_index = game_index - int(game_index * greedy_share)
+    return ("past" if takes_share(remaining_index,
+                                  past_share / (1.0 - greedy_share))
+            else "self")

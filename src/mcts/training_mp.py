@@ -171,15 +171,10 @@ class TrainingConfigMP:
     champion_pool_size: int = 5
 
     def __post_init__(self):
-        # Self-play serves one model through the batcher (model_id 0); a past
-        # champion needs a second. Fail loudly rather than silently training
-        # pure self-play while the config claims a pool.
-        if self.opponent_past_share:
+        if self.opponent_past_share and not self.parallel_self_play:
             raise NotImplementedError(
-                "opponent_past_share is configured but not implemented — "
-                "self-play runs a single model through the inference batcher. "
-                "Use opponent_greedy_share, or implement the champion pool "
-                "first (see docs/opponent_pool_and_evaluation.md).")
+                "opponent_past_share needs the parallel engine — the champion "
+                "is served as model_id 1 on the shared inference batcher.")
         total = self.opponent_past_share + self.opponent_greedy_share
         if total > 1.0:
             raise ValueError(
@@ -522,6 +517,30 @@ def freeze_config(cfg, checkpoint_dir, log=print):
     return path
 
 
+CHAMPION_DIR = "champions"
+
+
+def snapshot_champion(best, checkpoint_dir, iteration, pool_size):
+    """Save this champion and drop the oldest beyond `pool_size`. Returns its path."""
+    pool_dir = os.path.join(checkpoint_dir, CHAMPION_DIR)
+    os.makedirs(pool_dir, exist_ok=True)
+    path = os.path.join(pool_dir, f"champion_iter{iteration:04d}.pt")
+    best.save(path)
+    kept = sorted(f for f in os.listdir(pool_dir) if f.endswith(".pt"))
+    for stale in kept[:max(0, len(kept) - pool_size)]:
+        os.remove(os.path.join(pool_dir, stale))
+    return path
+
+
+def champion_pool_paths(checkpoint_dir):
+    """Snapshot paths currently on disk, oldest first. Survives a resume."""
+    pool_dir = os.path.join(checkpoint_dir, CHAMPION_DIR)
+    if not os.path.isdir(pool_dir):
+        return []
+    return [os.path.join(pool_dir, f)
+            for f in sorted(os.listdir(pool_dir)) if f.endswith(".pt")]
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion and make it durable from iteration 0.
 
@@ -621,6 +640,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")
 
+    # Champion snapshots for the past-opponent share; repopulated from disk so a
+    # resumed run keeps the pool it built rather than starting from one self.
+    champion_pool = champion_pool_paths(checkpoint_dir) if cfg.opponent_past_share else []
+    past_model = make_model() if cfg.opponent_past_share else None
+
     # Racing-decay watch (see cfg.greedy_stop_patience).
     greedy_peak = None
     greedy_below_peak = 0
@@ -654,6 +678,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             # Only the parallel engine samples an opponent pool; the others
             # report an empty mix rather than a wrong one.
             sp_stats = {}
+            # One champion per iteration rather than per game: a uniform draw
+            # over the pool still spreads across earlier selves over a run, and
+            # keeps a single extra model on the batcher.
+            past_for_iter = pick = None
+            if cfg.opponent_past_share and champion_pool:
+                pick = champion_pool[np.random.randint(len(champion_pool))]
+                past_model.load(pick)
+                past_for_iter = past_model
+                _log(f"[iter {it+1}/{cfg.num_iterations}] past opponent: "
+                     f"{os.path.basename(pick)} (pool of {len(champion_pool)})")
             if sp_mode == "vectorized":
                 # In-process vectorized self-play (Option B): G games share one
                 # predict_batch; exact sequential MCTS per game.
@@ -685,6 +719,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     # iterations never reuse each other's seeds.
                     base_seed=it * cfg.games_per_iteration,
                     log=_log,
+                    past_model=past_for_iter,
                 )
                 if not sp_samples:
                     # Either self-play stalled (usually: the GPU inference thread died
@@ -822,6 +857,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # the data the iteration actually trained on.
                    opponent_mix=sp_stats.get("opponent_mix") or None,
                    samples_by_source=sp_stats.get("samples_by_source") or None,
+                   # Which snapshot the past share played, so a result can be replayed.
+                   champion_pool_size=len(champion_pool) or None,
+                   past_opponent=(os.path.basename(pick) if past_for_iter else None),
                    **diagnostics,
                    # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
@@ -897,6 +935,12 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             if accepted:
                 best.copy_weights_from(model)
                 best.save(os.path.join(checkpoint_dir, "best.pt"))
+                # Snapshot every champion, so the past-opponent share draws from
+                # a spread of earlier selves rather than only the newest one —
+                # sampling old versions is what stabilised Bansal et al.
+                if cfg.opponent_past_share:
+                    champion_pool.append(snapshot_champion(
+                        best, checkpoint_dir, it + 1, cfg.champion_pool_size))
             # Distinguish losing the gate from having too little evidence.
             if not accepted and ev.decided_games < ev.num_games * ev.MIN_DECIDED_FRACTION:
                 verdict = (f"reject (only {ev.decided_games}/{ev.num_games} games "

@@ -78,7 +78,7 @@
             "max_game_moves": 160,
             "explore_moves": 20,
             "num_iterations": 60,
-            "games_per_iteration": 40,
+            "games_per_iteration": 160,
             "_num_workers_note": "8, not the parallel section's 16, because n2 and n4 run CONCURRENTLY: 8 + 8 matches the 16-cpu cgroup quota exactly. Above the quota the jupyter server stops answering its own health check and the entrypoint pkills the run. Raise to 16 if running this variant alone.",
             "num_workers": 8,
             "eval_games": 40,
@@ -88,7 +88,7 @@
             "_opponent_greedy_share_note": "Share of GAMES anchored against the scripted racer. The gradient follows SAMPLES, not games: the model holds 1 of 2 seats and a racer ends the game sooner, so 35% of games was ~10-12% of samples in runs/n2_9x9_anchored. Tune against samples_by_source in the history row, never opponent_mix. Anchoring is what took seat 1 from 0/20 to 17/20 by iteration 8 where the mixed curriculum alone was 0/600 through iteration 20.",
             "opponent_greedy_share": 0.35,
             "discount_unit": "round",
-            "_sizing_note": "60 x 80, not 150 x 160. Under the pure-masked probe the peak arrived at iteration 4, so the run is sized to reach a racer early and then keep it while walls are learned alongside — not to grind. The racing-decay and never-acquired stops end it early if the curriculum fails, so 60 is a ceiling not a plan. ~14 h at 16 workers."
+            "_sizing_note": "160 x 60 = 9,600 self-play games, raised from 40 x 60 = 2,400. The 2,400 figure is what n2_9x9_v7 ran, and it is a TENTH of n2_9x9_v4's 160 x 150 = 24,000. Scoring the two against each other at that gap measures budget, not method: v4 also had a live gate (15 accepts over 30 evals, shipping best.pt from iteration 145) while v7's gate never fired once, so v7 shipped an unselected iteration 60. 9,600 plus the repaired gate removes the selection confound outright and most of the budget one — a v8 win over v4 is then decisive, and a v8 loss is still arguable on budget. Full v4 parity would be ~4 days of wall clock. The racing-decay and never-acquired stops still end a failing run early, so 60 iterations is a ceiling, not a plan."
         },
         "n4": {
             "num_players": 4,
@@ -96,7 +96,8 @@
             "max_game_moves": 320,
             "explore_moves": 40,
             "num_iterations": 40,
-            "games_per_iteration": 40,
+            "_games_per_iteration_note": "160, raised from 40 alongside n2. At N=4 this is also what gives the seat-0 anchored signal enough gradient to measure: the model holds 1 of 4 seats, so 40 games/iter anchored seat 0 in only 6 games per iteration (3 walled, 3 wall-free) once the aliasing fix rotates seats evenly. 160 makes it ~24. Seat 0 is the only seat a racer can win at N=4 and it finishes in ~6.2 moves, so it yields far fewer SAMPLES per game than the later seats — the game count has to be generous for the sample count to be adequate. The greedy_min_seat tripwire still caps a failing run at ~20 iterations.",
+            "games_per_iteration": 160,
             "num_workers": 8,
             "eval_games": 40,
             "eval_random_games": 40,

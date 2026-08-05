@@ -111,6 +111,10 @@ class TrainingConfigMP:
     # diversify the concurrent tree walks. leaf_batch=1 keeps the one-leaf path.
     leaf_batch: int = 1
     virtual_loss: float = 1.0
+    # Expand only pawn moves + this many path-cutting walls. 0 = every legal
+    # action (4.6 visits/action at the 9x9 opening, i.e. search cannot move away
+    # from the prior). Applies to self-play, eval and the UI alike.
+    mcts_wall_candidates: int = 0
     # GPU-batched parallel evaluation (candidate/champion served by one batcher).
     # Reuses num_workers / inference_batch_size. Opt-in; sequential eval otherwise.
     parallel_eval: bool = False
@@ -248,7 +252,8 @@ def _mcts(model, env, cfg, sims=None, dirichlet_epsilon=None):
     return MCTSMaxN(
         config=MCTSConfig(num_simulations=sims or cfg.mcts_simulations,
                           dirichlet_epsilon=eps,
-                          max_rollout_depth=cfg.max_game_moves),
+                          max_rollout_depth=cfg.max_game_moves,
+                          wall_candidates=getattr(cfg, "mcts_wall_candidates", 0)),
         evaluate_fn=lambda st: model.predict(env.state_to_tensor(st)),
         num_players=cfg.num_players,
     )
@@ -290,6 +295,8 @@ def sample_diagnostics(samples, num_players, model=None, max_states=512):
         # POLICY TARGET rather than the prior: this is what training consumes.
         "policy_wall_mass": float(np.mean(policy_wall)),
         "walled_state_share": float(np.mean(walled)),
+        # Non-zero wall-plane CELLS, not walls: a wall spans ~2 cells, so halve
+        # it to read walls. Sample-weighted, so long timeout games dominate.
         "walls_on_board_mean": float(np.mean(wall_counts)),
     }
     if model is None:
@@ -915,6 +922,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "virtual_loss": cfg.virtual_loss,
                 "eval_opening_plies": cfg.eval_opening_plies,
                 "batch_wait_ms": cfg.batch_wait_ms,
+                "mcts_wall_candidates": cfg.mcts_wall_candidates,
                 "minimax_depth": cfg.minimax_depth,
                 "minimax_wall_candidates": cfg.minimax_wall_candidates,
             }

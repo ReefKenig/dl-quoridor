@@ -75,6 +75,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         # message (make_batched_evaluate_many); leaf_batch=1 keeps the one-leaf path.
         leaf_batch = int(config_dict.get("leaf_batch", 1))
         virtual_loss = float(config_dict.get("virtual_loss", 1.0))
+        wall_candidates = int(config_dict.get("mcts_wall_candidates", 0) or 0)
         if leaf_batch > 1:
             evaluate_fn = make_batched_evaluate_many(
                 worker_id, request_queue, response_queue, env, response_timeout)
@@ -90,6 +91,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                 max_rollout_depth=config_dict["max_game_moves"],
                 leaf_batch=leaf_batch,
                 virtual_loss=virtual_loss,
+                wall_candidates=wall_candidates,
             ),
             evaluate_fn=evaluate_fn,  # model_id defaults to 0
             num_players=N,
@@ -110,6 +112,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                         max_rollout_depth=config_dict["max_game_moves"],
                         leaf_batch=leaf_batch,
                         virtual_loss=virtual_loss,
+                        wall_candidates=wall_candidates,
                     ),
                     evaluate_fn=partial(evaluate_fn, model_id=1),
                     num_players=N,
@@ -218,6 +221,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         "wall_mask_fraction": getattr(cfg, "wall_mask_fraction", 0.0),
         "opponent_greedy_share": getattr(cfg, "opponent_greedy_share", 0.0),
         "opponent_past_share": getattr(cfg, "opponent_past_share", 0.0),
+        "mcts_wall_candidates": getattr(cfg, "mcts_wall_candidates", 0),
         "spec_version": getattr(cfg, "spec_version", CURRENT_SPEC),
         "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),
         "mcts_simulations": cfg.mcts_simulations,

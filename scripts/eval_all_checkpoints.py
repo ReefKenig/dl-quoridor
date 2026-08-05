@@ -252,7 +252,10 @@ def main():
                       f"{100*row['rate']:5.1f}%  [{seats}]  "
                       f"({row['decided']}/{row['games']} decided, "
                       f"{SIMS} sims, {row['secs']}s)")
-        write_outputs(rows, [])
+                # Per CELL, not per checkpoint: a single-checkpoint run would
+                # otherwise still write only at the end, and a 600-sim minimax
+                # cell alone is ~40 min.
+                write_outputs(rows, [])
 
     print("\n--- control: greedy vs minimax, no network ---")
     controls = []

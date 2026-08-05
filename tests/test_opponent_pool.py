@@ -12,7 +12,8 @@ import pytest
 from src.env.quoridor_env_mp import QuoridorEnvMP, compute_action_space_size
 from src.mcts.evaluator_mp import greedy_agent
 from src.mcts.self_play_mp import assign_vector_targets, play_one_game
-from src.utils.schedule import opponent_for_game, takes_share
+from src.utils.schedule import (ANCHORED_OPPONENTS, iteration_plans,
+                                opponent_for_game)
 
 
 def _traj(n, num_players=2):
@@ -45,9 +46,74 @@ def test_anchored_games_are_spread_not_front_loaded():
         assert abs(n - prefix * 0.25) <= 1
 
 
-def test_takes_share_backs_both_schedules():
-    # game_is_masked and opponent_for_game must not drift apart.
-    assert takes_share(3, 0.5) is True or takes_share(3, 0.5) is False
+# --- the seat / wall-mask independence ----------------------------------------
+# takes_share(g, 0.5) is exactly "g is odd", so a seat of game_index % 2 and the
+# 0.5 wall mask were the same predicate: at N=2 no anchored seat-1 game ever had
+# walls, and at N=4 with greedy_share 0.5 seat 0 was never anchored at all. These
+# assert the property the old tautology only claimed to.
+
+def _anchored(plans):
+    return [p for p in plans if p.opponent in ANCHORED_OPPONENTS]
+
+
+@pytest.mark.parametrize("n,greedy_share,total", [(2, 0.35, 40), (2, 0.5, 40),
+                                                  (4, 0.5, 40), (4, 0.35, 40),
+                                                  (2, 1.0, 20), (4, 0.25, 80)])
+def test_every_seat_sees_both_wall_regimes(n, greedy_share, total):
+    """The acceptance property: no (seat x walls-legal) cell may be empty."""
+    plans = iteration_plans(total, n, greedy_share, mask_fraction=0.5)
+    cells = {(p.model_seat, p.walls_masked) for p in _anchored(plans)}
+    missing = {(s, m) for s in range(n) for m in (True, False)} - cells
+    assert not missing, f"unpopulated (seat, masked) cells: {sorted(missing)}"
+
+
+@pytest.mark.parametrize("n", [2, 4])
+def test_the_walled_share_is_the_same_in_every_seat(n):
+    """Not just non-empty -- balanced, so no seat is a rounding artefact."""
+    plans = _anchored(iteration_plans(80, n, 0.5, mask_fraction=0.5))
+    for seat in range(n):
+        games = [p for p in plans if p.model_seat == seat]
+        walled = sum(not p.walls_masked for p in games)
+        assert abs(walled / len(games) - 0.5) <= 0.1, f"seat {seat}: {walled}/{len(games)}"
+
+
+def test_the_seat_is_not_the_game_index_parity():
+    """The aliasing itself: seat must not be recoverable from the mask bit."""
+    plans = _anchored(iteration_plans(40, 2, 0.5, mask_fraction=0.5))
+    assert len({p.model_seat for p in plans if p.walls_masked}) == 2
+    assert len({p.model_seat for p in plans if not p.walls_masked}) == 2
+
+
+def test_n4_anchors_seat_0_with_walls():
+    """The cell whose absence voided the N=4 arm: seat 0 is the only seat a
+    racer can win at N=4, and it had no anchored games at all."""
+    plans = _anchored(iteration_plans(40, 4, 0.5, mask_fraction=0.5))
+    assert [p for p in plans if p.model_seat == 0 and not p.walls_masked]
+
+
+def test_the_marginal_shares_are_unchanged():
+    """Decorrelating must not move either configured share."""
+    plans = iteration_plans(40, 2, 0.35, mask_fraction=0.5)
+    assert sum(p.opponent == "greedy" for p in plans) == 14      # 0.35 * 40
+    assert abs(sum(p.walls_masked for p in plans) - 20) <= 1     # 0.50 * 40
+
+
+def test_plans_depend_only_on_the_game_index():
+    """Workers claim games off a shared counter, so a plan may not depend on
+    which worker ran the game or in what order."""
+    assert iteration_plans(40, 4, 0.5, mask_fraction=0.5) == \
+        iteration_plans(40, 4, 0.5, mask_fraction=0.5)
+
+
+def test_no_mask_still_rotates_every_seat():
+    plans = _anchored(iteration_plans(40, 4, 0.5, mask_fraction=0.0))
+    assert {p.model_seat for p in plans} == {0, 1, 2, 3}
+    assert not any(p.walls_masked for p in plans)
+
+
+def test_unanchored_games_have_no_seat():
+    plans = iteration_plans(40, 2, 0.35, mask_fraction=0.5)
+    assert all(p.model_seat is None for p in plans if p.opponent == "self")
 
 
 # --- value targets under a sparse trajectory ----------------------------------

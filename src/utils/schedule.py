@@ -12,6 +12,7 @@ survive that. `lr_at(cfg, it)` gives the same answer on a fresh run and on a
 run resumed at iteration `it`, with nothing extra to persist.
 """
 import math
+from collections import namedtuple
 
 SCHEDULES = ("constant", "cosine")
 
@@ -70,6 +71,40 @@ def takes_share(index, fraction):
 def game_is_masked(game_index, fraction):
     """Whether game `game_index` of an iteration plays wall-free."""
     return takes_share(game_index, fraction)
+
+
+ANCHORED_OPPONENTS = ("greedy", "past")
+
+GamePlan = namedtuple("GamePlan", "opponent model_seat walls_masked")
+
+
+def iteration_plans(total_games, num_players, greedy_share, past_share=0.0,
+                    mask_fraction=0.0):
+    """(opponent, model_seat, walls_masked) for every game of one iteration.
+
+    Decided together because deciding them separately made them the same
+    predicate: `takes_share(g, 0.5)` is "g is odd", and so was a seat of
+    `g % 2`. Same substream trick `opponent_for_game` uses below -- the mask
+    counts a game's position within its own opponent class, and the seat
+    rotates within its (anchored, walls_masked) cell, so every cell fills.
+
+    Deterministic in the game index alone: workers claim games off a shared
+    counter, so nothing may depend on which worker ran a game, or in what order.
+    """
+    plans = []
+    in_class = {True: 0, False: 0}      # anchored -> games placed so far
+    in_cell = {True: 0, False: 0}       # walls_masked -> anchored games so far
+    for g in range(total_games):
+        opponent = opponent_for_game(g, greedy_share, past_share)
+        anchored = opponent in ANCHORED_OPPONENTS
+        walls_masked = takes_share(in_class[anchored], mask_fraction)
+        in_class[anchored] += 1
+        seat = None
+        if anchored:
+            seat = in_cell[walls_masked] % num_players
+            in_cell[walls_masked] += 1
+        plans.append(GamePlan(opponent, seat, walls_masked))
+    return plans
 
 
 def opponent_for_game(game_index, greedy_share, past_share=0.0):

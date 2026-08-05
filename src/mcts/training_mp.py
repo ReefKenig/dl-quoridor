@@ -20,7 +20,8 @@ from src.env.pathing import CURRENT_SPEC
 from src.env.quoridor_env_mp import NUM_MOVE_ACTIONS
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
-from src.utils.schedule import lr_at, wall_budget_at, game_is_masked
+from src.utils.schedule import (ANCHORED_OPPONENTS, iteration_plans, lr_at,
+                                wall_budget_at)
 from src.mcts.batched_inference_mp import DEFAULT_BATCH_WAIT_MS
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
@@ -661,6 +662,33 @@ def load_past_champion(past_model, path, env):
     return past_model
 
 
+def _iteration_plans(cfg):
+    """The (opponent, seat, wall-mask) plan the self-play workers will follow."""
+    return iteration_plans(
+        cfg.games_per_iteration, cfg.num_players,
+        getattr(cfg, "opponent_greedy_share", 0.0) or 0.0,
+        getattr(cfg, "opponent_past_share", 0.0) or 0.0,
+        getattr(cfg, "wall_mask_fraction", 0.0) or 0.0)
+
+
+def anchored_walled_share_by_seat(cfg):
+    """Fraction of each seat's anchored games that are played WITH walls legal.
+
+    In meta.json because the aliasing it replaces was invisible in every metric
+    the run recorded. A seat pinned at 0.0/1.0, or missing, is the signature.
+    """
+    walled, total = {}, {}
+    for plan in _iteration_plans(cfg):
+        if plan.opponent not in ANCHORED_OPPONENTS:
+            continue
+        seat = plan.model_seat
+        total[seat] = total.get(seat, 0) + 1
+        if not plan.walls_masked:
+            walled[seat] = walled.get(seat, 0) + 1
+    return {str(seat): round(walled.get(seat, 0) / n, 4)
+            for seat, n in sorted(total.items())}
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion and make it durable from iteration 0.
 
@@ -782,8 +810,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                           f", WALLS MASKED" if budget == 0 else
                           f", {budget}/{cfg.max_walls_per_player} WALLS")
             if frac:
-                n_masked = sum(game_is_masked(g, frac)
-                               for g in range(cfg.games_per_iteration))
+                # The same plan the workers follow, so the log cannot describe a
+                # different mix than the one that is played.
+                n_masked = sum(p.walls_masked for p in _iteration_plans(cfg))
                 curriculum = (f", MIXED {n_masked}/{cfg.games_per_iteration} "
                               f"race-only")
             _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
@@ -978,6 +1007,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # the data the iteration actually trained on.
                    opponent_mix=sp_stats.get("opponent_mix") or None,
                    samples_by_source=sp_stats.get("samples_by_source") or None,
+                   # Per seat, the share of its anchored games with walls legal.
+                   anchored_walled_share_by_seat=(
+                       anchored_walled_share_by_seat(cfg)
+                       if (getattr(cfg, "opponent_greedy_share", 0.0) or
+                           getattr(cfg, "opponent_past_share", 0.0)) else None),
                    # Which snapshot the past share played, so a result can be replayed.
                    champion_pool_size=len(champion_pool) or None,
                    past_opponent=(os.path.basename(pick) if past_for_iter else None),

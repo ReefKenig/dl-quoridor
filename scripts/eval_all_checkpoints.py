@@ -39,12 +39,20 @@ from src.model.network_mp import QuoridorModelMP
 from src.utils.config import read_frozen_config
 
 GAMES_PER_SEAT = int(os.environ.get("GAMES_PER_SEAT", 20))
+# FIXED across checkpoints, and stated: a table that compares models must not
+# vary the search budget between them. Budget changes the ANSWER, not just the
+# cost — v7 vs greedy at K=0 scores 70% at 200 sims and 30% at 600, and all of
+# that swing is seat 1. Each row also records the run's OWN eval_simulations, so
+# a reader can see where this protocol differs from what a run was scored under.
 SIMS = int(os.environ.get("SIMS", 200))
 DEPTH = int(os.environ.get("MINIMAX_DEPTH", 2))
 WALL_CANDIDATES = [int(k) for k in
                    os.environ.get("WALL_CANDIDATES", "0,16").split(",")]
 # Restrict to matching checkpoints, e.g. ONLY=n2_9x9_v7,probe_n2_ramp
 ONLY = [s for s in os.environ.get("ONLY", "").split(",") if s]
+OPPONENTS = [s for s in os.environ.get("OPPONENTS", "greedy,minimax").split(",") if s]
+# Separate OUT_DIR keeps a focused side-run from overwriting the main table.
+OUT_DIR = os.environ.get("OUT_DIR", "outputs")
 
 # Newest first. spec and opening plies come from each run's frozen config.json
 # where it has one; a run with no spec_version recorded predates v2, so it is v1.
@@ -70,11 +78,14 @@ def geometry(num_players, board):
 
 
 def run_settings(path):
-    """(spec_version, opening_plies, trained_K) from the run's frozen config."""
+    """(spec, opening_plies, trained_K, run_sims) from the frozen config."""
     frozen = read_frozen_config(os.path.dirname(path)) or {}
+    run_sims = (frozen.get("eval_simulations")
+                or frozen.get("mcts_simulations") or None)
     return (int(frozen.get("spec_version") or 1),
             frozen.get("eval_opening_plies"),
-            int(frozen.get("mcts_wall_candidates") or 0))
+            int(frozen.get("mcts_wall_candidates") or 0),
+            int(run_sims) if run_sims else None)
 
 
 def resolve_opening_plies(path, frozen_plies, games_per_seat):
@@ -121,9 +132,9 @@ def make_env(num_players, board, spec):
 
 
 def candidate_agent(model, env, num_players, wall_candidates, opening_plies,
-                    max_moves):
+                    max_moves, sims):
     mcts = MCTSMaxN(
-        config=MCTSConfig(num_simulations=SIMS, dirichlet_epsilon=0.0,
+        config=MCTSConfig(num_simulations=sims, dirichlet_epsilon=0.0,
                           max_rollout_depth=max_moves,
                           wall_candidates=wall_candidates),
         evaluate_fn=lambda s: model.predict(env.state_to_tensor(s)),
@@ -181,18 +192,19 @@ def selected():
 def write_outputs(rows, controls):
     """Persist after every checkpoint. Minimax costs ~20 s/game at 9x9, so a
     full sweep runs for hours and must not lose everything to one interrupt."""
-    os.makedirs("outputs", exist_ok=True)
+    os.makedirs(OUT_DIR, exist_ok=True)
     meta = {"games_per_seat": GAMES_PER_SEAT, "sims": SIMS,
             "minimax_depth": DEPTH, "wall_candidates": WALL_CANDIDATES,
-            "complete": len(rows) == len(selected()) * len(WALL_CANDIDATES) * 2,
+            "complete": len(rows) == (len(selected()) * len(WALL_CANDIDATES)
+                                      * len(OPPONENTS)),
             "protocol": "evaluate_mp; opening_plies from each run's frozen "
                         "config; each checkpoint on its own tensor spec"}
-    with open("outputs/held_out_eval.json", "w") as f:
+    with open(os.path.join(OUT_DIR, "held_out_eval.json"), "w") as f:
         json.dump({**meta, "results": rows, "controls": controls}, f, indent=2)
     # The K-ablation slice: the same rows, restricted to the comparison that
     # decides whether Branch 1 is a training or an inference result.
     ablation = [r for r in rows if r["board"] == 9]
-    with open("outputs/v7_vs_v4.json", "w") as f:
+    with open(os.path.join(OUT_DIR, "v7_vs_v4.json"), "w") as f:
         json.dump({**meta, "results": ablation}, f, indent=2)
     return ablation
 
@@ -204,7 +216,10 @@ def main():
             print(f"SKIP {path} (missing)")
             continue
 
-        spec, frozen_plies, trained_k = run_settings(path)
+        spec, frozen_plies, trained_k, run_sims = run_settings(path)
+        if run_sims and run_sims != SIMS:
+            print(f"  note: {path} was scored at {run_sims} sims in "
+                  f"training; this table fixes {SIMS} for comparability")
         opening_plies = resolve_opening_plies(path, frozen_plies, GAMES_PER_SEAT)
         model, ch, bl = load(path, n, board)
         env = make_env(n, board, spec)
@@ -212,9 +227,11 @@ def main():
         wall_mass = opening_wall_mass(model, env)
 
         for k in WALL_CANDIDATES:
-            cand = candidate_agent(model, env, n, k, opening_plies, max_moves)
-            for opp_name, opp in (("greedy", greedy_agent()),
-                                  ("minimax", minimax_agent(depth=DEPTH))):
+            cand = candidate_agent(model, env, n, k, opening_plies,
+                                   max_moves, SIMS)
+            for opp_name, opp in [(o, greedy_agent() if o == "greedy"
+                                   else minimax_agent(depth=DEPTH))
+                                  for o in OPPONENTS]:
                 t0 = time.time()
                 res = evaluate_mp(env, cand, opp,
                                   num_games=GAMES_PER_SEAT * n,
@@ -223,6 +240,7 @@ def main():
                        "spec": spec, "trained_wall_candidates": trained_k,
                        "wall_candidates": k, "opponent": opp_name,
                        "opening_plies": opening_plies, "sims": SIMS,
+                       "run_eval_simulations": run_sims,
                        "channels": ch, "blocks": bl,
                        "opening_wall_mass": wall_mass,
                        "secs": round(time.time() - t0, 1),
@@ -232,7 +250,8 @@ def main():
                                  for s, (w, g) in row["seats"].items())
                 print(f"{path:32s} K={k:<3d} vs {opp_name:8s} "
                       f"{100*row['rate']:5.1f}%  [{seats}]  "
-                      f"({row['decided']}/{row['games']} decided, {row['secs']}s)")
+                      f"({row['decided']}/{row['games']} decided, "
+                      f"{SIMS} sims, {row['secs']}s)")
         write_outputs(rows, [])
 
     print("\n--- control: greedy vs minimax, no network ---")
@@ -246,8 +265,8 @@ def main():
               f"of {row['decided']} decided vs minimax depth {DEPTH}")
 
     ablation = write_outputs(rows, controls)
-    print(f"\nwrote outputs/held_out_eval.json ({len(rows)} rows, "
-          f"{len(controls)} controls) and outputs/v7_vs_v4.json "
+    print(f"\nwrote {OUT_DIR}/held_out_eval.json ({len(rows)} rows, "
+          f"{len(controls)} controls) and {OUT_DIR}/v7_vs_v4.json "
           f"({len(ablation)} rows)")
     return 0
 

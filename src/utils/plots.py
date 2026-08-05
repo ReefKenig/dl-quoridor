@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 
 from src.utils.config import read_frozen_config
-from src.utils.history import (EVAL_LABELS, eval_series, load_meta,
+from src.utils.history import (EVAL_LABELS, ceiling_fraction, eval_series,
+                               load_meta, players_from_fair, racer_ceiling,
                                restart_iters, series)
 
 # Validated categorical slots 1-2; vs-random is deliberately gray, since the
@@ -100,6 +101,7 @@ def _win_rate_panel(ax, history, fair_pct, accept_margin=0.0, mask_iters=0,
     # Dash it so a reader cannot mistake it for the held-out line.
     greedy_trained = any(row.get("greedy_in_training") for row in history)
     endpoint = endpoint_color = None
+    greedy_end = None
     for key, color, width in WIN_SERIES:
         xs, ys = eval_series(history, key)
         if not xs:
@@ -118,21 +120,42 @@ def _win_rate_panel(ax, history, fair_pct, accept_margin=0.0, mask_iters=0,
         # Label whichever series is actually held out.
         if key == "win_vs_minimax" or (key == "win_vs_greedy" and endpoint is None):
             endpoint, endpoint_color = (xs[-1], ys[-1]), color
+        if key == "win_vs_greedy":
+            greedy_end = (xs[-1], ys[-1], color)
 
     _ref_line(ax, fair_pct, f"fair share {fair_pct:.0f}%")
     if accept_margin:
         _ref_line(ax, fair_pct + 100 * accept_margin, dashes=(1, 3))
+
+    # GREEDY only: a pure racer wins just the seat that jumps, so its rate is
+    # read against 1/N. Minimax places walls and is not seat-determined, so it
+    # has no such cap. Same height as the fair share, hence the opposite side.
+    num_players = players_from_fair(fair_pct / 100.0)
+    ceiling_pct = 100.0 * racer_ceiling(num_players)
+    if greedy_end:
+        _ref_line(ax, ceiling_pct, f"pure-racer ceiling vs greedy {ceiling_pct:.0f}%",
+                  ha="right")
 
     ax.set_ylim(-4, 112)
     _style(ax, title, "Win rate (%)", pad=26 if legend else 8)
     ax.set_yticks([0, 25, 50, 75, 100])
     _mask_band(ax, mask_iters)
 
-    # Direct-label only the series the figure is about.
+    # The held-out series gets the raw number; greedy additionally gets its
+    # share of the 1/N cap, which is the only series that cap applies to.
+    def _label(point, text, color):
+        ax.annotate(text, point, textcoords="offset points", xytext=(9, 6),
+                    va="center", fontsize=9.5, color=color, weight="bold")
+
     if endpoint:
-        ax.annotate(f"{endpoint[1]:.0f}%", endpoint, textcoords="offset points",
-                    xytext=(9, 6), va="center", fontsize=9.5,
-                    color=endpoint_color, weight="bold")
+        _label(endpoint, f"{endpoint[1]:.0f}%", endpoint_color)
+    if greedy_end:
+        share = ceiling_fraction(greedy_end[1] / 100.0, num_players)
+        text = f"{100 * share:.0f}% of achievable"
+        if not endpoint or endpoint[:2] != greedy_end[:2]:
+            _label(greedy_end[:2], text, greedy_end[2])
+        else:
+            _label(greedy_end[:2], f"{greedy_end[1]:.0f}%\n{text}", greedy_end[2])
     # A band between title and plot, so neither can collide with the legend.
     if legend and ax.get_legend_handles_labels()[0]:
         ax.legend(frameon=False, fontsize=8.5, ncol=4, loc="lower left",
@@ -319,7 +342,7 @@ def run_settings(run_dir, meta):
     """
     cfg = read_frozen_config(run_dir) or {}
     history = meta.get("history", [])
-    n = cfg.get("num_players") or round(1 / history[-1].get("fair", 0.5))
+    n = cfg.get("num_players") or players_from_fair(history[-1].get("fair", 0.5))
     board = cfg.get("board_size", 9)
     title = (f"Quoridor {board}×{board} N={n} — "
              f"{os.path.basename(os.path.normpath(run_dir))}")

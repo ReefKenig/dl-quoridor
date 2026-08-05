@@ -19,6 +19,38 @@ EVAL_LABELS = {
     "win_vs_minimax": "vs minimax (held out)",
 }
 EVAL_KEYS = tuple(EVAL_LABELS)
+# Greedy ONLY. The 1/N cap comes from greedy-vs-greedy being decided purely by
+# seat (200/200 at 9x9). Minimax places walls, so it is not seat-determined —
+# measured 40/60 at N=2 and 23/23/27/27 at N=4 — and a model can in principle
+# beat it from every seat. Normalising it by 1/N would overstate a result twofold.
+CEILING_KEYS = ("win_vs_greedy",)
+
+
+def racer_ceiling(num_players):
+    """Highest pooled win rate a pure racer can reach AGAINST GREEDY.
+
+    Greedy vs greedy is decided by seat — the player who jumps takes the tempo
+    and wins 200/200 at 9x9 — so a racer scores only from that 1 seat in N.
+    Specific to greedy: see CEILING_KEYS.
+    """
+    return 1.0 / num_players
+
+
+def ceiling_fraction(value, num_players):
+    """`value` as a share of what is actually reachable, or None if unmeasured.
+
+    Same units in as out: pass a rate in [0, 1], get a fraction of the ceiling.
+    """
+    if value is None:
+        return None
+    # No upper clamp: above 1.0 means the model stopped pure-racing, which is
+    # the result this metric exists to surface.
+    return max(0.0, value / racer_ceiling(num_players))
+
+
+def players_from_fair(fair):
+    """Seat count behind a fair share of 1/N — history rows record the share."""
+    return round(1.0 / fair) if fair else 2
 
 
 def load_meta(run_dir):
@@ -108,14 +140,20 @@ def summary_lines(history, fair):
     if not history:
         return ["No iterations recorded."]
     last = history[-1]
+    num_players = players_from_fair(fair)
     lines = [f"Iterations completed: {last['iter']}",
              f"Policy loss: {last['loss_p']:.4f}   Value loss: {last['loss_v']:.4f}"]
-    for key, label in (("win_vs_random", "vs random"),
-                       ("win_vs_best", "vs best (gate)"),
-                       ("win_vs_greedy", "vs greedy (fixed)")):
+    for key in EVAL_KEYS:
         iters, values = eval_series(history, key)
-        if values:
-            lines.append(f"{label:<18} {values[-1]:5.1f}%  (iter {iters[-1]})")
+        if not values:
+            continue
+        line = f"{EVAL_LABELS[key]:<22} {values[-1]:5.1f}%  (iter {iters[-1]})"
+        if key in CEILING_KEYS:
+            # Raw alone reads as a near-zero at N=4, where 25% is a clean sweep.
+            share = ceiling_fraction(values[-1] / 100.0, num_players)
+            line += (f"   {100 * share:.0f}% of achievable "
+                     f"(ceiling {100 * racer_ceiling(num_players):.0f}%)")
+        lines.append(line)
     accepts = sum(1 for row in history if row.get("accepted"))
     evals = sum(1 for row in history if eval_ran(row))
     lines.append(f"Accepted {accepts} of {evals} evals "

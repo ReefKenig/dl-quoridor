@@ -936,6 +936,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         _log(f"[iter {it+1}/{cfg.num_iterations}] self-play done: "
              f"{cfg.games_per_iteration} games ({sp_secs:.0f}s) | wins: {win_dist} "
              f"| draw_rate={100*draw_rate:.0f}% avg_len~{avg_len:.0f}")
+        if sp_stats.get("mean_expanded_actions"):
+            _log(f"[iter {it+1}/{cfg.num_iterations}] search: "
+                 f"expanded={sp_stats['mean_expanded_actions']:.1f} actions/node "
+                 f"visits/action={sp_stats['visits_per_action']:.1f} "
+                 f"walls/game={sp_stats['walls_placed_per_game']:.2f} "
+                 f"first_wall_ply={sp_stats['first_wall_ply']} "
+                 f"sims/s={sp_stats['sims_per_second']}")
         if draw_rate > 0.20:
             _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: draw_rate "
                  f"{100*draw_rate:.0f}% > 20% — games timing out at "
@@ -1034,6 +1041,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # almost no gradient on a seat whose games end in 6 plies.
                    anchored_realized_by_seat=sp_stats.get(
                        "anchored_realized_by_seat"),
+                   # Search resolution: how wide expansion actually was and how
+                   # many visits per action the sim budget bought.
+                   mean_expanded_actions=sp_stats.get("mean_expanded_actions"),
+                   visits_per_action=sp_stats.get("visits_per_action"),
+                   walls_placed_per_game=sp_stats.get("walls_placed_per_game"),
+                   first_wall_ply=sp_stats.get("first_wall_ply"),
+                   sims_per_second=sp_stats.get("sims_per_second"),
                    # Which snapshot the past share played, so a result can be replayed.
                    champion_pool_size=len(champion_pool) or None,
                    past_opponent=(os.path.basename(pick) if past_for_iter else None),

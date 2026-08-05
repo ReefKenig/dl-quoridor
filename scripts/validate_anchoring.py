@@ -177,6 +177,17 @@ def main():
                 all(v > 0 for v in per_seat_samples.values()),
                 str(per_seat_samples))
 
+    print("\n=== 5d. search/wall keys reach the record ===")
+    for key in ("mean_expanded_actions", "visits_per_action",
+                "walls_placed_per_game", "sims_per_second"):
+        ok &= check(key, isinstance(rows[-1].get(key), (int, float)),
+                    repr(rows[-1].get(key)))
+    ok &= check("first_wall_ply (None only if nobody walled)",
+                "first_wall_ply" in rows[-1], repr(rows[-1].get("first_wall_ply")))
+    mea, vpa = rows[-1].get("mean_expanded_actions"), rows[-1].get("visits_per_action")
+    ok &= check("visits_per_action == sims / mean_expanded_actions",
+                mea and abs(vpa - SIMS / mea) < 0.01, f"{SIMS}/{mea} vs {vpa}")
+
     print("\n=== 6. greedy row is flagged as contaminated ===")
     ok &= check("greedy_in_training is True when anchoring",
                 rows[-1].get("greedy_in_training") is True,

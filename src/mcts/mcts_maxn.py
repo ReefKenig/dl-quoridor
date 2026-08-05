@@ -79,6 +79,18 @@ class MCTSMaxN:
         self.config = config
         self.evaluate_fn = evaluate_fn
         self.num_players = num_players
+        self.reset_search_stats()
+
+    def reset_search_stats(self):
+        self._expanded_actions = 0
+        self._expansions = 0
+        self._sims = 0
+
+    def search_stats(self):
+        """Running counters since the last reset — how wide the search actually
+        branched (expanded_actions/expansions) and how many sims paid for it."""
+        return {"expanded_actions": self._expanded_actions,
+                "expansions": self._expansions, "sims": self._sims}
 
     def search(self, env, state, temperature=None):
         root = Node(num_players=self.num_players)
@@ -162,6 +174,9 @@ class MCTSMaxN:
         else:
             valid_actions = env.get_valid_actions(state)
         node.valid_actions = valid_actions
+        # Two int adds per expansion: the only place search width is observable.
+        self._expanded_actions += len(valid_actions)
+        self._expansions += 1
         return valid_actions
 
     def _set_children_from_policy(self, node, env, valid_actions, policy, value):
@@ -301,6 +316,8 @@ class MCTSMaxN:
         return np.zeros(N)
 
     def _backpropagate(self, node, value):
+        # One backprop == one completed simulation, on every engine.
+        self._sims += 1
         # add the SAME vector to every ancestor; no flip
         while node is not None:
             node.visit_count += 1

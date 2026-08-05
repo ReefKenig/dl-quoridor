@@ -295,6 +295,8 @@ def sample_diagnostics(samples, num_players, model=None, max_states=512):
         # POLICY TARGET rather than the prior: this is what training consumes.
         "policy_wall_mass": float(np.mean(policy_wall)),
         "walled_state_share": float(np.mean(walled)),
+        # Non-zero wall-plane CELLS, not walls: a wall spans ~2 cells, so halve
+        # it to read walls. Sample-weighted, so long timeout games dominate.
         "walls_on_board_mean": float(np.mean(wall_counts)),
     }
     if model is None:

@@ -101,6 +101,9 @@ def main():
     ap.add_argument("--sims", type=int, default=0, help="0 = eval_simulations from config")
     ap.add_argument("--channels", type=int, default=0, help="0 = from configs/config_<b>x<b>.json")
     ap.add_argument("--blocks", type=int, default=0)
+    ap.add_argument("--wall-candidates", type=int, default=None,
+                    dest="wall_candidates",
+                    help="expanded walls per node; default = the run's own setting")
     ap.add_argument("--trace", action="store_true",
                     help="also play one game move by move and diagnose the loss")
     args = ap.parse_args()
@@ -131,18 +134,31 @@ def main():
         num_res_blocks=blocks, num_players=N, device="auto")
     model.load(path)
 
+    # Without this the probe searches all 131 opening actions while the model
+    # was trained under a restricted search — a different agent than the run's.
+    wall_candidates = (args.wall_candidates if args.wall_candidates is not None
+                       else rc.get("mcts_wall_candidates", 0) or 0)
+    print(f"  mcts_wall_candidates={wall_candidates}"
+          f"{' (from the run config)' if args.wall_candidates is None else ''}")
     mcfg = TrainingConfigMP(num_players=N, mcts_simulations=sims,
-                            max_game_moves=rc["max_game_moves"])
+                            max_game_moves=rc["max_game_moves"],
+                            mcts_wall_candidates=wall_candidates)
     for plies in (0, rc.get("eval_opening_plies", 4)):
         def agent_for(p=plies):
             return mcts_agent_mp(_mcts(model, env, mcfg, sims=sims,
                                        dirichlet_epsilon=0.0),
                                  temperature=0.1, opening_plies=p)
-        wins, decided, by_seat = probe(env, agent_for, args.games,
+        # greedy is deterministic, so with no sampled opening every game in a
+        # seat is the same replay: score one and say so, rather than reporting
+        # `args.games` independent games that were all the same game.
+        games = 1 if plies == 0 else args.games
+        wins, decided, by_seat = probe(env, agent_for, games,
                                        list(range(N)), base_seed=7 + plies)
         rate = wins / decided if decided else 0.0
         seats = " ".join(f"seat{s}:{w}" for s, w in by_seat.items())
-        print(f"  opening_plies={plies}: {wins}/{decided} decided = {rate:.1%}  [{seats}]")
+        note = " (1 game/seat — a 0-ply opening replays)" if plies == 0 else ""
+        print(f"  opening_plies={plies}: {wins}/{decided} decided = {rate:.1%}"
+              f"  [{seats}]{note}")
 
     if args.trace:
         cand = mcts_agent_mp(_mcts(model, env, mcfg, sims=sims, dirichlet_epsilon=0.0),

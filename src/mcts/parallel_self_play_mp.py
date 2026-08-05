@@ -19,6 +19,7 @@ so samples are bit-for-bit identical to the sequential path.
 import multiprocessing as mp
 import os
 import sys
+import time
 import traceback
 
 from src.env.pathing import CURRENT_SPEC
@@ -26,6 +27,70 @@ from src.utils.schedule import ANCHORED_OPPONENTS, iteration_plans
 from src.mcts.batched_inference_mp import (make_batched_evaluate,
                                            make_batched_evaluate_many,
                                            run_batched_inference)
+
+
+def new_game_totals():
+    return dict(expanded_actions=0, expansions=0, sims=0, games=0,
+                walls_placed=0, first_wall_ply=0, games_with_wall=0)
+
+
+def fold_game_stats(gstats, n_samples, totals, anchored):
+    """Fold one finished game's counters into the iteration accumulators."""
+    for k in ("expanded_actions", "expansions", "sims", "walls_placed"):
+        totals[k] += int(gstats.get(k, 0) or 0)
+    totals["games"] += 1
+    fwp = gstats.get("first_wall_ply")
+    if fwp is not None:
+        totals["first_wall_ply"] += int(fwp)
+        totals["games_with_wall"] += 1
+    seat = gstats.get("seat")
+    if seat is None:
+        return
+    cell = anchored.setdefault(int(seat),
+                               {"games": 0, "samples": 0, "walled": 0})
+    cell["games"] += 1
+    # SAMPLES, not just games: a seat-0 racer finishes in a handful of plies,
+    # so equal game counts can still be lopsided gradient.
+    cell["samples"] += n_samples
+    cell["walled"] += bool(gstats.get("walls_legal"))
+
+
+def search_wall_metrics(totals, num_simulations, sp_secs):
+    """Search resolution and wall behaviour, from the counters self-play kept.
+
+    mean_expanded_actions is per EXPANDED NODE, so visits_per_action is the
+    resolution the sim budget buys at that width — the 4.6 -> 31.6 claim.
+    """
+    exp = totals["expansions"]
+    mean_expanded = (totals["expanded_actions"] / exp) if exp else None
+    with_wall = totals["games_with_wall"]
+    return {
+        "mean_expanded_actions": (round(mean_expanded, 3)
+                                  if mean_expanded else None),
+        "visits_per_action": (round(num_simulations / mean_expanded, 3)
+                              if mean_expanded else None),
+        # Actual wall ACTIONS played by any seat, over every game including
+        # timeouts — not walls_on_board_mean, which counts cells sample-weighted.
+        "walls_placed_per_game": (round(totals["walls_placed"] / totals["games"], 3)
+                                  if totals["games"] else None),
+        # Mean over the games that placed one; None when nobody walled.
+        "first_wall_ply": (round(totals["first_wall_ply"] / with_wall, 3)
+                           if with_wall else None),
+        "sims_per_second": (round(totals["sims"] / sp_secs, 2)
+                            if sp_secs > 0 and totals["sims"] else None),
+    }
+
+
+def realized_by_seat(anchored):
+    """Per-seat anchored games/samples/walled-share as self-play REALLY ran them.
+
+    None when nothing was anchored, so it reads like the config-derived key.
+    """
+    if not anchored:
+        return None
+    return {str(seat): {"games": c["games"], "samples": c["samples"],
+                        "walled_share": round(c["walled"] / c["games"], 4)}
+            for seat, c in sorted(anchored.items())}
 
 
 def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
@@ -158,6 +223,10 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                 seat_agents = {s: other for s in range(N)
                                if s != plan.model_seat}
 
+            # Per-game, so the row reports what this iteration actually did
+            # rather than what the schedule intended.
+            game_stats = {}
+            mcts.reset_search_stats()
             samples, winner = play_one_game(
                 env, mcts, N,
                 max_moves=config_dict["max_game_moves"],
@@ -166,8 +235,16 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                 discount_unit=config_dict.get("discount_unit", "round"),
                 explore_moves=config_dict["explore_moves"],
                 seat_agents=seat_agents,
+                game_stats=game_stats,
             )
-            results_queue.put(("game", worker_id, samples, winner, opponent))
+            game_stats.update(mcts.search_stats())
+            # Realised seat/regime: the model's seat only exists when anchored,
+            # and walls_legal reads the budget the game was actually played at.
+            game_stats["seat"] = (plan.model_seat
+                                  if opponent in ANCHORED_OPPONENTS else None)
+            game_stats["walls_legal"] = env.wall_budget != 0
+            results_queue.put(
+                ("game", worker_id, samples, winner, opponent, game_stats))
             produced += len(samples)
 
         results_queue.put(("done", worker_id, produced))
@@ -249,12 +326,14 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     wins = {}
     opponent_mix = {}
     samples_by_source = {}
+    anchored_realized = {}
+    totals = new_game_totals()
     games_done = 0
 
     def on_result(msg):
         nonlocal games_done
-        # ("game", worker_id, samples, winner, opponent)
-        _, _wid, game_samples, winner, opponent = msg
+        # ("game", worker_id, samples, winner, opponent, game_stats)
+        _, _wid, game_samples, winner, opponent, gstats = msg
         samples.extend(game_samples)
         # Index-aligned with samples so the buffer can draw a target mix.
         sources.extend([opponent] * len(game_samples))
@@ -264,6 +343,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         opponent_mix[opponent] = opponent_mix.get(opponent, 0) + 1
         samples_by_source[opponent] = (samples_by_source.get(opponent, 0)
                                        + len(game_samples))
+        fold_game_stats(gstats, len(game_samples), totals, anchored_realized)
         games_done += 1
         if on_games_complete:
             on_games_complete(games_done, total_games, wins)
@@ -271,6 +351,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     # Timeout per message: scales with players (N=4 games much longer than N=2)
     # and sims. Untrained N=4 9×9 at 800 sims can take 40+ min for first game.
     queue_timeout = max(1800.0, total_games * 30.0 * cfg.num_players)
+    t_sp = time.time()
     run_batched_inference(
         ({0: model, 1: past_model} if past_model is not None else {0: model}),
         _self_play_worker, payloads, batch_size, on_result,
@@ -279,6 +360,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         label="PARALLEL-MP",
         spawn_detail=f" ({total_games} games, sims={cfg.mcts_simulations})",
     )
+    sp_secs = time.time() - t_sp
 
     if not samples:
         log("[PARALLEL-MP] WARNING: no samples generated — workers may have crashed.")
@@ -290,6 +372,9 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
             f"[PARALLEL-MP] {len(sources)} sources for {len(samples)} samples — "
             f"the two lists must stay index-aligned.")
 
-    return samples, wins, {"opponent_mix": opponent_mix,
-                           "samples_by_source": samples_by_source,
-                           "sources": sources}
+    stats = {"opponent_mix": opponent_mix,
+             "samples_by_source": samples_by_source,
+             "sources": sources}
+    stats.update(search_wall_metrics(totals, cfg.mcts_simulations, sp_secs))
+    stats["anchored_realized_by_seat"] = realized_by_seat(anchored_realized)
+    return samples, wins, stats

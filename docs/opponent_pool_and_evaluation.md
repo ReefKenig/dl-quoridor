@@ -171,8 +171,11 @@ Existing rows keep everything they have. New keys:
 | `champion_pool_size`, `champion_pool_iters` | which snapshots were live, so a result can be replayed |
 | `wall_mask_fraction`, `wall_budget` | already added; keeps the curriculum legible |
 | `seat_win_rate_selfplay` | per-seat self-play wins — the jump-camping signal at N=4 |
-| `walls_placed_per_game` | mean walls actually placed, split masked/full — distinguishes "learned wall economy" from "stopped walling" |
-| `first_wall_ply` | when the first wall lands; the 5x5 model's competence signature is an *early, single* wall |
+| `walls_placed_per_game` | mean wall ACTIONS played per game, over every game including timeouts — distinguishes "learned wall economy" from "stopped walling". Not `walls_on_board_mean`, which counts wall *cells*, sample-weighted. (Shipped unsplit; the masked/full split was never built.) |
+| `first_wall_ply` | when the first wall lands, averaged over the games that placed one (`None` if none did); the 5x5 model's competence signature is an *early, single* wall |
+| `mean_expanded_actions`, `visits_per_action` | search width per expanded node and the resolution the sim budget buys at that width — the evidence for restricting wall expansion (9x9 opening: 131 → 19 expanded, 4.6 → 31.6 visits/action at 600 sims) |
+| `sims_per_second` | self-play search throughput, over self-play wall clock |
+| `anchored_realized_by_seat` | the anchored cross-tab COUNTED FROM SELF-PLAY — per seat `{games, samples, walled_share}`. `anchored_walled_share_by_seat` reports what the schedule *intends*, so it cannot see a run diverging from it; the samples column catches a seat whose games end in a handful of plies and therefore carries almost no gradient despite a matching game count |
 | `value_mae_by_state_type` | value error on walled vs wall-free states — measures the coverage loss in §3b of PR #41 directly |
 | `policy_wall_mass` | mean policy mass on wall actions at the root, and after Dirichlet noise — the 0.00024 → 0.245 quantity, tracked over training |
 

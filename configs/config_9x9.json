@@ -3,7 +3,8 @@
     "board_size": 9,
     "mcts": {
         "num_simulations": 600,
-        "eval_simulations": 200,
+        "_eval_simulations_note": "600, matching num_simulations. v7 trained at 600 and evaluated at 200, so the accept gate, the racing-decay tripwire and the greedy_min_seat floor all judged an agent that self-play was not producing — a different search depth is a different player, not a cheaper measurement of the same one. EXPECT THE GREEDY NUMBER TO FALL, not rise: re-scoring n2_9x9_v7 iteration 60 at K=16 gives 70.0% vs greedy at 200 sims and 55.0% at 600 (seat 1 4/10 vs 1/10; seat 0 is 10/10 either way). More search makes this model worse against a racer, which is itself the finding — it is not a reason to keep measuring at the wrong budget. Affordable because eval_games drops 160 -> 40: 40 x 600 = 24,000 sim-units against v7's 160 x 200 = 32,000.",
+        "eval_simulations": 600,
         "c_puct": 1.41,
         "temperature": 1.0,
         "dirichlet_alpha": 0.1,

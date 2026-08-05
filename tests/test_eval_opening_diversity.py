@@ -150,3 +150,37 @@ def test_play_eval_game_reports_timeout_as_none():
 
     assert winner is None
     assert res.draws == 1 and res.decided_games == 0
+
+
+# --- the rescoring protocol ---------------------------------------------------
+# test_zero_opening_plies_replays_the_same_game above pins the failure; these pin
+# that the offline rescoring script refuses to walk into it. scripts/
+# eval_all_checkpoints.py reported ~1 distinct game per seat as 10 games/seat,
+# which produced a "restricted search is free strength at inference" claim that a
+# correct rerun then refuted.
+
+def test_multi_game_scoring_refuses_a_zero_opening():
+    import pytest
+    from scripts.eval_all_checkpoints import resolve_opening_plies
+
+    with pytest.raises(SystemExit, match="eval_opening_plies=0"):
+        resolve_opening_plies("runs/x/ship.pt", 0, games_per_seat=20)
+
+
+def test_a_single_game_may_replay_deliberately():
+    from scripts.eval_all_checkpoints import resolve_opening_plies
+
+    assert resolve_opening_plies("runs/x/ship.pt", 0, games_per_seat=1) == 0
+
+
+def test_the_runs_own_opening_is_used():
+    from scripts.eval_all_checkpoints import resolve_opening_plies
+
+    assert resolve_opening_plies("runs/x/ship.pt", 6, games_per_seat=20) == 6
+
+
+def test_a_run_without_a_frozen_opening_falls_back_to_the_eval_default():
+    from scripts.eval_all_checkpoints import resolve_opening_plies
+
+    assert (resolve_opening_plies("runs/x/ship.pt", None, games_per_seat=20)
+            == DEFAULT_EVAL_OPENING_PLIES)

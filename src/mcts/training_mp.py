@@ -77,6 +77,11 @@ class TrainingConfigMP:
     # hit 100% vs random at iter 5 and stayed there). 0 disables it.
     eval_greedy_games: int = 0
     accept_margin: float = 0.05          # accept if win_rate > fair_share + margin
+    # Hold the gate until the learner clears an absolute bar, then seed the
+    # champion from it. An untrained 9x9 net is a wall-spammer that never
+    # reaches its goal, so gate games cannot finish against it.
+    gate_arm_on_greedy: bool = False
+    gate_arm_greedy_min: float = 0.0     # arm once win_vs_greedy exceeds this
     # "constant" keeps existing scripts unchanged; 9x9 opts into cosine.
     lr_schedule: str = "constant"
     lr_final_frac: float = 0.1           # cosine end point, as a fraction of base_lr
@@ -799,6 +804,18 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     greedy_below_floor = 0
     stop_reason = None
 
+    # Gate liveness (see cfg.gate_arm_on_greedy). Recovered from history rather
+    # than persisted, so a resume cannot silently re-disarm an armed gate.
+    gate_armed = not cfg.gate_arm_on_greedy or any(
+        (r.get("win_vs_greedy") or 0.0) > cfg.gate_arm_greedy_min for r in history)
+    thin_evals = 0
+    warned_unreachable = False
+    if cfg.gate_arm_on_greedy and not gate_armed:
+        _log(f"Gate held: eval-vs-best is skipped until win_vs_greedy > "
+             f"{cfg.gate_arm_greedy_min:.2f}, then the champion is seeded from "
+             f"the learner. An untrained net cannot reach its goal, so gate "
+             f"games against it time out rather than decide.")
+
     for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
         # --- 1. self-play ---
@@ -1040,6 +1057,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         # eval_every: skip eval on most iterations to save time (eval is expensive).
         if run_eval:
             # Geometry + sims for the parallel eval workers (spawned processes).
+            # Built for every eval below, not just the gate.
             eval_config_dict = {
                 "num_players": cfg.num_players,
                 "board_size": getattr(cfg, "board_size", None) or model.board_size,
@@ -1058,61 +1076,84 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "minimax_depth": cfg.minimax_depth,
                 "minimax_wall_candidates": cfg.minimax_wall_candidates,
             }
-            t_eval_best = time.time()
-            _log(
-                f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games, {eval_sims} sims)...")
+            if not gate_armed:
+                # Skipped outright rather than run and discarded: this eval was
+                # 41% of v7's wall time and could not fire.
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best SKIPPED "
+                     f"(gate held until win_vs_greedy > {cfg.gate_arm_greedy_min:.2f})")
+                row.update(gate_armed=False, win_vs_best=None, accepted=False)
+                _write_meta()
 
-            def _eval_progress(done, total, r):
-                elapsed = time.time() - t_eval_best
-                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
-                     f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
+            if gate_armed:
+                t_eval_best = time.time()
+                _log(
+                    f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games, {eval_sims} sims)...")
 
-            if cfg.parallel_eval:
-                ev = evaluate_parallel_mp(
-                    model, best, eval_config_dict, num_games=cfg.eval_games,
-                    num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
-                    on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
-            else:
-                # dirichlet_epsilon=0 → best-play eval (matches the parallel path,
-                # which also disables exploration noise). Game diversity comes from
-                # the sampled opening, not from search noise.
-                cand = mcts_agent_mp(
-                    _mcts(model, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
-                    temperature=0.1, opening_plies=cfg.eval_opening_plies)
-                champ = mcts_agent_mp(
-                    _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
-                    temperature=0.1, opening_plies=cfg.eval_opening_plies)
-                ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
-                                 max_moves=cfg.max_game_moves, on_progress=_eval_progress,
-                                 base_seed=it * 100_003)
-            accepted = ev.should_accept(threshold)
-            eval_best_secs = time.time() - t_eval_best
-            ev_wr = ev.candidate_win_rate
-            if accepted:
-                best.copy_weights_from(model)
-                best.save(os.path.join(checkpoint_dir, "best.pt"))
-                # Snapshot every champion, so the past-opponent share draws from
-                # a spread of earlier selves rather than only the newest one —
-                # sampling old versions is what stabilised Bansal et al.
-                if cfg.opponent_past_share:
-                    champion_pool.append(snapshot_champion(
-                        best, checkpoint_dir, it + 1, cfg.champion_pool_size))
-            # Distinguish losing the gate from having too little evidence.
-            if not accepted and ev.decided_games < ev.num_games * ev.MIN_DECIDED_FRACTION:
-                verdict = (f"reject (only {ev.decided_games}/{ev.num_games} games "
-                           f"decided — too few to gate on)")
-            else:
-                verdict = "ACCEPT" if accepted else "reject"
-            _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
-                 f"{100*ev_wr:.1f}% of {ev.decided_games} decided {verdict} "
-                 f"({eval_best_secs:.0f}s)")
-            # Persist the accept/reject before eval-vs-random, so best.pt and the
-            # row's `accepted` stay consistent even if the next phase is interrupted.
-            row.update(win_vs_best=ev_wr, accepted=accepted,
-                       decided_games=ev.decided_games,
-                       eval_timeouts=ev.num_games - ev.decided_games,
-                       eval_best_secs=eval_best_secs, secs=time.time() - t0)
-            _write_meta()
+                def _eval_progress(done, total, r):
+                    elapsed = time.time() - t_eval_best
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
+                         f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
+
+                if cfg.parallel_eval:
+                    ev = evaluate_parallel_mp(
+                        model, best, eval_config_dict, num_games=cfg.eval_games,
+                        num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
+                        on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
+                else:
+                    # dirichlet_epsilon=0 → best-play eval (matches the parallel path,
+                    # which also disables exploration noise). Game diversity comes from
+                    # the sampled opening, not from search noise.
+                    cand = mcts_agent_mp(
+                        _mcts(model, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
+                        temperature=0.1, opening_plies=cfg.eval_opening_plies)
+                    champ = mcts_agent_mp(
+                        _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
+                        temperature=0.1, opening_plies=cfg.eval_opening_plies)
+                    ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
+                                     max_moves=cfg.max_game_moves, on_progress=_eval_progress,
+                                     base_seed=it * 100_003)
+                accepted = ev.should_accept(threshold)
+                eval_best_secs = time.time() - t_eval_best
+                ev_wr = ev.candidate_win_rate
+                if accepted:
+                    best.copy_weights_from(model)
+                    best.save(os.path.join(checkpoint_dir, "best.pt"))
+                    # Snapshot every champion, so the past-opponent share draws from
+                    # a spread of earlier selves rather than only the newest one —
+                    # sampling old versions is what stabilised Bansal et al.
+                    if cfg.opponent_past_share:
+                        champion_pool.append(snapshot_champion(
+                            best, checkpoint_dir, it + 1, cfg.champion_pool_size))
+                # Distinguish losing the gate from having too little evidence.
+                min_decided = ev.num_games * ev.MIN_DECIDED_FRACTION
+                if not accepted and ev.decided_games < min_decided:
+                    verdict = (f"reject (only {ev.decided_games}/{ev.num_games} games "
+                               f"decided — too few to gate on)")
+                    thin_evals += 1
+                    # Nothing aggregated the per-eval line, so 13 consecutive
+                    # unreachable evals went by unnoticed in v7.
+                    if thin_evals >= 3 and not warned_unreachable:
+                        warned_unreachable = True
+                        _log(f"WARNING: {thin_evals} consecutive evals decided "
+                             f"fewer than the {min_decided:.0f} games the accept "
+                             f"gate requires ({ev.MIN_DECIDED_FRACTION:.0%} of "
+                             f"{ev.num_games}). The gate CANNOT accept at this "
+                             f"decided rate regardless of strength — lower "
+                             f"eval_games, raise max_game_moves, or check that "
+                             f"the champion can reach its goal at all.")
+                else:
+                    thin_evals = 0
+                    verdict = "ACCEPT" if accepted else "reject"
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
+                     f"{100*ev_wr:.1f}% of {ev.decided_games} decided {verdict} "
+                     f"({eval_best_secs:.0f}s)")
+                # Persist the accept/reject before eval-vs-random, so best.pt and the
+                # row's `accepted` stay consistent even if the next phase is interrupted.
+                row.update(win_vs_best=ev_wr, accepted=accepted, gate_armed=True,
+                           decided_games=ev.decided_games,
+                           eval_timeouts=ev.num_games - ev.decided_games,
+                           eval_best_secs=eval_best_secs, secs=time.time() - t0)
+                _write_meta()
 
             # --- 4. eval vs random ---
             t_eval_rand = time.time()
@@ -1189,6 +1230,19 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                            # Whether this number still measures generalisation.
                            greedy_in_training=bool(cfg.opponent_greedy_share),
                            secs=time.time() - t0)
+
+                # Arm the gate the moment the learner clears the absolute bar,
+                # and seed the champion from it — a racer that reaches its goal,
+                # so gate games can decide.
+                if not gate_armed and evg_wr > cfg.gate_arm_greedy_min:
+                    gate_armed = True
+                    best.copy_weights_from(model)
+                    best.save(os.path.join(checkpoint_dir, "best.pt"))
+                    row.update(gate_armed=True, gate_armed_at=it + 1)
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] GATE ARMED: "
+                         f"win_vs_greedy={evg_wr:.1%} > {cfg.gate_arm_greedy_min:.2f}. "
+                         f"Champion seeded from this iteration; gating resumes "
+                         f"at the next eval.")
 
             if cfg.eval_minimax_games:
                 t_eval_mm = time.time()

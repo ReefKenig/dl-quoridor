@@ -241,6 +241,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
                 for _ in range(n_workers)]
 
     samples = []
+    sources = []
     wins = {}
     opponent_mix = {}
     samples_by_source = {}
@@ -251,6 +252,8 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         # ("game", worker_id, samples, winner, opponent)
         _, _wid, game_samples, winner, opponent = msg
         samples.extend(game_samples)
+        # Index-aligned with samples so the buffer can draw a target mix.
+        sources.extend([opponent] * len(game_samples))
         wins[winner] = wins.get(winner, 0) + 1
         # Realised, not configured: a sampler that silently stopped anchoring
         # would otherwise be invisible in the run record.
@@ -276,5 +279,13 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     if not samples:
         log("[PARALLEL-MP] WARNING: no samples generated — workers may have crashed.")
 
+    # The buffer indexes one against the other; a drift here would mislabel the
+    # source of every sample after the first mismatch instead of failing.
+    if len(sources) != len(samples):
+        raise RuntimeError(
+            f"[PARALLEL-MP] {len(sources)} sources for {len(samples)} samples — "
+            f"the two lists must stay index-aligned.")
+
     return samples, wins, {"opponent_mix": opponent_mix,
-                           "samples_by_source": samples_by_source}
+                           "samples_by_source": samples_by_source,
+                           "sources": sources}

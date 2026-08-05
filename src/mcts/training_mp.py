@@ -541,6 +541,23 @@ def champion_pool_paths(checkpoint_dir):
             for f in sorted(os.listdir(pool_dir)) if f.endswith(".pt")]
 
 
+def load_past_champion(past_model, path, env):
+    """Load a pooled champion and prove it can serve a forward pass.
+
+    The past opponent rides the shared inference batcher as a second model. A
+    checkpoint that loads but cannot predict (wrong player count, stale tensor
+    spec) would otherwise surface an hour later, mid-iteration.
+    """
+    try:
+        past_model.load(path)
+        past_model.predict(env.state_to_tensor(env.reset()))
+    except Exception as exc:
+        raise RuntimeError(
+            f"past-opponent champion {path} failed to load or serve a warmup "
+            f"forward pass — it cannot be used on the inference batcher") from exc
+    return past_model
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion and make it durable from iteration 0.
 
@@ -684,8 +701,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             past_for_iter = pick = None
             if cfg.opponent_past_share and champion_pool:
                 pick = champion_pool[np.random.randint(len(champion_pool))]
-                past_model.load(pick)
-                past_for_iter = past_model
+                past_for_iter = load_past_champion(past_model, pick, env)
                 _log(f"[iter {it+1}/{cfg.num_iterations}] past opponent: "
                      f"{os.path.basename(pick)} (pool of {len(champion_pool)})")
             if sp_mode == "vectorized":

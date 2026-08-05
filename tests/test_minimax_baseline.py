@@ -13,8 +13,10 @@ import numpy as np
 import pytest
 
 from src.env.quoridor_env_mp import (NUM_MOVE_ACTIONS, QuoridorEnvMP,
+                                     compute_action_space_size,
                                      decode_wall_action, wall_action)
-from src.mcts.evaluator_mp import (WIN_SCORE, _path_difference, greedy_agent,
+from src.mcts.evaluator_mp import (MAX_MINIMAX_DEPTH, WIN_SCORE,
+                                   _path_difference, greedy_agent,
                                    minimax_agent)
 
 
@@ -59,6 +61,24 @@ def test_wall_action_round_trips(board_size):
 def test_pawn_moves_decode_as_not_walls():
     for a in range(NUM_MOVE_ACTIONS):
         assert decode_wall_action(a, 9) is None
+
+
+@pytest.mark.parametrize("board_size", [5, 7, 9])
+def test_the_action_space_size_matches_the_layout_constants(board_size):
+    """The size and the wall offsets are two views of one layout. If they drift,
+    every wall index is remapped silently."""
+    size = compute_action_space_size(board_size)
+    assert size == NUM_MOVE_ACTIONS + 2 * (board_size - 1) ** 2
+    # The last legal wall must be the last action, with nothing spare.
+    last = wall_action(False, board_size - 2, board_size - 2, board_size)
+    assert last == size - 1
+
+
+def test_the_action_space_covers_exactly_what_the_env_offers():
+    env = _env()
+    valid = [int(a) for a in env.get_valid_actions(env.reset())]
+    assert max(valid) < compute_action_space_size(9)
+    assert compute_action_space_size(9) == env.action_space_size
 
 
 def test_encoding_matches_the_env_it_replaced():
@@ -145,7 +165,36 @@ def test_deeper_search_is_not_weaker():
     assert wins >= 2, f"depth 2 won only {wins}/4 against depth 1"
 
 
-# --- cost ---------------------------------------------------------------------
+# --- determinism and cost -----------------------------------------------------
+
+def test_the_injected_rng_makes_tie_breaks_reproducible():
+    """Ties are broken from the caller's rng, never global np.random, so an eval
+    replays identically from its seed regardless of which worker ran it."""
+    env = _env()
+    state = env.reset()
+    agent = minimax_agent(depth=1)
+    first = [agent(env, state, 0, np.random.default_rng(11)) for _ in range(3)]
+    assert len(set(first)) == 1, "same seed gave different actions"
+    # And the seed is what decides it: global seeding must not leak in.
+    np.random.seed(0)
+    a = agent(env, state, 0, np.random.default_rng(11))
+    np.random.seed(999)
+    b = agent(env, state, 0, np.random.default_rng(11))
+    assert a == b
+
+
+@pytest.mark.parametrize("depth", [0, -1, MAX_MINIMAX_DEPTH + 1])
+def test_an_unaffordable_or_empty_depth_is_refused(depth):
+    """Depth is exponential in a ~28-wide tree with a BFS at every leaf. Beyond
+    the cap an eval stalls instead of failing, so it is refused up front."""
+    with pytest.raises(ValueError):
+        minimax_agent(depth=depth)
+
+
+def test_the_supported_depths_are_constructible():
+    for depth in range(1, MAX_MINIMAX_DEPTH + 1):
+        assert callable(minimax_agent(depth=depth))
+
 
 def test_wall_candidates_are_capped_and_legal():
     env = _env()

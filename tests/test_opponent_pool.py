@@ -81,6 +81,23 @@ def test_ignoring_the_ply_count_inflates_targets():
     assert abs(naive - correct) > 0.04
 
 
+def test_misaligned_plies_are_refused():
+    """Alignment is what makes the ply-indexed discount correct. Off by one and
+    every target is mis-discounted silently, so it raises instead."""
+    with pytest.raises(ValueError, match="align"):
+        assign_vector_targets(_traj(10), 0, 2, 0.99, plies=list(range(9)),
+                              total_plies=20)
+    with pytest.raises(ValueError, match="align"):
+        assign_vector_targets(_traj(10), 0, 2, 0.99, plies=list(range(11)),
+                              total_plies=20)
+
+
+def test_a_ply_outside_the_game_is_refused():
+    with pytest.raises(ValueError, match="not inside"):
+        assign_vector_targets(_traj(3), 0, 2, 0.99, plies=[0, 2, 20],
+                              total_plies=20)
+
+
 def test_dense_behaviour_is_unchanged_without_the_new_arguments():
     for unit in ("round", "ply"):
         old = assign_vector_targets(_traj(12), 1, 2, 0.97, discount_unit=unit)
@@ -132,6 +149,22 @@ def test_the_model_still_searches_only_its_own_seats():
                   seat_agents={s: greedy_agent() for s in (1, 2, 3)})
     # One search per model ply; with 3 of 4 seats scripted that is ~a quarter.
     assert mcts.searches > 0
+
+
+def test_a_mixed_scripted_game_produces_aligned_targets():
+    """The alignment guard must not fire on the case it protects: a real game
+    where a scripted seat holds half the plies."""
+    env = _env()
+    mcts = _StubMCTS(compute_action_space_size(5))
+    np.random.seed(0)
+    samples, winner = play_one_game(env, mcts, 2, max_moves=60, discount=0.99,
+                                    explore_moves=5,
+                                    seat_agents={1: greedy_agent()})
+    assert winner is not None and samples
+    # Sparse trajectory, so every target must be strictly inside (-1, 1) — the
+    # symptom of counting distance in entries was targets pinned at +/-1.
+    for _t, _p, vec in samples:
+        assert vec.shape == (2,) and 0 < abs(vec[0]) < 1.0
 
 
 def test_no_seat_agents_is_ordinary_self_play():
@@ -192,6 +225,41 @@ def test_the_pool_is_recovered_from_disk_on_resume(tmp_path):
     assert champion_pool_paths(str(tmp_path)) == []
     snapshot_champion(_Stub(), str(tmp_path), 3, pool_size=5)
     assert len(champion_pool_paths(str(tmp_path))) == 1
+
+
+def test_a_champion_that_cannot_serve_a_forward_pass_fails_fast():
+    """A pooled champion rides the shared batcher. If it loads but cannot
+    predict, the run must die here rather than an hour into the iteration."""
+    from src.mcts.training_mp import load_past_champion
+
+    class _Broken:
+        def load(self, path):
+            pass
+
+        def predict(self, tensor):
+            raise RuntimeError("shape mismatch on the batcher")
+
+    with pytest.raises(RuntimeError, match="warmup forward pass"):
+        load_past_champion(_Broken(), "champion_iter0003.pt", _env())
+
+
+def test_a_healthy_champion_warms_up_and_is_returned():
+    from src.mcts.training_mp import load_past_champion
+
+    class _Ok:
+        def __init__(self):
+            self.loaded = self.predicted = None
+
+        def load(self, path):
+            self.loaded = path
+
+        def predict(self, tensor):
+            self.predicted = tensor.shape
+            return np.zeros(4), np.zeros(2)
+
+    model = _Ok()
+    assert load_past_champion(model, "c.pt", _env()) is model
+    assert model.loaded == "c.pt" and model.predicted is not None
 
 
 def test_a_past_share_without_the_parallel_engine_is_refused():

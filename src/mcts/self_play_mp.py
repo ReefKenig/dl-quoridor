@@ -34,6 +34,15 @@ def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
     the real one, and every target would come out too close to +/-1. Omitted =>
     dense trajectory, where the index is the ply.
     """
+    # Misalignment would silently mis-discount every target rather than fail, so
+    # it is checked here — the one place all callers share.
+    if plies is not None and len(plies) != len(trajectory):
+        raise ValueError(
+            f"trajectory and plies must align (one ply per trajectory entry): "
+            f"{len(trajectory)} entries, {len(plies)} plies")
+    if plies and total_plies is not None and plies[-1] >= total_plies:
+        raise ValueError(
+            f"ply index {plies[-1]} is not inside a {total_plies}-ply game")
     if winner is None and drop_unresolved:
         return []
     n = total_plies if total_plies is not None else len(trajectory)

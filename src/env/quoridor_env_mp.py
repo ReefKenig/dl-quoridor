@@ -18,10 +18,6 @@ from src.env.pathing import CURRENT_SPEC
 from src.env.tensor_spec_mp import build_tensor_mp
 
 
-def compute_action_space_size(board_size: int) -> int:
-    return 12 + 2 * (board_size - 1) ** 2
-
-
 MOVE_MAP = {
     (-1, 0): 0, (1, 0): 1, (0, -1): 2, (0, 1): 3,
     (-2, 0): 4, (2, 0): 5, (0, -2): 6, (0, 2): 7,
@@ -30,6 +26,12 @@ MOVE_MAP = {
 ACTION_TO_MOVE = {v: k for k, v in MOVE_MAP.items()}
 
 NUM_MOVE_ACTIONS = 12
+
+
+def compute_action_space_size(board_size: int) -> int:
+    """Pawn moves plus the two wall orientations. Derived from NUM_MOVE_ACTIONS
+    so the layout and the size can never drift apart."""
+    return NUM_MOVE_ACTIONS + 2 * (board_size - 1) ** 2
 
 
 def wall_offsets(board_size: int):

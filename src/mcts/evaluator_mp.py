@@ -128,6 +128,9 @@ def _wall_candidates(env, state, valid, max_candidates):
     return walls[:max_candidates]
 
 
+MAX_MINIMAX_DEPTH = 3
+
+
 def minimax_agent(depth: int = 2, max_wall_candidates: int = 16) -> AgentFn:
     """Depth-limited maxn on the path-difference heuristic.
 
@@ -135,7 +138,21 @@ def minimax_agent(depth: int = 2, max_wall_candidates: int = 16) -> AgentFn:
     WALLS — so it probes the skill the 9x9 models lack and does not saturate
     the way vs-random does. Held out from training on purpose: see
     docs/opponent_pool_and_evaluation.md.
+
+    Cost: the branching factor is <=12 pawn moves + max_wall_candidates walls,
+    and every leaf runs a BFS per player. At the defaults (28 wide) depth 2 is
+    ~800 leaves per move; depth 4 would be ~600k and stall an eval, so depth is
+    capped at MAX_MINIMAX_DEPTH rather than left to fail as a timeout.
     """
+    if depth < 1:
+        raise ValueError(f"minimax depth must be at least 1, got {depth}")
+    if depth > MAX_MINIMAX_DEPTH:
+        raise ValueError(
+            f"minimax depth {depth} exceeds MAX_MINIMAX_DEPTH="
+            f"{MAX_MINIMAX_DEPTH}: at a branching factor of "
+            f"{NUM_MOVE_ACTIONS + max_wall_candidates} this is "
+            f"~{(NUM_MOVE_ACTIONS + max_wall_candidates) ** depth:,} leaf "
+            f"evaluations per move, each running a BFS per player.")
     def search(env, state, d):
         if state.game_over or d == 0:
             return _path_difference(env, state)

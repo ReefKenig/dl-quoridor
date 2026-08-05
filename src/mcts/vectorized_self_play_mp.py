@@ -129,6 +129,8 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
         return MCTSMaxN(
             config=MCTSConfig(num_simulations=cfg.mcts_simulations,
                               dirichlet_epsilon=eps,
+                              dirichlet_alpha=getattr(cfg, "mcts_dirichlet_alpha", 0.3),
+                              c_puct=getattr(cfg, "mcts_c_puct", 1.41),
                               max_rollout_depth=max_moves),
             evaluate_fn=None, num_players=N)
 

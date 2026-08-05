@@ -97,6 +97,10 @@ class TrainingConfigMP:
     discount_unit: str = "round"
     explore_moves: int = 15
     mcts_dirichlet_epsilon: float = 0.25
+    # Defaults match MCTSConfig, which is what every run through v7 actually
+    # used: neither reached the search before, so the config values were inert.
+    mcts_dirichlet_alpha: float = 0.3
+    mcts_c_puct: float = 1.41
     # --- self-play engine selector ---
     # "auto" (default) => derive from parallel_self_play (back-compat: parallel if
     # True else sequential). Explicit values override:
@@ -354,6 +358,8 @@ def _mcts(model, env, cfg, sims=None, dirichlet_epsilon=None):
     return MCTSMaxN(
         config=MCTSConfig(num_simulations=sims or cfg.mcts_simulations,
                           dirichlet_epsilon=eps,
+                          dirichlet_alpha=getattr(cfg, "mcts_dirichlet_alpha", 0.3),
+                          c_puct=getattr(cfg, "mcts_c_puct", 1.41),
                           max_rollout_depth=cfg.max_game_moves,
                           wall_candidates=getattr(cfg, "mcts_wall_candidates", 0)),
         evaluate_fn=lambda st: model.predict(env.state_to_tensor(st)),

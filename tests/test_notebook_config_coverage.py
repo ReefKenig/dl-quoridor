@@ -37,13 +37,15 @@ RENAMED_CONFIG_KEYS = {
     "training_epochs": "train_steps_per_iter",    # default 200 vs config 600
     "dirichlet_epsilon": "mcts_dirichlet_epsilon",
     "max_rollout_depth": "max_turns",             # default 300 vs config 200
+    "dirichlet_alpha": "mcts_dirichlet_alpha",    # was inert until v8: MCTSConfig default 0.3
+    "c_puct": "mcts_c_puct",                      # was inert until v8: MCTSConfig default 1.41
 }
 
 # Resolved config keys that deliberately do not reach TrainingConfigMP: they
 # configure the model, the optimizer or the raw MCTSConfig instead.
 NON_TRAINING_CONFIG_KEYS = frozenset({
     "is_poc", "num_channels", "num_res_blocks", "learning_rate", "weight_decay",
-    "c_puct", "dirichlet_alpha", "temperature",
+    "temperature",
 })
 
 # Settings where a hardcoded literal in the notebook would be an expensive,

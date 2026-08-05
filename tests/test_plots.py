@@ -5,6 +5,9 @@ cell, and both v3 runs finished with no ship.pt because of one.
 
 Run: pytest tests/test_plots.py -v
 """
+import io
+import json
+
 import matplotlib
 matplotlib.use("Agg")
 
@@ -12,7 +15,8 @@ import matplotlib.pyplot as plt
 import pytest
 
 from src.utils.history import restart_iters, series, summary_lines
-from src.utils.plots import plot_training_curves, plot_variant_comparison
+from src.utils.plots import (plot_mechanism, plot_run_mechanism,
+                             plot_training_curves, plot_variant_comparison)
 
 
 def _history(n=20, eval_every=5, **extra):
@@ -134,3 +138,67 @@ def test_summary_reports_the_last_of_each_metric():
 
 def test_summary_of_an_empty_run_says_so():
     assert summary_lines([], 0.5) == ["No iterations recorded."]
+
+
+# --- the held-out baseline and the mechanism figure ---------------------------
+
+def _mechanism_history(n=12):
+    """A run carrying the anchoring/diagnostic keys."""
+    rows = _history(n=n, eval_every=4)
+    for i, row in enumerate(rows, start=1):
+        row.update(policy_wall_mass=0.05 + i * 0.005,
+                   walled_state_share=0.4, walls_on_board_mean=8.0,
+                   value_mae_walled=0.4, value_mae_wallfree=0.3,
+                   opponent_mix={"self": 26, "greedy": 14},
+                   samples_by_source={"self": 3000, "greedy": 200})
+        if row["eval_ran"]:
+            row.update(win_vs_minimax=0.1, greedy_in_training=True)
+    return rows
+
+
+def test_the_held_out_baseline_is_drawn(tmp_path):
+    out = tmp_path / "curves.png"
+    plot_training_curves({"history": _mechanism_history()}, out, "anchored",
+                         fair=0.5)
+    assert out.exists() and out.stat().st_size > 0
+
+
+def test_greedy_is_dashed_once_it_is_a_training_opponent():
+    """A contaminated series must not look like the held-out one."""
+    fig = plot_training_curves({"history": _mechanism_history()},
+                               io.BytesIO(), "anchored", fair=0.5)
+    ax = fig.axes[0]
+    labelled = {line.get_label(): line for line in ax.lines if line.get_label()}
+    greedy = next(l for k, l in labelled.items() if k.startswith("vs greedy"))
+    held_out = next(l for k, l in labelled.items() if k.startswith("vs minimax"))
+    assert "in training" in greedy.get_label()
+    assert greedy.get_linestyle() != "-" or greedy.get_dashes() != (None, None)
+    assert held_out.get_linestyle() == "-"
+
+
+def test_mechanism_figure_renders(tmp_path):
+    out = tmp_path / "mech.png"
+    plot_mechanism({"history": _mechanism_history()}, out, "anchored")
+    assert out.exists() and out.stat().st_size > 0
+
+
+def test_mechanism_figure_is_skipped_for_runs_that_lack_the_keys(tmp_path):
+    # Every run before this branch has none of these columns; drawing them as
+    # zeros is the exact failure the timeouts panel already had once.
+    run = tmp_path / "legacy"
+    run.mkdir()
+    (run / "meta.json").write_text(json.dumps({"history": _history()}))
+    fig, path = plot_run_mechanism(str(run))
+    assert fig is None and path is None
+
+
+def test_mechanism_figure_survives_a_partial_run(tmp_path):
+    # An anchoring run whose value split has not been recorded yet.
+    rows = _mechanism_history()
+    for row in rows:
+        row.pop("value_mae_walled", None)
+        row.pop("value_mae_wallfree", None)
+        row.pop("opponent_mix", None)
+    out = tmp_path / "partial.png"
+    plot_mechanism({"history": rows}, out, "partial")
+    assert out.exists() and out.stat().st_size > 0

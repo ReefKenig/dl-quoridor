@@ -50,7 +50,7 @@ def config_mp():
 
 def test_parallel_self_play_basic(model_mp, config_mp):
     """Test basic parallel self-play: spawn workers, collect games, clean shutdown."""
-    samples, wins = generate_parallel_self_play_mp(
+    samples, wins, _stats = generate_parallel_self_play_mp(
         model_mp,
         config_mp,
         num_workers=2,
@@ -68,7 +68,7 @@ def test_parallel_self_play_basic(model_mp, config_mp):
 def test_parallel_self_play_config_dirichlet_epsilon(model_mp):
     """Test that dirichlet_epsilon is read from config."""
     config = MockConfig(mcts_dirichlet_epsilon=0.5)
-    samples, wins = generate_parallel_self_play_mp(
+    samples, wins, _stats = generate_parallel_self_play_mp(
         model_mp,
         config,
         num_workers=1,
@@ -85,7 +85,7 @@ def test_pythonpath_uses_os_pathsep(model_mp, config_mp):
     original_pythonpath = os.environ.get("PYTHONPATH", "")
     try:
         os.environ["PYTHONPATH"] = "preexisting"
-        samples, wins = generate_parallel_self_play_mp(
+        samples, wins, _stats = generate_parallel_self_play_mp(
             model_mp,
             config_mp,
             num_workers=1,
@@ -105,7 +105,7 @@ def test_pythonpath_uses_os_pathsep(model_mp, config_mp):
 
 def test_worker_timeout_graceful_shutdown(model_mp, config_mp):
     """Test graceful shutdown with worker_join_timeout parameter."""
-    samples, wins = generate_parallel_self_play_mp(
+    samples, wins, _stats = generate_parallel_self_play_mp(
         model_mp,
         config_mp,
         num_workers=1,
@@ -121,7 +121,7 @@ def test_worker_timeout_graceful_shutdown(model_mp, config_mp):
 @pytest.mark.slow
 def test_parallel_self_play_multiple_workers(model_mp, config_mp):
     """Test with multiple workers to verify batching and coordination."""
-    samples, wins = generate_parallel_self_play_mp(
+    samples, wins, _stats = generate_parallel_self_play_mp(
         model_mp,
         config_mp,
         num_workers=4,
@@ -136,7 +136,7 @@ def test_parallel_self_play_multiple_workers(model_mp, config_mp):
 
 def test_parallel_self_play_edge_case_total_less_than_workers(model_mp, config_mp):
     """Test edge case: total_games < num_workers (should spawn only total_games workers)."""
-    samples, wins = generate_parallel_self_play_mp(
+    samples, wins, _stats = generate_parallel_self_play_mp(
         model_mp,
         config_mp,
         num_workers=10,

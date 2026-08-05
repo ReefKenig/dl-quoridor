@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from src.env.pathing import CURRENT_SPEC
+from src.env.quoridor_env_mp import NUM_MOVE_ACTIONS
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
 from src.mcts.self_play_mp import play_one_game
 from src.utils.schedule import lr_at, wall_budget_at, game_is_masked
@@ -25,9 +26,10 @@ from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
 from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
                                    evaluate_against_random_mp, greedy_agent,
-                                   mcts_agent_mp)
+                                   mcts_agent_mp, minimax_agent)
 from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
                                        evaluate_against_greedy_parallel_mp,
+                                       evaluate_against_minimax_parallel_mp,
                                        evaluate_against_random_parallel_mp)
 from src.utils.config import read_frozen_config
 from src.utils.logger import make_progress_logger
@@ -153,6 +155,31 @@ class TrainingConfigMP:
     # Iterations before that floor arms. Defaults to the masked phase, but a
     # mixed curriculum has no phase to end, so it needs its own grace window.
     greedy_min_seat_after: int = 0
+    # Held-out baseline. greedy becomes a training opponent once the pool
+    # anchors on it, so it stops measuring generalisation; minimax never trains
+    # and it places walls. 0 games = off.
+    eval_minimax_games: int = 0
+    minimax_depth: int = 2
+    minimax_wall_candidates: int = 16
+    # Self-play opponent pool. Shares of each iteration's games; the remainder
+    # after past/greedy is played against the current model, i.e. plain
+    # self-play. A single fixed opponent overfits and pure self-play at N=4
+    # converges on a jump-camping equilibrium the evaluation never rewards.
+    opponent_past_share: float = 0.0
+    opponent_greedy_share: float = 0.0
+    # Champion snapshots kept for the past-opponent share.
+    champion_pool_size: int = 5
+
+    def __post_init__(self):
+        if self.opponent_past_share and not self.parallel_self_play:
+            raise NotImplementedError(
+                "opponent_past_share needs the parallel engine — the champion "
+                "is served as model_id 1 on the shared inference batcher.")
+        total = self.opponent_past_share + self.opponent_greedy_share
+        if total > 1.0:
+            raise ValueError(
+                f"opponent shares sum to {total:.2f}; they are fractions of "
+                f"each iteration's games and cannot exceed 1.0.")
 
 
 BUFFER_FILE = "replay_buffer.npz"
@@ -238,6 +265,48 @@ def drop_is_significant(peak, now, n_per_seat, z_min):
     pooled = (peak + now) / 2
     se = math.sqrt(2 * pooled * (1 - pooled) / n_per_seat)
     return se == 0 or (peak - now) >= z_min * se
+
+
+def sample_diagnostics(samples, num_players, model=None, max_states=512):
+    """What the iteration actually trained on, and how well the value head knows it.
+
+    Channels N and N+1 are the wall planes (see build_tensor_mp), so a position
+    is "walled" iff either is non-zero. Splitting value error that way measures
+    the coverage gap directly: a masked phase leaves the head with no walled
+    states, and exploration then drives self-play straight into them.
+    """
+    if not samples:
+        return {}
+    wall_ch = slice(num_players, num_players + 2)
+    walled, wall_counts, policy_wall = [], [], []
+    for tensor, policy, _v in samples:
+        planes = tensor[:, :, wall_ch]
+        n_walls = int(np.count_nonzero(planes))
+        wall_counts.append(n_walls)
+        walled.append(n_walls > 0)
+        policy_wall.append(float(policy[NUM_MOVE_ACTIONS:].sum()))
+    out = {
+        # The 0.00024 -> 0.245 quantity from the curriculum analysis, but on the
+        # POLICY TARGET rather than the prior: this is what training consumes.
+        "policy_wall_mass": float(np.mean(policy_wall)),
+        "walled_state_share": float(np.mean(walled)),
+        "walls_on_board_mean": float(np.mean(wall_counts)),
+    }
+    if model is None:
+        return out
+    idx = np.random.choice(len(samples), min(max_states, len(samples)),
+                           replace=False)
+    err_walled, err_free = [], []
+    for i in idx:
+        tensor, _p, target = samples[int(i)]
+        _policy, value = model.predict(tensor)
+        err = float(np.mean(np.abs(np.asarray(value) - np.asarray(target))))
+        (err_walled if walled[int(i)] else err_free).append(err)
+    if err_walled:
+        out["value_mae_walled"] = float(np.mean(err_walled))
+    if err_free:
+        out["value_mae_wallfree"] = float(np.mean(err_free))
+    return out
 
 
 def stalled_below_floor(best_seat, floor, below):
@@ -448,6 +517,47 @@ def freeze_config(cfg, checkpoint_dir, log=print):
     return path
 
 
+CHAMPION_DIR = "champions"
+
+
+def snapshot_champion(best, checkpoint_dir, iteration, pool_size):
+    """Save this champion and drop the oldest beyond `pool_size`. Returns its path."""
+    pool_dir = os.path.join(checkpoint_dir, CHAMPION_DIR)
+    os.makedirs(pool_dir, exist_ok=True)
+    path = os.path.join(pool_dir, f"champion_iter{iteration:04d}.pt")
+    best.save(path)
+    kept = sorted(f for f in os.listdir(pool_dir) if f.endswith(".pt"))
+    for stale in kept[:max(0, len(kept) - pool_size)]:
+        os.remove(os.path.join(pool_dir, stale))
+    return path
+
+
+def champion_pool_paths(checkpoint_dir):
+    """Snapshot paths currently on disk, oldest first. Survives a resume."""
+    pool_dir = os.path.join(checkpoint_dir, CHAMPION_DIR)
+    if not os.path.isdir(pool_dir):
+        return []
+    return [os.path.join(pool_dir, f)
+            for f in sorted(os.listdir(pool_dir)) if f.endswith(".pt")]
+
+
+def load_past_champion(past_model, path, env):
+    """Load a pooled champion and prove it can serve a forward pass.
+
+    The past opponent rides the shared inference batcher as a second model. A
+    checkpoint that loads but cannot predict (wrong player count, stale tensor
+    spec) would otherwise surface an hour later, mid-iteration.
+    """
+    try:
+        past_model.load(path)
+        past_model.predict(env.state_to_tensor(env.reset()))
+    except Exception as exc:
+        raise RuntimeError(
+            f"past-opponent champion {path} failed to load or serve a warmup "
+            f"forward pass — it cannot be used on the inference batcher") from exc
+    return past_model
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion and make it durable from iteration 0.
 
@@ -547,6 +657,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")
 
+    # Champion snapshots for the past-opponent share; repopulated from disk so a
+    # resumed run keeps the pool it built rather than starting from one self.
+    champion_pool = champion_pool_paths(checkpoint_dir) if cfg.opponent_past_share else []
+    past_model = make_model() if cfg.opponent_past_share else None
+
     # Racing-decay watch (see cfg.greedy_stop_patience).
     greedy_peak = None
     greedy_below_peak = 0
@@ -577,6 +692,18 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     _log(
                         f"[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...")
 
+            # Only the parallel engine samples an opponent pool; the others
+            # report an empty mix rather than a wrong one.
+            sp_stats = {}
+            # One champion per iteration rather than per game: a uniform draw
+            # over the pool still spreads across earlier selves over a run, and
+            # keeps a single extra model on the batcher.
+            past_for_iter = pick = None
+            if cfg.opponent_past_share and champion_pool:
+                pick = champion_pool[np.random.randint(len(champion_pool))]
+                past_for_iter = load_past_champion(past_model, pick, env)
+                _log(f"[iter {it+1}/{cfg.num_iterations}] past opponent: "
+                     f"{os.path.basename(pick)} (pool of {len(champion_pool)})")
             if sp_mode == "vectorized":
                 # In-process vectorized self-play (Option B): G games share one
                 # predict_batch; exact sequential MCTS per game.
@@ -597,7 +724,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 n_new_samples = len(sp_samples)
             elif sp_mode == "parallel":
                 # GPU-batched parallel self-play
-                sp_samples, wins = generate_parallel_self_play_mp(
+                sp_samples, wins, sp_stats = generate_parallel_self_play_mp(
                     model, cfg,
                     num_workers=cfg.num_workers,
                     total_games=cfg.games_per_iteration,
@@ -608,6 +735,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     # iterations never reuse each other's seeds.
                     base_seed=it * cfg.games_per_iteration,
                     log=_log,
+                    past_model=past_for_iter,
                 )
                 if not sp_samples:
                     # Either self-play stalled (usually: the GPU inference thread died
@@ -691,6 +819,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         train_secs = time.time() - t_train
         _log(f"[iter {it+1}/{cfg.num_iterations}] training done: "
              f"loss_p={lp:.3f} loss_v={lv:.3f} ({train_secs:.0f}s)")
+        # After training, so the value error describes the head the next
+        # iteration will actually self-play with.
+        diagnostics = sample_diagnostics(sp_samples, cfg.num_players, model)
+        if diagnostics:
+            _log(f"[iter {it+1}/{cfg.num_iterations}] data: "
+                 f"policy_wall_mass={diagnostics['policy_wall_mass']:.3f} "
+                 f"walled_states={100*diagnostics['walled_state_share']:.0f}% "
+                 f"walls_on_board={diagnostics['walls_on_board_mean']:.1f} "
+                 f"value_mae walled={diagnostics.get('value_mae_walled', float('nan')):.3f} "
+                 f"free={diagnostics.get('value_mae_wallfree', float('nan')):.3f}")
 
         # --- 2b. Checkpoint immediately after training, BEFORE eval. ---
         # Eval is a long (~hours), sequential, best-effort phase. If the process
@@ -730,6 +868,15 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # the record rather than only in games.log.
                    wall_budget=budget,
                    wall_mask_fraction=frac or None,
+                   # Realised, not configured — the two diverge if the sampler
+                   # or a worker misbehaves, and only the realised one explains
+                   # the data the iteration actually trained on.
+                   opponent_mix=sp_stats.get("opponent_mix") or None,
+                   samples_by_source=sp_stats.get("samples_by_source") or None,
+                   # Which snapshot the past share played, so a result can be replayed.
+                   champion_pool_size=len(champion_pool) or None,
+                   past_opponent=(os.path.basename(pick) if past_for_iter else None),
+                   **diagnostics,
                    # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
                    rand_decided_games=None, greedy_decided_games=None,
@@ -768,6 +915,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "virtual_loss": cfg.virtual_loss,
                 "eval_opening_plies": cfg.eval_opening_plies,
                 "batch_wait_ms": cfg.batch_wait_ms,
+                "minimax_depth": cfg.minimax_depth,
+                "minimax_wall_candidates": cfg.minimax_wall_candidates,
             }
             t_eval_best = time.time()
             _log(
@@ -802,6 +951,12 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             if accepted:
                 best.copy_weights_from(model)
                 best.save(os.path.join(checkpoint_dir, "best.pt"))
+                # Snapshot every champion, so the past-opponent share draws from
+                # a spread of earlier selves rather than only the newest one —
+                # sampling old versions is what stabilised Bansal et al.
+                if cfg.opponent_past_share:
+                    champion_pool.append(snapshot_champion(
+                        best, checkpoint_dir, it + 1, cfg.champion_pool_size))
             # Distinguish losing the gate from having too little evidence.
             if not accepted and ev.decided_games < ev.num_games * ev.MIN_DECIDED_FRACTION:
                 verdict = (f"reject (only {ev.decided_games}/{ev.num_games} games "
@@ -891,8 +1046,49 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 row.update(win_vs_greedy=evg_wr, eval_greedy_secs=eval_greedy_secs,
                            greedy_decided_games=evg.decided_games,
                            greedy_by_seat=greedy_by_seat,
+                           # Whether this number still measures generalisation.
+                           greedy_in_training=bool(cfg.opponent_greedy_share),
                            secs=time.time() - t0)
 
+            if cfg.eval_minimax_games:
+                t_eval_mm = time.time()
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs minimax "
+                     f"(depth {cfg.minimax_depth}, {cfg.eval_minimax_games} games)...")
+
+                def _eval_mm_progress(done, total, r):
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs minimax: "
+                         f"{done}/{total} games ({r.candidate_win_rate:.0%})")
+
+                if cfg.parallel_eval:
+                    evm = evaluate_against_minimax_parallel_mp(
+                        model, eval_config_dict, num_games=cfg.eval_minimax_games,
+                        num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
+                        on_progress=_eval_mm_progress,
+                        base_seed=it * 100_003 + 90_001, log=_log)
+                else:
+                    evm = evaluate_mp(
+                        env, cand,
+                        minimax_agent(cfg.minimax_depth, cfg.minimax_wall_candidates),
+                        num_games=cfg.eval_minimax_games,
+                        max_moves=cfg.max_game_moves,
+                        on_progress=_eval_mm_progress,
+                        base_seed=it * 100_003 + 90_001)
+                eval_minimax_secs = time.time() - t_eval_mm
+                minimax_by_seat = {str(s): [evm.seat_wins.get(s, 0), n]
+                                   for s, n in sorted(evm.games_per_seat.items())}
+                mm_seat_str = " ".join(f"seat{s}:{w}/{n}"
+                                       for s, (w, n) in minimax_by_seat.items())
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs minimax done: "
+                     f"{100*evm.candidate_win_rate:.1f}% of {evm.decided_games} "
+                     f"decided [{mm_seat_str}] ({eval_minimax_secs:.0f}s)")
+                row.update(win_vs_minimax=evm.candidate_win_rate,
+                           eval_minimax_secs=eval_minimax_secs,
+                           minimax_decided_games=evm.decided_games,
+                           minimax_by_seat=minimax_by_seat,
+                           minimax_depth=cfg.minimax_depth,
+                           secs=time.time() - t0)
+
+            if cfg.eval_greedy_games:
                 # Racing decay: best per-seat rate against its own running peak.
                 if cfg.greedy_stop_patience:
                     seated = [(w / n, n) for w, n in greedy_by_seat.values() if n]

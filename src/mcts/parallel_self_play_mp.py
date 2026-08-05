@@ -22,7 +22,7 @@ import sys
 import traceback
 
 from src.env.pathing import CURRENT_SPEC
-from src.utils.schedule import game_is_masked
+from src.utils.schedule import game_is_masked, opponent_for_game
 from src.mcts.batched_inference_mp import (make_batched_evaluate,
                                            make_batched_evaluate_many,
                                            run_batched_inference)
@@ -54,6 +54,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         # (256), not the cgroup quota (16), so N workers fight over N*256 threads.
         torch.set_num_threads(1)
         from src.env.quoridor_env_mp import QuoridorEnvMP
+        from src.mcts.evaluator_mp import greedy_agent
         from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
         from src.mcts.self_play_mp import play_one_game, game_seed
 
@@ -68,6 +69,8 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         )
         iter_budget = config_dict.get("wall_budget")
         mask_fraction = float(config_dict.get("wall_mask_fraction", 0.0) or 0.0)
+        greedy_share = float(config_dict.get("opponent_greedy_share", 0.0) or 0.0)
+        past_share = float(config_dict.get("opponent_past_share", 0.0) or 0.0)
         # leaf_batch>1 => collect several leaves per MCTS wave and ship them in one
         # message (make_batched_evaluate_many); leaf_batch=1 keeps the one-leaf path.
         leaf_batch = int(config_dict.get("leaf_batch", 1))
@@ -91,6 +94,27 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
             evaluate_fn=evaluate_fn,  # model_id defaults to 0
             num_players=N,
         )
+
+        # The frozen champion is served by the same batcher under model_id 1,
+        # exactly as the gate serves it. Built once; MCTS trees are per-search.
+        past_agent = None
+        if past_share:
+            from functools import partial
+            from src.mcts.evaluator_mp import mcts_agent_mp
+            past_agent = mcts_agent_mp(
+                MCTSMaxN(
+                    config=MCTSConfig(
+                        num_simulations=config_dict["mcts_simulations"],
+                        dirichlet_epsilon=config_dict.get(
+                            "mcts_dirichlet_epsilon", 0.25),
+                        max_rollout_depth=config_dict["max_game_moves"],
+                        leaf_batch=leaf_batch,
+                        virtual_loss=virtual_loss,
+                    ),
+                    evaluate_fn=partial(evaluate_fn, model_id=1),
+                    num_players=N,
+                ),
+                temperature=0.3)
 
         produced = 0
         while True:
@@ -117,6 +141,16 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
             else:
                 env.wall_budget = iter_budget
 
+            # Opponent pool: an anchored game gives every seat but one to a
+            # scripted racer. The model's seat rotates as it does in eval, so no
+            # seat is trained on more than it is scored on.
+            seat_agents = None
+            opponent = opponent_for_game(game_index, greedy_share, past_share)
+            if opponent in ("greedy", "past"):
+                model_seat = game_index % N
+                other = greedy_agent() if opponent == "greedy" else past_agent
+                seat_agents = {s: other for s in range(N) if s != model_seat}
+
             samples, winner = play_one_game(
                 env, mcts, N,
                 max_moves=config_dict["max_game_moves"],
@@ -124,8 +158,9 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                 # .get: workers re-import from disk, so an older run keeps its unit.
                 discount_unit=config_dict.get("discount_unit", "round"),
                 explore_moves=config_dict["explore_moves"],
+                seat_agents=seat_agents,
             )
-            results_queue.put(("game", worker_id, samples, winner))
+            results_queue.put(("game", worker_id, samples, winner, opponent))
             produced += len(samples)
 
         results_queue.put(("done", worker_id, produced))
@@ -138,7 +173,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
 def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
                                    batch_size=64, on_games_complete=None, base_seed=0,
                                    worker_join_timeout=30.0, response_timeout=300.0,
-                                   log=print):
+                                   log=print, past_model=None):
     """Generate one iteration of self-play data with batched GPU inference.
 
     Args:
@@ -181,6 +216,8 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         "max_walls_per_player": getattr(cfg, "max_walls_per_player", 3),
         "wall_budget": getattr(cfg, "wall_budget", None),
         "wall_mask_fraction": getattr(cfg, "wall_mask_fraction", 0.0),
+        "opponent_greedy_share": getattr(cfg, "opponent_greedy_share", 0.0),
+        "opponent_past_share": getattr(cfg, "opponent_past_share", 0.0),
         "spec_version": getattr(cfg, "spec_version", CURRENT_SPEC),
         "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),
         "mcts_simulations": cfg.mcts_simulations,
@@ -201,14 +238,21 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
 
     samples = []
     wins = {}
+    opponent_mix = {}
+    samples_by_source = {}
     games_done = 0
 
     def on_result(msg):
         nonlocal games_done
-        # ("game", worker_id, samples, winner)
-        _, _wid, game_samples, winner = msg
+        # ("game", worker_id, samples, winner, opponent)
+        _, _wid, game_samples, winner, opponent = msg
         samples.extend(game_samples)
         wins[winner] = wins.get(winner, 0) + 1
+        # Realised, not configured: a sampler that silently stopped anchoring
+        # would otherwise be invisible in the run record.
+        opponent_mix[opponent] = opponent_mix.get(opponent, 0) + 1
+        samples_by_source[opponent] = (samples_by_source.get(opponent, 0)
+                                       + len(game_samples))
         games_done += 1
         if on_games_complete:
             on_games_complete(games_done, total_games, wins)
@@ -217,7 +261,8 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     # and sims. Untrained N=4 9×9 at 800 sims can take 40+ min for first game.
     queue_timeout = max(1800.0, total_games * 30.0 * cfg.num_players)
     run_batched_inference(
-        {0: model}, _self_play_worker, payloads, batch_size, on_result,
+        ({0: model, 1: past_model} if past_model is not None else {0: model}),
+        _self_play_worker, payloads, batch_size, on_result,
         log=log, response_timeout=response_timeout,
         worker_join_timeout=worker_join_timeout, queue_timeout=queue_timeout,
         label="PARALLEL-MP",
@@ -227,4 +272,5 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     if not samples:
         log("[PARALLEL-MP] WARNING: no samples generated — workers may have crashed.")
 
-    return samples, wins
+    return samples, wins, {"opponent_mix": opponent_mix,
+                           "samples_by_source": samples_by_source}

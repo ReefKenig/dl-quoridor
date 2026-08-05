@@ -15,7 +15,8 @@ import numpy as np
 
 
 def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
-                          drop_unresolved=True, discount_unit="round"):
+                          drop_unresolved=True, discount_unit="round",
+                          plies=None, total_plies=None):
     """trajectory: list of (state_tensor, policy, mover). Returns list of
     (state_tensor, policy, value_vec).
 
@@ -26,17 +27,33 @@ def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
     discount_unit: "round" decays per the mover's own turns (plies/N), "ply"
     per move by anybody. Per-variant — the right effective target magnitude
     depends on game length and player count.
+
+    plies/total_plies: real ply indices, needed when the model did not move on
+    every ply (a scripted opponent holds some seats). Without them the distance
+    to the end would be counted in TRAJECTORY entries, which is a fraction of
+    the real one, and every target would come out too close to +/-1. Omitted =>
+    dense trajectory, where the index is the ply.
     """
+    # Misalignment would silently mis-discount every target rather than fail, so
+    # it is checked here — the one place all callers share.
+    if plies is not None and len(plies) != len(trajectory):
+        raise ValueError(
+            f"trajectory and plies must align (one ply per trajectory entry): "
+            f"{len(trajectory)} entries, {len(plies)} plies")
+    if plies and total_plies is not None and plies[-1] >= total_plies:
+        raise ValueError(
+            f"ply index {plies[-1]} is not inside a {total_plies}-ply game")
     if winner is None and drop_unresolved:
         return []
-    n = len(trajectory)
+    n = total_plies if total_plies is not None else len(trajectory)
     out = []
     for idx, (tensor, policy, _mover) in enumerate(trajectory):
         if winner is None:
             vec = np.zeros(num_players, dtype=np.float32)
         else:
             per = num_players if discount_unit == "round" else 1
-            disc = discount ** ((n - idx) / per)
+            ply = plies[idx] if plies is not None else idx
+            disc = discount ** ((n - ply) / per)
             vec = np.full(num_players, -disc, dtype=np.float32)
             vec[winner] = disc
         out.append((tensor, policy, vec))
@@ -117,27 +134,40 @@ def normalize_action_probs(probs, env=None, state=None):
 
 def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
                   discount_unit="round",
-                  temp_explore=1.0, explore_moves=15):
+                  temp_explore=1.0, explore_moves=15, seat_agents=None):
+    """seat_agents: {seat: AgentFn} for seats a scripted opponent plays.
+
+    Those plies produce no training sample — the opponent's move is not a
+    policy target — but they still advance the real ply count, which the value
+    targets are discounted against.
+    """
+    seat_agents = seat_agents or {}
     state = env.reset()
-    trajectory = []
+    trajectory, plies = [], []
     move_count = 0
     winner = None
     while True:
         if move_count >= max_moves:
             winner = None
             break
-        temp = temp_explore if move_count < explore_moves else 0.3
-        probs = mcts.search(env, state, temperature=temp)
-        probs = normalize_action_probs(probs, env, state)
         mover = env.get_current_player(state)
-        trajectory.append((env.state_to_tensor(state), probs, mover))
-        action = int(np.random.choice(len(probs), p=probs))
+        opponent = seat_agents.get(mover)
+        if opponent is not None:
+            action = int(opponent(env, state, move_count, np.random))
+        else:
+            temp = temp_explore if move_count < explore_moves else 0.3
+            probs = mcts.search(env, state, temperature=temp)
+            probs = normalize_action_probs(probs, env, state)
+            trajectory.append((env.state_to_tensor(state), probs, mover))
+            plies.append(move_count)
+            action = int(np.random.choice(len(probs), p=probs))
         state, _, done, info = env.step(state, action)
         move_count += 1
         if done:
             winner = info.get("winner")
             break
     samples = assign_vector_targets(trajectory, winner, num_players, discount,
-                                    discount_unit=discount_unit)
+                                    discount_unit=discount_unit,
+                                    plies=plies, total_plies=move_count)
     aug = [augment_mp(t, p, v, num_players, env.board_size) for (t, p, v) in samples]
     return samples + aug, winner

@@ -160,6 +160,23 @@ def main():
         print(f"  [SKIP] too few anchored games/seat to judge ({counts}); "
               f"raise GAMES or GREEDY_SHARE")
 
+    print("\n=== 5c. the REALISED anchored cross-tab agrees with the schedule ===")
+    real = rows[-1].get("anchored_realized_by_seat") or {}
+    ok &= check("recorded in the history row", bool(real), str(real))
+    ok &= check("every rotated seat actually played",
+                set(real) == {str(s) for s in anchored_seats},
+                f"got {sorted(real)}, rotated {sorted(anchored_seats)}")
+    ok &= check("realised game counts match the schedule",
+                {s: c["games"] for s, c in real.items()} == counts,
+                f"{ {s: c['games'] for s, c in real.items()} } vs {counts}")
+    ok &= check("realised walled share matches the intended one",
+                all(abs(real[s]["walled_share"] - share[s]) < 1e-6 for s in real),
+                str({s: (share.get(s), real[s]["walled_share"]) for s in real}))
+    per_seat_samples = {s: c["samples"] for s, c in real.items()}
+    ok &= check("samples attributed to every anchored seat",
+                all(v > 0 for v in per_seat_samples.values()),
+                str(per_seat_samples))
+
     print("\n=== 6. greedy row is flagged as contaminated ===")
     ok &= check("greedy_in_training is True when anchoring",
                 rows[-1].get("greedy_in_training") is True,

@@ -173,6 +173,7 @@ Existing rows keep everything they have. New keys:
 | `seat_win_rate_selfplay` | per-seat self-play wins — the jump-camping signal at N=4 |
 | `walls_placed_per_game` | mean walls actually placed, split masked/full — distinguishes "learned wall economy" from "stopped walling" |
 | `first_wall_ply` | when the first wall lands; the 5x5 model's competence signature is an *early, single* wall |
+| `anchored_realized_by_seat` | the anchored cross-tab COUNTED FROM SELF-PLAY — per seat `{games, samples, walled_share}`. `anchored_walled_share_by_seat` reports what the schedule *intends*, so it cannot see a run diverging from it; the samples column catches a seat whose games end in a handful of plies and therefore carries almost no gradient despite a matching game count |
 | `value_mae_by_state_type` | value error on walled vs wall-free states — measures the coverage loss in §3b of PR #41 directly |
 | `policy_wall_mass` | mean policy mass on wall actions at the root, and after Dirichlet noise — the 0.00024 → 0.245 quantity, tracked over training |
 

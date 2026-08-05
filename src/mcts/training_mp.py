@@ -1029,6 +1029,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                        anchored_walled_share_by_seat(cfg)
                        if (getattr(cfg, "opponent_greedy_share", 0.0) or
                            getattr(cfg, "opponent_past_share", 0.0)) else None),
+                   # The same cross-tab COUNTED FROM SELF-PLAY, plus samples:
+                   # a run can match the intended game counts and still put
+                   # almost no gradient on a seat whose games end in 6 plies.
+                   anchored_realized_by_seat=sp_stats.get(
+                       "anchored_realized_by_seat"),
                    # Which snapshot the past share played, so a result can be replayed.
                    champion_pool_size=len(champion_pool) or None,
                    past_opponent=(os.path.basename(pick) if past_for_iter else None),

@@ -28,6 +28,37 @@ from src.mcts.batched_inference_mp import (make_batched_evaluate,
                                            run_batched_inference)
 
 
+def new_game_totals():
+    return dict(games=0)
+
+
+def fold_game_stats(gstats, n_samples, totals, anchored):
+    """Fold one finished game's counters into the iteration accumulators."""
+    totals["games"] += 1
+    seat = gstats.get("seat")
+    if seat is None:
+        return
+    cell = anchored.setdefault(int(seat),
+                               {"games": 0, "samples": 0, "walled": 0})
+    cell["games"] += 1
+    # SAMPLES, not just games: a seat-0 racer finishes in a handful of plies,
+    # so equal game counts can still be lopsided gradient.
+    cell["samples"] += n_samples
+    cell["walled"] += bool(gstats.get("walls_legal"))
+
+
+def realized_by_seat(anchored):
+    """Per-seat anchored games/samples/walled-share as self-play REALLY ran them.
+
+    None when nothing was anchored, so it reads like the config-derived key.
+    """
+    if not anchored:
+        return None
+    return {str(seat): {"games": c["games"], "samples": c["samples"],
+                        "walled_share": round(c["walled"] / c["games"], 4)}
+            for seat, c in sorted(anchored.items())}
+
+
 def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                       payload, project_dir, response_timeout=300.0):
     """Play self-play games claimed from a shared counter, deferring every leaf
@@ -167,7 +198,15 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
                 explore_moves=config_dict["explore_moves"],
                 seat_agents=seat_agents,
             )
-            results_queue.put(("game", worker_id, samples, winner, opponent))
+            # Realised seat/regime: the model's seat only exists when anchored,
+            # and walls_legal reads the budget the game was actually played at.
+            game_stats = {
+                "seat": (plan.model_seat
+                         if opponent in ANCHORED_OPPONENTS else None),
+                "walls_legal": env.wall_budget != 0,
+            }
+            results_queue.put(
+                ("game", worker_id, samples, winner, opponent, game_stats))
             produced += len(samples)
 
         results_queue.put(("done", worker_id, produced))
@@ -249,12 +288,14 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     wins = {}
     opponent_mix = {}
     samples_by_source = {}
+    anchored_realized = {}
+    totals = new_game_totals()
     games_done = 0
 
     def on_result(msg):
         nonlocal games_done
-        # ("game", worker_id, samples, winner, opponent)
-        _, _wid, game_samples, winner, opponent = msg
+        # ("game", worker_id, samples, winner, opponent, game_stats)
+        _, _wid, game_samples, winner, opponent, gstats = msg
         samples.extend(game_samples)
         # Index-aligned with samples so the buffer can draw a target mix.
         sources.extend([opponent] * len(game_samples))
@@ -264,6 +305,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         opponent_mix[opponent] = opponent_mix.get(opponent, 0) + 1
         samples_by_source[opponent] = (samples_by_source.get(opponent, 0)
                                        + len(game_samples))
+        fold_game_stats(gstats, len(game_samples), totals, anchored_realized)
         games_done += 1
         if on_games_complete:
             on_games_complete(games_done, total_games, wins)
@@ -292,4 +334,6 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
 
     return samples, wins, {"opponent_mix": opponent_mix,
                            "samples_by_source": samples_by_source,
-                           "sources": sources}
+                           "sources": sources,
+                           "anchored_realized_by_seat":
+                               realized_by_seat(anchored_realized)}

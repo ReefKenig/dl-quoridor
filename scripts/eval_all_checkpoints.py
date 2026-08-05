@@ -178,6 +178,25 @@ def selected():
             if not ONLY or any(tag in p for tag in ONLY)]
 
 
+def write_outputs(rows, controls):
+    """Persist after every checkpoint. Minimax costs ~20 s/game at 9x9, so a
+    full sweep runs for hours and must not lose everything to one interrupt."""
+    os.makedirs("outputs", exist_ok=True)
+    meta = {"games_per_seat": GAMES_PER_SEAT, "sims": SIMS,
+            "minimax_depth": DEPTH, "wall_candidates": WALL_CANDIDATES,
+            "complete": len(rows) == len(selected()) * len(WALL_CANDIDATES) * 2,
+            "protocol": "evaluate_mp; opening_plies from each run's frozen "
+                        "config; each checkpoint on its own tensor spec"}
+    with open("outputs/held_out_eval.json", "w") as f:
+        json.dump({**meta, "results": rows, "controls": controls}, f, indent=2)
+    # The K-ablation slice: the same rows, restricted to the comparison that
+    # decides whether Branch 1 is a training or an inference result.
+    ablation = [r for r in rows if r["board"] == 9]
+    with open("outputs/v7_vs_v4.json", "w") as f:
+        json.dump({**meta, "results": ablation}, f, indent=2)
+    return ablation
+
+
 def main():
     rows = []
     for path, n, board in selected():
@@ -214,6 +233,7 @@ def main():
                 print(f"{path:32s} K={k:<3d} vs {opp_name:8s} "
                       f"{100*row['rate']:5.1f}%  [{seats}]  "
                       f"({row['decided']}/{row['games']} decided, {row['secs']}s)")
+        write_outputs(rows, [])
 
     print("\n--- control: greedy vs minimax, no network ---")
     controls = []
@@ -225,21 +245,7 @@ def main():
         print(f"  {board}x{board} N={n}: greedy scores {100*row['rate']:5.1f}% "
               f"of {row['decided']} decided vs minimax depth {DEPTH}")
 
-    os.makedirs("outputs", exist_ok=True)
-    meta = {"games_per_seat": GAMES_PER_SEAT, "sims": SIMS,
-            "minimax_depth": DEPTH, "wall_candidates": WALL_CANDIDATES,
-            "protocol": "evaluate_mp; opening_plies from each run's frozen "
-                        "config; each checkpoint on its own tensor spec"}
-
-    with open("outputs/held_out_eval.json", "w") as f:
-        json.dump({**meta, "results": rows, "controls": controls}, f, indent=2)
-
-    # The K-ablation slice: the same rows, restricted to the comparison that
-    # decides whether Branch 1 is a training or an inference result.
-    ablation = [r for r in rows if r["board"] == 9]
-    with open("outputs/v7_vs_v4.json", "w") as f:
-        json.dump({**meta, "results": ablation}, f, indent=2)
-
+    ablation = write_outputs(rows, controls)
     print(f"\nwrote outputs/held_out_eval.json ({len(rows)} rows, "
           f"{len(controls)} controls) and outputs/v7_vs_v4.json "
           f"({len(ablation)} rows)")

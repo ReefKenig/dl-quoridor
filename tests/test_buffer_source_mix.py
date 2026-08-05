@@ -104,6 +104,64 @@ def test_share_zero_is_the_old_uniform_path():
     assert np.array_equal(a, b)
 
 
+def test_the_batch_is_not_ordered_source_first():
+    """The two draws are concatenated in blocks, so without a shuffle every
+    batch would present all anchored samples before any self-play one."""
+    np.random.seed(0)
+    buf = _stocked(n_self=9000, n_anchor=1000, size=20000)
+    positions = []
+    for _ in range(20):
+        S, _P, _V = buf.sample_batch(128, source="greedy", source_share=0.25)
+        flags = np.array([s.max() > 0.5 for s in S])
+        anchored = np.flatnonzero(flags)
+        assert len(anchored) > 0
+        positions.append(anchored.mean() / len(flags))
+    # Source-first ordering would pin the mean position near 0.125; uniform
+    # placement puts it near 0.5.
+    assert abs(float(np.mean(positions)) - 0.5) < 0.08
+
+
+# --- the source index ---------------------------------------------------------
+
+def test_the_source_cache_is_rebuilt_after_every_add():
+    """The cache is what makes sampling O(batch) instead of O(buffer). If a
+    stale one survived an add, the mix would be drawn against old labels."""
+    buf = ReplayBufferMP(5000)
+    buf.add([_sample() for _ in range(10)], sources=["self"] * 10)
+    assert len(buf.indices_by_source("greedy")) == 0
+    buf.add([_sample(1.0) for _ in range(6)], sources=["greedy"] * 6)
+    assert len(buf.indices_by_source("greedy")) == 6
+    assert list(buf.sources_array()) == ["self"] * 10 + ["greedy"] * 6
+
+
+def test_the_source_cache_survives_eviction_correctly():
+    """Eviction shifts every index, so the cache must not outlive it."""
+    buf = ReplayBufferMP(10)
+    buf.add([_sample() for _ in range(8)], sources=["self"] * 8)
+    buf.indices_by_source("self")            # populate the cache
+    buf.add([_sample(1.0) for _ in range(6)], sources=["greedy"] * 6)
+    idx = buf.indices_by_source("greedy")
+    assert list(idx) == [4, 5, 6, 7, 8, 9]
+    assert len(buf.sources_array()) == len(buf) == 10
+
+
+def test_indices_by_source_agrees_with_a_plain_scan():
+    buf = _stocked(n_self=120, n_anchor=37)
+    for source in ("self", "greedy", "past"):
+        expected = [i for i, s in enumerate(buf.sources) if s == source]
+        assert list(buf.indices_by_source(source)) == expected
+
+
+def test_a_long_source_label_is_not_truncated():
+    """SOURCE_DTYPE is fixed-width; a label longer than it would alias."""
+    from src.mcts.training_mp import SOURCE_DTYPE
+    width = int(SOURCE_DTYPE[1:])
+    label = "x" * width
+    buf = ReplayBufferMP(100)
+    buf.add([_sample() for _ in range(3)], sources=[label] * 3)
+    assert len(buf.indices_by_source(label)) == 3
+
+
 # --- persistence --------------------------------------------------------------
 
 def test_sources_survive_a_save_and_reload(tmp_path):
@@ -113,6 +171,24 @@ def test_sources_survive_a_save_and_reload(tmp_path):
     restored.load(str(tmp_path), log=lambda *a: None)
     assert len(restored) == 70
     assert len(restored.indices_by_source("greedy")) == 20
+
+
+def test_a_truncated_source_array_is_dropped_rather_than_misaligned(tmp_path):
+    """A short src would shift every label onto the wrong sample and silently
+    mis-weight the mix for the rest of the run."""
+    import os
+    S = np.zeros((6, 3, 3, 1), np.float32)
+    P = np.zeros((6, 4), np.float32)
+    V = np.zeros((6, 2), np.float32)
+    src = np.array(["greedy"] * 4, dtype="U16")
+    np.savez(os.path.join(str(tmp_path), "replay_buffer.npz"),
+             S=S, P=P, V=V, src=src)
+    warnings = []
+    buf = ReplayBufferMP(100)
+    buf.load(str(tmp_path), log=warnings.append)
+    assert len(buf) == 6
+    assert list(buf.sources) == [SELF_SOURCE] * 6
+    assert any("source labels" in w for w in warnings)
 
 
 def test_a_buffer_written_before_tagging_loads_as_self_play(tmp_path):

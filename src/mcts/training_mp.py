@@ -197,6 +197,10 @@ BUFFER_FILE = "replay_buffer.npz"
 
 SELF_SOURCE = "self"
 
+# Fixed width so the persisted array and the in-memory cache agree; source names
+# are short labels ("self", "greedy", "past"), not free text.
+SOURCE_DTYPE = "U16"
+
 
 class ReplayBufferMP:
     """Replay buffer that can draw a batch at a TARGET source mix.
@@ -206,6 +210,13 @@ class ReplayBufferMP:
     anchored game yields only the model's own plies and ends sooner, so 35% of
     games came out as ~10% of the gradient and the anchored signal was too weak
     to hold. Sampling to a target share decouples production from consumption.
+
+    NOT thread-safe, and deliberately so: `add`, `sample_batch`, `save` and
+    `load` all assume a single caller. The buffer lives in the main training
+    process only — self-play workers are separate processes that ship samples
+    back over a queue, and `training_loop_mp` adds and samples sequentially. The
+    two deques and the source cache are mutated without a lock on that basis, so
+    concurrent access would need locking added here first.
     """
 
     def __init__(self, max_size=50_000):
@@ -213,6 +224,10 @@ class ReplayBufferMP:
         # Parallel deque: same maxlen, appended and evicted in lockstep, so a
         # source always describes the sample at the same index.
         self.sources = deque(maxlen=max_size)
+        # Vectorized view of `sources`, rebuilt lazily. Sampling runs
+        # train_steps_per_iter times against a buffer that only changes once per
+        # iteration, so the O(N) build is paid once rather than per batch.
+        self._sources_cache = None
 
     def add(self, samples, sources=None):
         samples = list(samples)
@@ -226,9 +241,16 @@ class ReplayBufferMP:
                     f"{len(sources)} sources for {len(samples)} samples — the "
                     f"two deques must stay index-aligned.")
             self.sources.extend(sources)
+        self._sources_cache = None      # eviction can shift every index
+
+    def sources_array(self):
+        """`sources` as a numpy array, cached until the next `add`."""
+        if self._sources_cache is None:
+            self._sources_cache = np.array(list(self.sources), dtype=SOURCE_DTYPE)
+        return self._sources_cache
 
     def indices_by_source(self, source):
-        return [i for i, s in enumerate(self.sources) if s == source]
+        return np.flatnonzero(self.sources_array() == source)
 
     def sample_batch(self, batch_size, source=None, source_share=0.0):
         """A batch, optionally drawing `source_share` of it from `source`.
@@ -239,21 +261,29 @@ class ReplayBufferMP:
         n = min(batch_size, len(self.buffer))
         if source and source_share > 0:
             wanted = int(round(n * min(source_share, 1.0)))
-            pool = self.indices_by_source(source)
+            is_source = self.sources_array() == source
+            pool = np.flatnonzero(is_source)
+            rest = np.flatnonzero(~is_source)
             take = min(wanted, len(pool))
-            chosen = list(np.random.choice(pool, take, replace=False)) if take else []
-            rest = [i for i in range(len(self.buffer)) if self.sources[i] != source]
+            chosen = (np.random.choice(pool, take, replace=False) if take
+                      else np.empty(0, dtype=int))
             need = n - len(chosen)
             if need > 0:
                 if len(rest) >= need:
-                    chosen += list(np.random.choice(rest, need, replace=False))
+                    extra = np.random.choice(rest, need, replace=False)
                 else:                       # not enough of the other source yet
-                    spare = [i for i in range(len(self.buffer)) if i not in set(chosen)]
-                    chosen += list(np.random.choice(
-                        spare, min(need, len(spare)), replace=False))
-            idx = np.array(chosen, dtype=int)
+                    spare_mask = np.ones(len(self.buffer), dtype=bool)
+                    spare_mask[chosen] = False
+                    spare = np.flatnonzero(spare_mask)
+                    extra = np.random.choice(
+                        spare, min(need, len(spare)), replace=False)
+                chosen = np.concatenate([chosen, extra])
+            idx = chosen.astype(int)
         else:
             idx = np.random.choice(len(self.buffer), n, replace=False)
+        # The source-mixed path appends its two draws in blocks, so without this
+        # every batch would be ordered source-first.
+        np.random.shuffle(idx)
         b = [self.buffer[i] for i in idx]
         S = np.array([x[0] for x in b], np.float32)
         P = np.array([x[1] for x in b], np.float32)
@@ -271,7 +301,7 @@ class ReplayBufferMP:
         S = np.array([x[0] for x in self.buffer], np.float32)
         P = np.array([x[1] for x in self.buffer], np.float32)
         V = np.array([x[2] for x in self.buffer], np.float32)
-        src = np.array(list(self.sources), dtype="U16")
+        src = self.sources_array()
         with open(tmp, "wb") as f:
             np.savez(f, S=S, P=P, V=V, src=src)
             f.flush()
@@ -295,6 +325,13 @@ class ReplayBufferMP:
             log(f"WARNING: could not read {path} ({exc}) — starting with an "
                 f"empty buffer, as if it had not been persisted.")
             return 0
+        # A truncated src would silently shift every label onto the wrong sample
+        # and quietly mis-weight the source mix for the rest of the run.
+        if src is not None and len(src) != len(S):
+            log(f"WARNING: {path} holds {len(src)} source labels for {len(S)} "
+                f"samples — dropping the labels and treating the buffer as "
+                f"self-play rather than mislabelling it.")
+            src = None
         # .copy() because iterating a stacked array yields views: one surviving
         # view keeps the entire ~500 MB base alive. maxlen trims the oldest if
         # the run resumes at a smaller buffer size.

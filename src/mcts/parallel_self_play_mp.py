@@ -22,7 +22,7 @@ import sys
 import traceback
 
 from src.env.pathing import CURRENT_SPEC
-from src.utils.schedule import game_is_masked, opponent_for_game
+from src.utils.schedule import ANCHORED_OPPONENTS, iteration_plans
 from src.mcts.batched_inference_mp import (make_batched_evaluate,
                                            make_batched_evaluate_many,
                                            run_batched_inference)
@@ -76,6 +76,10 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         leaf_batch = int(config_dict.get("leaf_batch", 1))
         virtual_loss = float(config_dict.get("virtual_loss", 1.0))
         wall_candidates = int(config_dict.get("mcts_wall_candidates", 0) or 0)
+        # One pass over the iteration, so every worker sees the same assignment
+        # for a given game_index regardless of which games it claims.
+        plans = iteration_plans(total_games, N, greedy_share, past_share,
+                                mask_fraction)
         if leaf_batch > 1:
             evaluate_fn = make_batched_evaluate_many(
                 worker_id, request_queue, response_queue, env, response_timeout)
@@ -137,22 +141,22 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
             np.random.seed(seed)
             torch.manual_seed(seed)
 
+            # Opponent, seat and wall mask come from one plan keyed on
+            # game_index -- separately they collapsed to the same predicate.
+            plan = plans[game_index]
+            opponent = plan.opponent
+
             # Mixed curriculum: this game races wall-free, the rest play normally.
-            # Keyed on game_index so the mix is identical however work is split.
-            if mask_fraction and game_is_masked(game_index, mask_fraction):
-                env.wall_budget = 0
-            else:
-                env.wall_budget = iter_budget
+            env.wall_budget = 0 if (mask_fraction and plan.walls_masked) else iter_budget
 
             # Opponent pool: an anchored game gives every seat but one to a
             # scripted racer. The model's seat rotates as it does in eval, so no
             # seat is trained on more than it is scored on.
             seat_agents = None
-            opponent = opponent_for_game(game_index, greedy_share, past_share)
-            if opponent in ("greedy", "past"):
-                model_seat = game_index % N
+            if opponent in ANCHORED_OPPONENTS:
                 other = greedy_agent() if opponent == "greedy" else past_agent
-                seat_agents = {s: other for s in range(N) if s != model_seat}
+                seat_agents = {s: other for s in range(N)
+                               if s != plan.model_seat}
 
             samples, winner = play_one_game(
                 env, mcts, N,

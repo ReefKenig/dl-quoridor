@@ -20,7 +20,7 @@ import tempfile
 from src.env.quoridor_env_mp import QuoridorEnvMP, compute_action_space_size
 from src.model.network_mp import QuoridorModelMP
 from src.mcts.training_mp import TrainingConfigMP, training_loop_mp
-from src.utils.schedule import game_is_masked, opponent_for_game
+from src.utils.schedule import ANCHORED_OPPONENTS, iteration_plans
 
 N = int(os.environ.get("N", 2))
 BOARD = int(os.environ.get("BOARD", 5))
@@ -65,6 +65,9 @@ def main():
         opponent_greedy_share=GREEDY_SHARE,
         anchored_sample_share=float(os.environ.get('SAMPLE_SHARE', 0.3)),
         greedy_stop_patience=0,
+        # Production restricts search the same way; probing a model trained
+        # under K with K=0 measures a different agent.
+        mcts_wall_candidates=int(os.environ.get("WALL_CANDIDATES", 16)),
         parallel_self_play=True, parallel_eval=True, self_play_mode="parallel",
         num_workers=2, inference_batch_size=16,
     )
@@ -92,8 +95,8 @@ def main():
     mix = rows[-1].get("opponent_mix") or {}
     by_src = rows[-1].get("samples_by_source") or {}
     ok &= check("opponent_mix present", bool(mix), str(mix))
-    expected_anchored = sum(opponent_for_game(i, GREEDY_SHARE) == "greedy"
-                            for i in range(GAMES))
+    plans = iteration_plans(GAMES, N, GREEDY_SHARE, mask_fraction=0.5)
+    expected_anchored = sum(p.opponent == "greedy" for p in plans)
     ok &= check("anchored count matches the schedule",
                 mix.get("greedy", 0) == expected_anchored,
                 f"got {mix.get('greedy', 0)}, expected {expected_anchored}")
@@ -130,8 +133,32 @@ def main():
     print("\n=== 5. curriculum still recorded ===")
     ok &= check("wall_mask_fraction", rows[-1].get("wall_mask_fraction") == 0.5,
                 repr(rows[-1].get("wall_mask_fraction")))
-    expected_masked = sum(game_is_masked(i, 0.5) for i in range(GAMES))
+    expected_masked = sum(p.walls_masked for p in plans)
     print(f"        (expected {expected_masked}/{GAMES} race-only games per iter)")
+
+    print("\n=== 5b. every anchored seat sees walls AND races ===")
+    # The acceptance test for the seat/mask aliasing: a seat pinned at 0.0 or
+    # 1.0, or absent, means the two schedules are the same predicate again.
+    share = rows[-1].get("anchored_walled_share_by_seat") or {}
+    anchored_seats = {p.model_seat for p in plans
+                      if p.opponent in ANCHORED_OPPONENTS}
+    ok &= check("recorded in the history row", bool(share), str(share))
+    ok &= check("every rotated seat is present",
+                set(share) == {str(s) for s in anchored_seats},
+                f"got {sorted(share)}, rotated {sorted(anchored_seats)}")
+    # A seat with a single anchored game is 0.0 or 1.0 by arithmetic, not by
+    # aliasing, so only judge seats that had the chance to see both.
+    counts = {}
+    for p in plans:
+        if p.opponent in ANCHORED_OPPONENTS:
+            counts[str(p.model_seat)] = counts.get(str(p.model_seat), 0) + 1
+    judged = {s: v for s, v in share.items() if counts.get(s, 0) >= 2}
+    if judged:
+        pinned = {s: v for s, v in judged.items() if v in (0.0, 1.0)}
+        ok &= check("no seat is pinned to one wall regime", not pinned, str(pinned))
+    else:
+        print(f"  [SKIP] too few anchored games/seat to judge ({counts}); "
+              f"raise GAMES or GREEDY_SHARE")
 
     print("\n=== 6. greedy row is flagged as contaminated ===")
     ok &= check("greedy_in_training is True when anchoring",

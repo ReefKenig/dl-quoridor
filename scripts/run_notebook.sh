@@ -202,7 +202,13 @@ echo "===================================="
 
 case "$MODE" in
   nohup)
-    setsid bash -c "$CMD" >>"$LOG" 2>&1 &
+    # setsid is util-linux and absent on macOS; nohup alone still detaches from
+    # the terminal, it just leaves the job in the shell's process group.
+    if command -v setsid >/dev/null 2>&1; then
+      setsid bash -c "$CMD" >>"$LOG" 2>&1 &
+    else
+      nohup bash -c "$CMD" >>"$LOG" 2>&1 &
+    fi
     PID=$!
     echo "$PID" > "$LOG_DIR/notebook.pid"
     echo "Started (pid $PID). Tail with:  tail -f $LOG"

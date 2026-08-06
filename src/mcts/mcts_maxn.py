@@ -39,6 +39,39 @@ class MCTSConfig:
     wall_candidates: int = 0
 
 
+# Search settings live under two spellings: TrainingConfigMP attributes
+# (mcts_*) and the worker config_dict keys the engines are handed. Every field
+# a run can set has to be forwarded at EVERY construction site, and a field
+# that is missed reaches no search at all — which is how dirichlet_alpha and
+# c_puct sat inert in configs/config_9x9.json through v7.
+_FROM_RUN_CONFIG = (
+    ("num_simulations", "mcts_simulations"),
+    ("c_puct", "mcts_c_puct"),
+    ("dirichlet_alpha", "mcts_dirichlet_alpha"),
+    ("dirichlet_epsilon", "mcts_dirichlet_epsilon"),
+    ("wall_candidates", "mcts_wall_candidates"),
+    ("leaf_batch", "leaf_batch"),
+    ("virtual_loss", "virtual_loss"),
+)
+
+
+def mcts_config_for(run_cfg, **overrides):
+    """Build the max-n MCTSConfig a run's settings imply.
+
+    `run_cfg` is a TrainingConfigMP or a worker config_dict. Anything absent
+    keeps the MCTSConfig default; `overrides` win (eval passes
+    dirichlet_epsilon=0.0, and max_rollout_depth differs per caller).
+    """
+    get = run_cfg.get if isinstance(run_cfg, dict) else lambda k, d=None: getattr(run_cfg, k, d)
+    kwargs = {}
+    for field, source in _FROM_RUN_CONFIG:
+        value = get(source)
+        if value is not None:
+            kwargs[field] = value
+    kwargs.update({k: v for k, v in overrides.items() if v is not None})
+    return MCTSConfig(**kwargs)
+
+
 class Node:
     __slots__ = ["parent", "action", "prior", "current_player",
                  "visit_count", "value_sum", "children", "is_expanded",

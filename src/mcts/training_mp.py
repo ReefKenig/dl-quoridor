@@ -18,7 +18,7 @@ import numpy as np
 
 from src.env.pathing import CURRENT_SPEC
 from src.env.quoridor_env_mp import NUM_MOVE_ACTIONS
-from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
+from src.mcts.mcts_maxn import MCTSMaxN, mcts_config_for
 from src.mcts.self_play_mp import play_one_game
 from src.utils.schedule import (ANCHORED_OPPONENTS, iteration_plans, lr_at,
                                 wall_budget_at)
@@ -356,12 +356,8 @@ def _mcts(model, env, cfg, sims=None, dirichlet_epsilon=None):
     eps = (dirichlet_epsilon if dirichlet_epsilon is not None
            else getattr(cfg, 'mcts_dirichlet_epsilon', 0.25))
     return MCTSMaxN(
-        config=MCTSConfig(num_simulations=sims or cfg.mcts_simulations,
-                          dirichlet_epsilon=eps,
-                          dirichlet_alpha=getattr(cfg, "mcts_dirichlet_alpha", 0.3),
-                          c_puct=getattr(cfg, "mcts_c_puct", 1.41),
-                          max_rollout_depth=cfg.max_game_moves,
-                          wall_candidates=getattr(cfg, "mcts_wall_candidates", 0)),
+        config=mcts_config_for(cfg, num_simulations=sims, dirichlet_epsilon=eps,
+                               max_rollout_depth=cfg.max_game_moves),
         evaluate_fn=lambda st: model.predict(env.state_to_tensor(st)),
         num_players=cfg.num_players,
     )
@@ -942,13 +938,18 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         _log(f"[iter {it+1}/{cfg.num_iterations}] self-play done: "
              f"{cfg.games_per_iteration} games ({sp_secs:.0f}s) | wins: {win_dist} "
              f"| draw_rate={100*draw_rate:.0f}% avg_len~{avg_len:.0f}")
+        # One timer: sp_secs is the column the row reports, so the rate cannot
+        # disagree with its own denominator.
+        learner_sims = sp_stats.get("learner_sims")
+        learner_sims_per_second = (round(learner_sims / sp_secs, 2)
+                                   if learner_sims and sp_secs > 0 else None)
         if sp_stats.get("mean_expanded_actions"):
             _log(f"[iter {it+1}/{cfg.num_iterations}] search: "
                  f"expanded={sp_stats['mean_expanded_actions']:.1f} actions/node "
                  f"visits/action={sp_stats['visits_per_action']:.1f} "
                  f"walls/game={sp_stats['walls_placed_per_game']:.2f} "
                  f"first_wall_ply={sp_stats['first_wall_ply']} "
-                 f"sims/s={sp_stats['sims_per_second']}")
+                 f"learner_sims/s={learner_sims_per_second}")
         if draw_rate > 0.20:
             _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: draw_rate "
                  f"{100*draw_rate:.0f}% > 20% — games timing out at "
@@ -1053,7 +1054,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    visits_per_action=sp_stats.get("visits_per_action"),
                    walls_placed_per_game=sp_stats.get("walls_placed_per_game"),
                    first_wall_ply=sp_stats.get("first_wall_ply"),
-                   sims_per_second=sp_stats.get("sims_per_second"),
+                   # Learner searches only; see search_wall_metrics.
+                   learner_sims_per_second=learner_sims_per_second,
                    # Which snapshot the past share played, so a result can be replayed.
                    champion_pool_size=len(champion_pool) or None,
                    past_opponent=(os.path.basename(pick) if past_for_iter else None),
@@ -1097,7 +1099,12 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "virtual_loss": cfg.virtual_loss,
                 "eval_opening_plies": cfg.eval_opening_plies,
                 "batch_wait_ms": cfg.batch_wait_ms,
+                # Every search setting, not just the wall cap: the gate compares
+                # a candidate to a champion, so eval must search the way
+                # self-play does or it measures a different pair of agents.
                 "mcts_wall_candidates": cfg.mcts_wall_candidates,
+                "mcts_c_puct": cfg.mcts_c_puct,
+                "mcts_dirichlet_alpha": cfg.mcts_dirichlet_alpha,
                 "minimax_depth": cfg.minimax_depth,
                 "minimax_wall_candidates": cfg.minimax_wall_candidates,
             }

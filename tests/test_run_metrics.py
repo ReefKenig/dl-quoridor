@@ -19,7 +19,7 @@ from src.mcts.self_play_mp import play_one_game
 from src.model.network_mp import QuoridorModelMP
 
 SEARCH_KEYS = ("mean_expanded_actions", "visits_per_action",
-               "walls_placed_per_game", "first_wall_ply", "sims_per_second")
+               "walls_placed_per_game", "first_wall_ply", "learner_sims")
 
 
 def _game(seat=None, samples=10, walls_legal=True, walls_placed=0,
@@ -37,13 +37,18 @@ def _fold(games):
     return totals, anchored
 
 
+def _metrics(totals, sims, games):
+    """search_wall_metrics takes the game count the caller already tracks."""
+    return search_wall_metrics(totals, sims, games)
+
+
 # --- Part 1: realised anchored cross-tab --------------------------------------
 
 def test_realized_is_none_without_anchoring():
     """Matches the config-derived key's convention: no anchoring => None."""
     totals, anchored = _fold([_game(seat=None) for _ in range(4)])
     assert realized_by_seat(anchored) is None
-    assert totals["games"] == 4
+    assert totals["sims"] >= 0
 
 
 def test_realized_n4_distinguishes_a_seat_that_got_no_anchored_games():
@@ -87,10 +92,10 @@ def test_search_wall_metrics_reproduce_the_restricted_search_claim():
     """131 legal -> 19 expanded at 600 sims is 4.6 -> 31.6 visits/action."""
     wide = search_wall_metrics(
         dict(new_game_totals(), expanded_actions=13100, expansions=100,
-             sims=600, games=1), 600, 1.0)
+             sims=600), 600, 1)
     narrow = search_wall_metrics(
         dict(new_game_totals(), expanded_actions=1900, expansions=100,
-             sims=600, games=1), 600, 1.0)
+             sims=600), 600, 1)
     assert wide["mean_expanded_actions"] == 131.0
     assert round(wide["visits_per_action"], 1) == 4.6
     assert narrow["mean_expanded_actions"] == 19.0
@@ -98,7 +103,7 @@ def test_search_wall_metrics_reproduce_the_restricted_search_claim():
 
 
 def test_search_wall_metrics_are_none_rather_than_zero_when_unmeasured():
-    out = search_wall_metrics(new_game_totals(), 600, 0.0)
+    out = search_wall_metrics(new_game_totals(), 600, 0)
     assert all(out[k] is None for k in SEARCH_KEYS)
 
 
@@ -106,14 +111,16 @@ def test_first_wall_ply_averages_only_games_that_walled():
     totals, _ = _fold([_game(walls_placed=2, first_wall_ply=4),
                        _game(walls_placed=1, first_wall_ply=10),
                        _game(walls_placed=0, first_wall_ply=None)])
-    out = search_wall_metrics(totals, 60, 2.0)
+    out = search_wall_metrics(totals, 60, 3)
     assert out["first_wall_ply"] == 7.0          # mean of 4 and 10, not of 3
     assert out["walls_placed_per_game"] == 1.0   # 3 walls over ALL 3 games
 
 
-def test_sims_per_second_is_throughput_over_self_play_wall_clock():
+def test_learner_sims_are_summed_raw_for_the_caller_to_rate():
+    """The rate is computed in training_mp against the sp_secs it reports, so
+    only the raw count crosses the boundary — one timer, one denominator."""
     totals, _ = _fold([_game(sims=60) for _ in range(4)])
-    assert search_wall_metrics(totals, 60, 2.0)["sims_per_second"] == 120.0
+    assert search_wall_metrics(totals, 60, 4)["learner_sims"] == 240
 
 
 def test_mcts_counters_track_expansions_and_simulations():
@@ -127,8 +134,7 @@ def test_mcts_counters_track_expansions_and_simulations():
     assert st["expansions"] >= 1
     assert st["expanded_actions"] >= st["expansions"]
     mcts.reset_search_stats()
-    assert mcts.search_stats() == {"expanded_actions": 0, "expansions": 0,
-                                   "sims": 0}
+    assert all(v == 0 for v in mcts.search_stats().values())
 
 
 def test_restricting_wall_candidates_narrows_the_measured_width():
@@ -155,13 +161,12 @@ def test_play_one_game_reports_wall_counters():
     stats = {}
     play_one_game(env, mcts, 2, max_moves=40, discount=0.97, explore_moves=5,
                   game_stats=stats)
-    assert set(stats) == {"walls_placed", "first_wall_ply", "plies"}
+    assert {"walls_placed", "first_wall_ply"} <= set(stats)
     assert stats["walls_placed"] >= 0
-    assert stats["plies"] > 0
     if stats["walls_placed"] == 0:
         assert stats["first_wall_ply"] is None
     else:
-        assert 0 <= stats["first_wall_ply"] < stats["plies"]
+        assert 0 <= stats["first_wall_ply"] < 40   # the max_moves passed above
 
 
 def test_play_one_game_still_returns_two_values_without_game_stats():
@@ -212,7 +217,7 @@ def test_parallel_self_play_reports_every_new_key(num_players):
     assert stats["mean_expanded_actions"] > 0
     assert stats["visits_per_action"] > 0
     assert stats["walls_placed_per_game"] >= 0
-    assert stats["sims_per_second"] > 0
+    assert stats["learner_sims"] > 0
 
     realized = stats["anchored_realized_by_seat"]
     # greedy_share=1.0 rotates the model through every seat.

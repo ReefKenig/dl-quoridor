@@ -179,7 +179,7 @@ def main():
 
     print("\n=== 5d. search/wall keys reach the record ===")
     for key in ("mean_expanded_actions", "visits_per_action",
-                "walls_placed_per_game", "sims_per_second"):
+                "walls_placed_per_game", "learner_sims"):
         ok &= check(key, isinstance(rows[-1].get(key), (int, float)),
                     repr(rows[-1].get(key)))
     ok &= check("first_wall_ply (None only if nobody walled)",

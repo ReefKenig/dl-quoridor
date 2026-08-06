@@ -180,7 +180,7 @@ def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
             break
     if game_stats is not None:
         game_stats.update(walls_placed=walls_placed,
-                          first_wall_ply=first_wall_ply, plies=move_count)
+                          first_wall_ply=first_wall_ply)
     samples = assign_vector_targets(trajectory, winner, num_players, discount,
                                     discount_unit=discount_unit,
                                     plies=plies, total_plies=move_count)

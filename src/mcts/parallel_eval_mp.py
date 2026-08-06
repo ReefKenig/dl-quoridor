@@ -58,7 +58,7 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
                                            greedy_agent, mcts_agent_mp,
                                            minimax_agent, play_eval_game,
                                            random_agent)
-        from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
+        from src.mcts.mcts_maxn import MCTSMaxN, mcts_config_for
 
         N = config_dict["num_players"]
         env = QuoridorEnvMP(
@@ -81,15 +81,12 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
 
         def _make_mcts(model_id):
             return MCTSMaxN(
-                config=MCTSConfig(
+                config=mcts_config_for(
+                    config_dict,
                     num_simulations=config_dict["eval_simulations"],
                     dirichlet_epsilon=0.0,  # deterministic eval — no exploration noise
                     max_rollout_depth=config_dict["max_game_moves"],
-                    leaf_batch=leaf_batch,
-                    virtual_loss=virtual_loss,
-                    wall_candidates=int(
-                        config_dict.get("mcts_wall_candidates", 0) or 0),
-                ),
+                    leaf_batch=leaf_batch, virtual_loss=virtual_loss),
                 evaluate_fn=partial(evaluate_fn, model_id=model_id),
                 num_players=N,
             )

@@ -50,9 +50,12 @@ _FROM_RUN_CONFIG = (
     ("dirichlet_alpha", "mcts_dirichlet_alpha"),
     ("dirichlet_epsilon", "mcts_dirichlet_epsilon"),
     ("wall_candidates", "mcts_wall_candidates"),
-    ("leaf_batch", "leaf_batch"),
-    ("virtual_loss", "virtual_loss"),
 )
+# leaf_batch/virtual_loss are deliberately NOT derived: they select the search
+# ENGINE, and a caller's evaluate_fn has to match. training_mp._mcts passes a
+# single-state lambda, so inheriting leaf_batch=16 from the run config would put
+# it on the leaf-parallel path with a function that cannot serve batches. The
+# engines that want batching pass it explicitly.
 
 
 def mcts_config_for(run_cfg, **overrides):

@@ -251,3 +251,38 @@ def test_search_width_metric_responds_to_wall_candidates_end_to_end():
     assert widths[4] < widths[0]
     # visits_per_action moves the opposite way — the resolution claim.
     assert widths[4] > 0 and widths[0] > 0
+
+
+# --- the builder must not select the search engine --------------------------
+
+def test_mcts_config_for_does_not_inherit_the_engine_selectors():
+    """leaf_batch/virtual_loss pick the ENGINE, and the caller's evaluate_fn has
+    to match it. training_mp._mcts passes a single-state lambda, so inheriting
+    leaf_batch=16 from a run config would silently put sequential eval on the
+    leaf-parallel path."""
+    from src.mcts.mcts_maxn import mcts_config_for
+
+    cfg = mcts_config_for({"mcts_simulations": 600, "leaf_batch": 16,
+                           "virtual_loss": 2.0, "mcts_wall_candidates": 16})
+    assert cfg.leaf_batch == 1        # the MCTSConfig default, not the run's 16
+    assert cfg.virtual_loss == 1.0
+    assert cfg.num_simulations == 600 and cfg.wall_candidates == 16
+
+    explicit = mcts_config_for({"mcts_simulations": 600}, leaf_batch=8,
+                               virtual_loss=2.0)
+    assert explicit.leaf_batch == 8 and explicit.virtual_loss == 2.0
+
+
+def test_sequential_mcts_stays_sequential_under_a_batching_run_config():
+    """The regression: _mcts builds a single-state evaluate_fn."""
+    from src.mcts.training_mp import TrainingConfigMP, _mcts
+    cfg = TrainingConfigMP(num_players=2, board_size=5, max_walls_per_player=3,
+                           max_game_moves=40, mcts_simulations=8, leaf_batch=16,
+                           virtual_loss=1.0)
+    env = QuoridorEnvMP(board_size=5, num_players=2, max_walls_per_player=3)
+
+    class _M:
+        def predict(self, _t):
+            return ([1.0 / env.action_space_size] * env.action_space_size, [0.0, 0.0])
+
+    assert _mcts(_M(), env, cfg).config.leaf_batch == 1

@@ -7,9 +7,11 @@ on:
   push:
     branches: [dev, main]
 
+# No cancel-in-progress: a superseded run reports as "failure" in `gh pr checks`,
+# which is indistinguishable from a real one. The suite is short enough that
+# letting both finish is cheaper than the confusion.
 concurrency:
   group: tests-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   pytest:
@@ -37,4 +39,7 @@ jobs:
           # Caps torch intra-op threads: the runner has 2 cores and the tests
           # fan out worker processes, so per-process thread pools oversubscribe.
           OMP_NUM_THREADS: "1"
-        run: pytest tests/ -q --durations=10
+        # -n auto: 2 workers on ubuntu-latest, which took the suite from
+        # 15m26s to ~4m locally at the same width. --timeout so a hang reports
+        # the test rather than leaving pytest orphaned with no output.
+        run: pytest tests/ -q -n auto --timeout=600 --timeout-method=thread --durations=10

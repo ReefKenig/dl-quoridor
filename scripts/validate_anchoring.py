@@ -160,6 +160,34 @@ def main():
         print(f"  [SKIP] too few anchored games/seat to judge ({counts}); "
               f"raise GAMES or GREEDY_SHARE")
 
+    print("\n=== 5c. the REALISED anchored cross-tab agrees with the schedule ===")
+    real = rows[-1].get("anchored_realized_by_seat") or {}
+    ok &= check("recorded in the history row", bool(real), str(real))
+    ok &= check("every rotated seat actually played",
+                set(real) == {str(s) for s in anchored_seats},
+                f"got {sorted(real)}, rotated {sorted(anchored_seats)}")
+    ok &= check("realised game counts match the schedule",
+                {s: c["games"] for s, c in real.items()} == counts,
+                f"{ {s: c['games'] for s, c in real.items()} } vs {counts}")
+    ok &= check("realised walled share matches the intended one",
+                all(abs(real[s]["walled_share"] - share[s]) < 1e-6 for s in real),
+                str({s: (share.get(s), real[s]["walled_share"]) for s in real}))
+    per_seat_samples = {s: c["samples"] for s, c in real.items()}
+    ok &= check("samples attributed to every anchored seat",
+                all(v > 0 for v in per_seat_samples.values()),
+                str(per_seat_samples))
+
+    print("\n=== 5d. search/wall keys reach the record ===")
+    for key in ("mean_expanded_actions", "visits_per_action",
+                "walls_placed_per_game", "learner_sims"):
+        ok &= check(key, isinstance(rows[-1].get(key), (int, float)),
+                    repr(rows[-1].get(key)))
+    ok &= check("first_wall_ply (None only if nobody walled)",
+                "first_wall_ply" in rows[-1], repr(rows[-1].get("first_wall_ply")))
+    mea, vpa = rows[-1].get("mean_expanded_actions"), rows[-1].get("visits_per_action")
+    ok &= check("visits_per_action == sims / mean_expanded_actions",
+                mea and abs(vpa - SIMS / mea) < 0.01, f"{SIMS}/{mea} vs {vpa}")
+
     print("\n=== 6. greedy row is flagged as contaminated ===")
     ok &= check("greedy_in_training is True when anchoring",
                 rows[-1].get("greedy_in_training") is True,

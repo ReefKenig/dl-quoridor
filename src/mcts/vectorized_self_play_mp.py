@@ -29,7 +29,7 @@ import torch
 
 from src.env.pathing import CURRENT_SPEC
 from src.env.quoridor_env_mp import QuoridorEnvMP
-from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig, VectorizedSearch
+from src.mcts.mcts_maxn import MCTSMaxN, VectorizedSearch, mcts_config_for
 from src.mcts.self_play_mp import (assign_vector_targets, augment_mp, game_seed,
                                    normalize_action_probs)
 
@@ -127,9 +127,8 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
 
     def _new_mcts():
         return MCTSMaxN(
-            config=MCTSConfig(num_simulations=cfg.mcts_simulations,
-                              dirichlet_epsilon=eps,
-                              max_rollout_depth=max_moves),
+            config=mcts_config_for(cfg, dirichlet_epsilon=eps,
+                                   max_rollout_depth=max_moves),
             evaluate_fn=None, num_players=N)
 
     mcts = _new_mcts()   # stateless across searches; shared by all slots

@@ -13,6 +13,8 @@ KEY CHANGE vs scalar self_play.py:
 """
 import numpy as np
 
+from src.env.quoridor_env_mp import NUM_MOVE_ACTIONS
+
 
 def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
                           drop_unresolved=True, discount_unit="round",
@@ -134,14 +136,20 @@ def normalize_action_probs(probs, env=None, state=None):
 
 def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
                   discount_unit="round",
-                  temp_explore=1.0, explore_moves=15, seat_agents=None):
+                  temp_explore=1.0, explore_moves=15, seat_agents=None,
+                  game_stats=None):
     """seat_agents: {seat: AgentFn} for seats a scripted opponent plays.
 
     Those plies produce no training sample — the opponent's move is not a
     policy target — but they still advance the real ply count, which the value
     targets are discounted against.
+
+    game_stats: optional dict filled in place with per-game counters
+    (walls_placed, first_wall_ply, plies). An out-param so the return shape,
+    which several engines unpack, stays (samples, winner).
     """
     seat_agents = seat_agents or {}
+    walls_placed, first_wall_ply = 0, None
     state = env.reset()
     trajectory, plies = [], []
     move_count = 0
@@ -161,11 +169,18 @@ def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
             trajectory.append((env.state_to_tensor(state), probs, mover))
             plies.append(move_count)
             action = int(np.random.choice(len(probs), p=probs))
+        if action >= NUM_MOVE_ACTIONS:
+            walls_placed += 1
+            if first_wall_ply is None:
+                first_wall_ply = move_count
         state, _, done, info = env.step(state, action)
         move_count += 1
         if done:
             winner = info.get("winner")
             break
+    if game_stats is not None:
+        game_stats.update(walls_placed=walls_placed,
+                          first_wall_ply=first_wall_ply)
     samples = assign_vector_targets(trajectory, winner, num_players, discount,
                                     discount_unit=discount_unit,
                                     plies=plies, total_plies=move_count)

@@ -1,0 +1,637 @@
+{
+  "games_per_seat": 10,
+  "sims": 200,
+  "minimax_depth": 2,
+  "wall_candidates": [
+    0,
+    16
+  ],
+  "protocol": "evaluate_mp; opening_plies from each run's frozen config; each checkpoint on its own tensor spec",
+  "note_v7": "v7 rows come from dedicated runs at the frozen iteration 60, at 200 and 600 sims. Rows from the main sweep were discarded: that sweep read latest.pt while the training run was still writing it.",
+  "results": [
+    {
+      "ckpt": "runs/probe_n2_ramp/best.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 0,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.0002,
+      "secs": 113.3,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          10,
+          10
+        ]
+      },
+      "wins": 10,
+      "decided": 20,
+      "games": 20,
+      "rate": 0.5,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/probe_n2_ramp/best.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 0,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.0002,
+      "secs": 314.6,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 0,
+      "decided": 18,
+      "games": 20,
+      "rate": 0.0,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/probe_n2_ramp/best.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 16,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.0002,
+      "secs": 113.6,
+      "seats": {
+        "0": [
+          7,
+          10
+        ],
+        "1": [
+          10,
+          10
+        ]
+      },
+      "wins": 17,
+      "decided": 20,
+      "games": 20,
+      "rate": 0.85,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/probe_n2_ramp/best.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 16,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.0002,
+      "secs": 550.4,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 0,
+      "decided": 14,
+      "games": 20,
+      "rate": 0.0,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/n2_9x9_v6/ship.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 0,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.9948,
+      "secs": 129.6,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 0,
+      "decided": 20,
+      "games": 20,
+      "rate": 0.0,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/n2_9x9_v6/ship.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 0,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.9948,
+      "secs": 286.5,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 0,
+      "decided": 19,
+      "games": 20,
+      "rate": 0.0,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/n2_9x9_v6/ship.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 16,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.9948,
+      "secs": 230.4,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 0,
+      "decided": 20,
+      "games": 20,
+      "rate": 0.0,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/n2_9x9_v6/ship.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 16,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.9948,
+      "secs": 498.5,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 0,
+      "decided": 18,
+      "games": 20,
+      "rate": 0.0,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/n2_9x9_v4/ship.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 1,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 0,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2698,
+      "secs": 250.2,
+      "seats": {
+        "0": [
+          8,
+          10
+        ],
+        "1": [
+          6,
+          10
+        ]
+      },
+      "wins": 14,
+      "decided": 20,
+      "games": 20,
+      "rate": 0.7,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/n2_9x9_v4/ship.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 1,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 0,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2698,
+      "secs": 553.3,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          3,
+          10
+        ]
+      },
+      "wins": 3,
+      "decided": 18,
+      "games": 20,
+      "rate": 0.1667,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/n2_9x9_v4/ship.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 1,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 16,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2698,
+      "secs": 238.7,
+      "seats": {
+        "0": [
+          10,
+          10
+        ],
+        "1": [
+          10,
+          10
+        ]
+      },
+      "wins": 20,
+      "decided": 20,
+      "games": 20,
+      "rate": 1.0,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/n2_9x9_v4/ship.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 1,
+      "trained_wall_candidates": 0,
+      "wall_candidates": 16,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2698,
+      "secs": 743.1,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 0,
+      "decided": 16,
+      "games": 20,
+      "rate": 0.0,
+      "racer_ceiling": 0.5
+    },
+    {
+      "ckpt": "runs/n2_9x9_v7/latest.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 0,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "run_eval_simulations": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2489,
+      "secs": 262.7,
+      "seats": {
+        "0": [
+          10,
+          10
+        ],
+        "1": [
+          1,
+          10
+        ]
+      },
+      "wins": 11,
+      "decided": 20,
+      "games": 20,
+      "rate": 0.55,
+      "racer_ceiling": 0.5,
+      "checkpoint_iteration": 60,
+      "provenance": "dedicated run against the frozen iteration-60 checkpoint; the main table's v7 rows were read while the run was still writing"
+    },
+    {
+      "ckpt": "runs/n2_9x9_v7/latest.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 0,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 200,
+      "run_eval_simulations": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2489,
+      "secs": 687.4,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 0,
+      "decided": 17,
+      "games": 20,
+      "rate": 0.0,
+      "racer_ceiling": 0.5,
+      "checkpoint_iteration": 60,
+      "provenance": "dedicated run against the frozen iteration-60 checkpoint; the main table's v7 rows were read while the run was still writing"
+    },
+    {
+      "ckpt": "runs/n2_9x9_v7/latest.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 16,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "run_eval_simulations": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2489,
+      "secs": 268.9,
+      "seats": {
+        "0": [
+          10,
+          10
+        ],
+        "1": [
+          4,
+          10
+        ]
+      },
+      "wins": 14,
+      "decided": 20,
+      "games": 20,
+      "rate": 0.7,
+      "racer_ceiling": 0.5,
+      "checkpoint_iteration": 60,
+      "provenance": "dedicated run against the frozen iteration-60 checkpoint; the main table's v7 rows were read while the run was still writing"
+    },
+    {
+      "ckpt": "runs/n2_9x9_v7/latest.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 16,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 200,
+      "run_eval_simulations": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2489,
+      "secs": 518.2,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 0,
+      "decided": 17,
+      "games": 20,
+      "rate": 0.0,
+      "racer_ceiling": 0.5,
+      "checkpoint_iteration": 60,
+      "provenance": "dedicated run against the frozen iteration-60 checkpoint; the main table's v7 rows were read while the run was still writing"
+    },
+    {
+      "ckpt": "runs/n2_9x9_v7/latest.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 0,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 600,
+      "run_eval_simulations": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2489,
+      "secs": 880.8,
+      "seats": {
+        "0": [
+          10,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 10,
+      "decided": 20,
+      "games": 20,
+      "rate": 0.5,
+      "racer_ceiling": 0.5,
+      "checkpoint_iteration": 60,
+      "provenance": "dedicated run against the frozen iteration-60 checkpoint; the main table's v7 rows were read while the run was still writing"
+    },
+    {
+      "ckpt": "runs/n2_9x9_v7/latest.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 0,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 600,
+      "run_eval_simulations": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2489,
+      "secs": 1237.0,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          0,
+          10
+        ]
+      },
+      "wins": 0,
+      "decided": 18,
+      "games": 20,
+      "rate": 0.0,
+      "racer_ceiling": 0.5,
+      "checkpoint_iteration": 60,
+      "provenance": "dedicated run against the frozen iteration-60 checkpoint; the main table's v7 rows were read while the run was still writing"
+    },
+    {
+      "ckpt": "runs/n2_9x9_v7/latest.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 16,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 600,
+      "run_eval_simulations": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2489,
+      "secs": 369.0,
+      "seats": {
+        "0": [
+          10,
+          10
+        ],
+        "1": [
+          1,
+          10
+        ]
+      },
+      "wins": 11,
+      "decided": 20,
+      "games": 20,
+      "rate": 0.55,
+      "racer_ceiling": 0.5,
+      "checkpoint_iteration": 60,
+      "provenance": "dedicated run against the frozen iteration-60 checkpoint; the main table's v7 rows were read while the run was still writing"
+    },
+    {
+      "ckpt": "runs/n2_9x9_v7/latest.pt",
+      "num_players": 2,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 16,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 600,
+      "run_eval_simulations": 200,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2489,
+      "secs": 8739.2,
+      "seats": {
+        "0": [
+          0,
+          10
+        ],
+        "1": [
+          1,
+          10
+        ]
+      },
+      "wins": 1,
+      "decided": 13,
+      "games": 20,
+      "rate": 0.0769,
+      "racer_ceiling": 0.5,
+      "checkpoint_iteration": 60,
+      "provenance": "dedicated run against the frozen iteration-60 checkpoint; the main table's v7 rows were read while the run was still writing"
+    }
+  ]
+}

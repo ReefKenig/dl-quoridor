@@ -1132,6 +1132,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "minimax_depth": cfg.minimax_depth,
                 "minimax_wall_candidates": cfg.minimax_wall_candidates,
             }
+            if not cfg.parallel_eval:
+                # The learner's eval agent, shared by every sequential eval
+                # below — vs-random/greedy/minimax still run while the gate is
+                # held, so it cannot live inside the vs-best branch.
+                # dirichlet_epsilon=0 → best-play eval (matches the parallel
+                # path); game diversity comes from the sampled opening.
+                cand = mcts_agent_mp(
+                    _mcts(model, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
+                    temperature=0.1, opening_plies=cfg.eval_opening_plies)
+
             if not gate_armed:
                 # Skipped outright rather than run and discarded: this eval was
                 # 41% of v7's wall time and could not fire.
@@ -1163,12 +1173,6 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                         num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
                         on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
                 else:
-                    # dirichlet_epsilon=0 → best-play eval (matches the parallel path,
-                    # which also disables exploration noise). Game diversity comes from
-                    # the sampled opening, not from search noise.
-                    cand = mcts_agent_mp(
-                        _mcts(model, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
-                        temperature=0.1, opening_plies=cfg.eval_opening_plies)
                     champ = mcts_agent_mp(
                         _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
                         temperature=0.1, opening_plies=cfg.eval_opening_plies)

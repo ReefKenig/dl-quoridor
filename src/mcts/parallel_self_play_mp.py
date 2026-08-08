@@ -143,6 +143,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         mask_fraction = float(config_dict.get("wall_mask_fraction", 0.0) or 0.0)
         greedy_share = float(config_dict.get("opponent_greedy_share", 0.0) or 0.0)
         past_share = float(config_dict.get("opponent_past_share", 0.0) or 0.0)
+        seat0_share = float(config_dict.get("anchored_seat0_share", 0.0) or 0.0)
         # leaf_batch>1 => collect several leaves per MCTS wave and ship them in one
         # message (make_batched_evaluate_many); leaf_batch=1 keeps the one-leaf path.
         leaf_batch = int(config_dict.get("leaf_batch", 1))
@@ -150,7 +151,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
         # One pass over the iteration, so every worker sees the same assignment
         # for a given game_index regardless of which games it claims.
         plans = iteration_plans(total_games, N, greedy_share, past_share,
-                                mask_fraction)
+                                mask_fraction, seat0_share)
         if leaf_batch > 1:
             evaluate_fn = make_batched_evaluate_many(
                 worker_id, request_queue, response_queue, env, response_timeout)
@@ -296,6 +297,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
         "wall_mask_fraction": getattr(cfg, "wall_mask_fraction", 0.0),
         "opponent_greedy_share": getattr(cfg, "opponent_greedy_share", 0.0),
         "opponent_past_share": getattr(cfg, "opponent_past_share", 0.0),
+        "anchored_seat0_share": getattr(cfg, "anchored_seat0_share", 0.0),
         "mcts_wall_candidates": getattr(cfg, "mcts_wall_candidates", 0),
         "spec_version": getattr(cfg, "spec_version", CURRENT_SPEC),
         "max_turns": getattr(cfg, "max_turns", cfg.max_game_moves),

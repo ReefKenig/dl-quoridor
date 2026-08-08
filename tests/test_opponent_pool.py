@@ -116,6 +116,51 @@ def test_unanchored_games_have_no_seat():
     assert all(p.model_seat is None for p in plans if p.opponent == "self")
 
 
+# --- seat-0 anchoring bias (anchored_seat0_share) ------------------------------
+# At N=4 seat 0 is the only seat a racer can win, and uniform rotation left it
+# with ~300 of ~8400 samples/iter in v8 — the one seat that matters, starved.
+
+
+def test_seat0_share_zero_keeps_the_rotation_bit_identical():
+    assert iteration_plans(80, 4, 0.5, mask_fraction=0.5, seat0_share=0.0) == \
+        iteration_plans(80, 4, 0.5, mask_fraction=0.5)
+
+
+@pytest.mark.parametrize("share", [0.25, 0.5])
+def test_seat0_share_pins_that_fraction_in_each_mask_cell(share):
+    plans = _anchored(iteration_plans(160, 4, 0.5, mask_fraction=0.5,
+                                      seat0_share=share))
+    for masked in (True, False):
+        cell = [p for p in plans if p.walls_masked == masked]
+        pinned = sum(p.model_seat == 0 for p in cell)
+        assert abs(pinned / len(cell) - share) <= 0.1, \
+            f"masked={masked}: {pinned}/{len(cell)}"
+
+
+def test_the_unpinned_games_still_rotate_over_the_other_seats():
+    plans = _anchored(iteration_plans(160, 4, 0.5, mask_fraction=0.5,
+                                      seat0_share=0.5))
+    rest = [p.model_seat for p in plans if p.model_seat != 0]
+    counts = {s: rest.count(s) for s in (1, 2, 3)}
+    assert set(counts) == {1, 2, 3}
+    assert max(counts.values()) - min(counts.values()) <= 2, counts
+
+
+def test_seat0_share_keeps_every_cell_populated():
+    """The acceptance property survives the bias: no (seat, masked) cell empties."""
+    plans = _anchored(iteration_plans(80, 4, 0.5, mask_fraction=0.5,
+                                      seat0_share=0.5))
+    cells = {(p.model_seat, p.walls_masked) for p in plans}
+    missing = {(s, m) for s in range(4) for m in (True, False)} - cells
+    assert not missing, f"unpopulated (seat, masked) cells: {sorted(missing)}"
+
+
+def test_a_full_seat0_share_pins_every_anchored_game():
+    plans = _anchored(iteration_plans(40, 4, 0.5, mask_fraction=0.5,
+                                      seat0_share=1.0))
+    assert {p.model_seat for p in plans} == {0}
+
+
 # --- value targets under a sparse trajectory ----------------------------------
 
 def test_sparse_and_dense_trajectories_agree_on_the_discount():

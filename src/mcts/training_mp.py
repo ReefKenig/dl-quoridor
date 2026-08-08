@@ -191,6 +191,13 @@ class TrainingConfigMP:
     # which let 35% of games become ~10% of the gradient — enough to acquire
     # racing at iteration 8 and not enough to still have it at iteration 12.
     anchored_sample_share: float = 0.0
+    # Fraction of anchored games pinned to seat 0 (rest rotate over 1..N-1).
+    # At N=4 seat 0 is the only seat a racer can win and its games are the
+    # shortest, so uniform rotation starves the one seat that matters.
+    anchored_seat0_share: float = 0.0
+    # Warm-start weights for a FRESH run (ignored on resume). Lets supervised
+    # pretraining set the opening prior instead of hoping self-play finds it.
+    init_checkpoint: str = ""
     # Champion snapshots kept for the past-opponent share.
     champion_pool_size: int = 5
 
@@ -679,7 +686,8 @@ def _iteration_plans(cfg):
         cfg.games_per_iteration, cfg.num_players,
         getattr(cfg, "opponent_greedy_share", 0.0) or 0.0,
         getattr(cfg, "opponent_past_share", 0.0) or 0.0,
-        getattr(cfg, "wall_mask_fraction", 0.0) or 0.0)
+        getattr(cfg, "wall_mask_fraction", 0.0) or 0.0,
+        getattr(cfg, "anchored_seat0_share", 0.0) or 0.0)
 
 
 def anchored_walled_share_by_seat(cfg):
@@ -795,6 +803,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             f"Replay buffer restored: {n_buffered} samples" if n_buffered else
             "Replay buffer not on disk — refilling from scratch")
     else:
+        if cfg.init_checkpoint:
+            # Before init_champion, so the iteration-0 gate opponent is the
+            # pretrained racer rather than a wall-spamming random init.
+            model.load(cfg.init_checkpoint)
+            _log(f"Learner warm-started from {cfg.init_checkpoint}")
         init_champion(best, model, checkpoint_dir, log=_log)
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")

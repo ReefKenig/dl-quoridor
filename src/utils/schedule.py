@@ -79,7 +79,7 @@ GamePlan = namedtuple("GamePlan", "opponent model_seat walls_masked")
 
 
 def iteration_plans(total_games, num_players, greedy_share, past_share=0.0,
-                    mask_fraction=0.0):
+                    mask_fraction=0.0, seat0_share=0.0):
     """(opponent, model_seat, walls_masked) for every game of one iteration.
 
     Decided together because deciding them separately made them the same
@@ -88,12 +88,18 @@ def iteration_plans(total_games, num_players, greedy_share, past_share=0.0,
     counts a game's position within its own opponent class, and the seat
     rotates within its (anchored, walls_masked) cell, so every cell fills.
 
+    seat0_share pins that fraction of each cell's anchored games to seat 0,
+    with the rest rotating over seats 1..N-1. At N=4 seat 0 is the only seat
+    a racer can win, and its games are the shortest, so uniform rotation
+    leaves the one seat that matters with the fewest samples. 0 = uniform.
+
     Deterministic in the game index alone: workers claim games off a shared
     counter, so nothing may depend on which worker ran a game, or in what order.
     """
     plans = []
     in_class = {True: 0, False: 0}      # anchored -> games placed so far
     in_cell = {True: 0, False: 0}       # walls_masked -> anchored games so far
+    others = {True: 0, False: 0}        # rotation over seats 1..N-1
     for g in range(total_games):
         opponent = opponent_for_game(g, greedy_share, past_share)
         anchored = opponent in ANCHORED_OPPONENTS
@@ -101,8 +107,15 @@ def iteration_plans(total_games, num_players, greedy_share, past_share=0.0,
         in_class[anchored] += 1
         seat = None
         if anchored:
-            seat = in_cell[walls_masked] % num_players
+            idx = in_cell[walls_masked]
             in_cell[walls_masked] += 1
+            if seat0_share <= 0 or num_players < 2:
+                seat = idx % num_players
+            elif takes_share(idx, seat0_share):
+                seat = 0
+            else:
+                seat = 1 + others[walls_masked] % (num_players - 1)
+                others[walls_masked] += 1
         plans.append(GamePlan(opponent, seat, walls_masked))
     return plans
 

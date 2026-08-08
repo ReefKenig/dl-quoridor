@@ -61,7 +61,11 @@
         "_eval_every_note": "4, not 5: probe_n2_ramp peaked at iteration 4 (45% vs greedy, seat 1 18/20) and the gate must land ON it to put it in best.pt. The peak is early; missing it costs the deliverable.",
         "wall_mask_fraction": 0.5,
         "gate_max_game_moves": 320,
-        "_gate_max_game_moves_note": "vs-best eval only; self-play and the other evals keep max_game_moves. 320 = 2x the N=2 cap. Costs time only on games that would otherwise time out at 160 anyway."
+        "_gate_max_game_moves_note": "vs-best eval only; self-play and the other evals keep max_game_moves. 320 = 2x the N=2 cap. Costs time only on games that would otherwise time out at 160 anyway.",
+        "_anchored_seat0_note": "Fraction of anchored games pinned to seat 0 (rest rotate over 1..N-1). At N=4 greedy-vs-greedy is 60/60 for seat 0, so it is the ONLY seat a racer can win and the pooled ceiling is 25%; under uniform rotation seat 0 was ~300 of ~8400 samples/iter (v8 measured) because its games are also the shortest. 0 at N=2: both seats are winnable there and rotation already splits them evenly.",
+        "anchored_seat0_share": 0.0,
+        "_init_checkpoint_note": "Warm-start weights for a FRESH run (ignored on resume), produced by scripts/pretrain_greedy.py. Attacks the opening prior directly: 128 of 131 legal opening actions are walls, so an untrained net is a wall-spammer and six N=4 attempts (v5-v8) never acquired racing from RL alone. Empty = cold start.",
+        "init_checkpoint": ""
     },
     "parallel": {
         "_num_workers_note": "Match the pod's cgroup cpu quota (16). Above it the jupyter server stops answering its own health check, whose entrypoint runs pkill -9 on failure.",
@@ -110,7 +114,9 @@
             "opponent_greedy_share": 0.5,
             "discount_unit": "ply",
             "_eval_greedy_note": "80, not 40: the greedy eval rotates the candidate through all N seats, so at N=4 a 40-game eval is only 10 games per seat — and greedy_stop_patience keys on the BEST per-seat rate, which at n=10 has SE ~0.095, making the 20-pt abort threshold barely 2 sigma. 80 gives 20/seat, matching n2, where 20-pt is ~4 sigma. Costs ~20s an eval against a ~500s iteration.",
-            "_sizing_note": "40 x 40, smaller than n2's 60 x 80 because N=4 games run to a 320-ply cap and cost roughly twice as much per game. Both earlier N=4 probes used the phase/ramp curriculum now known to be inert, so the mixed curriculum is untried here — this run is a real test, not a repeat. The racing-decay and never-acquired stops bound it."
+            "_sizing_note": "40 x 40, smaller than n2's 60 x 80 because N=4 games run to a 320-ply cap and cost roughly twice as much per game. Both earlier N=4 probes used the phase/ramp curriculum now known to be inert, so the mixed curriculum is untried here — this run is a real test, not a repeat. The racing-decay and never-acquired stops bound it.",
+            "anchored_seat0_share": 0.5,
+            "init_checkpoint": "runs/pretrain_n4_9x9/pretrain.pt"
         }
     }
 }

@@ -239,13 +239,22 @@ def test_parallel_self_play_reports_no_realized_seats_without_anchoring():
 
 
 def test_search_width_metric_responds_to_wall_candidates_end_to_end():
-    """K=0 vs K=4 through the real worker path, not just the counter."""
+    """K=0 vs K=4 through the real worker path, not just the counter.
+
+    Seeded, and averaged over several games: with random unseeded weights and
+    a single game the two arms play different trajectories, and a long K=0
+    game ending in narrow positions can average BELOW the K=4 arm (seen once
+    in CI: 5.686 vs 7.618). Same weights + more games make the claim about
+    the restriction rather than about one game's shape."""
+    import torch
     widths = {}
     for k in (0, 4):
+        torch.manual_seed(0)
+        np.random.seed(0)
         cfg = _Cfg(2, greedy_share=0.0)
         cfg.mcts_wall_candidates = k
         _s, _w, stats = generate_parallel_self_play_mp(
-            _model(2), cfg, num_workers=1, total_games=1, batch_size=8,
+            _model(2), cfg, num_workers=1, total_games=4, batch_size=8,
             worker_join_timeout=20.0)
         widths[k] = stats["mean_expanded_actions"]
     assert widths[4] < widths[0]

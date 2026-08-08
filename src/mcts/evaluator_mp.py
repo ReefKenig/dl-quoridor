@@ -201,19 +201,45 @@ def eval_rng(base_seed: int, game_index: int):
     return np.random.RandomState(base_seed + game_index)
 
 
-def play_eval_game(env, agents, max_moves: int, rng=None) -> Optional[int]:
-    """Play one evaluation game. Returns the winning seat, or None on timeout."""
+def adjudicate_timeout(env, state) -> Optional[int]:
+    """Winner of a stalled game by shortest path to goal; a tie stays a draw.
+
+    The standard Quoridor adjudication, used by the GATE only: two trained
+    wall-capable models stall each other past any move cap (v9: 3-6 of 40
+    gate games decided at 320 plies while the candidate won 80-100% of the
+    ones that finished), so 'decided' starves and the gate can never fire.
+    Racing opponents finish their games on their own and stay unadjudicated.
+    """
+    dists = [env.distance_to_goal(state, p) for p in range(env.num_players)]
+    dists = [float("inf") if d is None else d for d in dists]
+    best = min(dists)
+    leaders = [p for p, d in enumerate(dists) if d == best]
+    return leaders[0] if len(leaders) == 1 and best < float("inf") else None
+
+
+def play_eval_game(env, agents, max_moves: int, rng=None,
+                   adjudicate: bool = False):
+    """Play one evaluation game.
+
+    Returns (winner, adjudicated): winner None is a timeout draw; adjudicated
+    is True when the winner came from distance adjudication, never from play.
+    """
     state = env.reset()
     for ply in range(max_moves):
         cp = env.get_current_player(state)
         action = agents[cp](env, state, ply, rng)
         state, _, done, info = env.step(state, action)
         if done:
-            return info.get("winner")
-    return None
+            return info.get("winner"), False
+    if adjudicate:
+        winner = adjudicate_timeout(env, state)
+        if winner is not None:
+            return winner, True
+    return None, False
 
 
-def tally_game(res: "EvalResultMP", cand_seat: int, winner: Optional[int]):
+def tally_game(res: "EvalResultMP", cand_seat: int, winner: Optional[int],
+               adjudicated: bool = False):
     """Fold one game's outcome into a result. Shared by all three eval paths."""
     res.num_games += 1
     res.games_per_seat[cand_seat] = res.games_per_seat.get(cand_seat, 0) + 1
@@ -224,6 +250,7 @@ def tally_game(res: "EvalResultMP", cand_seat: int, winner: Optional[int]):
         res.seat_wins[cand_seat] = res.seat_wins.get(cand_seat, 0) + 1
     else:
         res.opponent_wins += 1
+    res.adjudicated += adjudicated
     return res
 
 
@@ -237,6 +264,8 @@ class EvalResultMP:
     # candidate wins per seat it sat in
     seat_wins: dict = field(default_factory=dict)
     games_per_seat: dict = field(default_factory=dict)
+    # Wins awarded by distance adjudication rather than reaching a goal.
+    adjudicated: int = 0
 
     # Below this fraction of decided games the eval is too thin to gate on.
     MIN_DECIDED_FRACTION = 0.25
@@ -272,7 +301,8 @@ class EvalResultMP:
             f"s{seat}:{self.seat_wins.get(seat, 0)}/{self.games_per_seat.get(seat, 0)}"
             for seat in range(self.num_players)
         )
-        return (f"games={self.num_games} (decided {self.decided_games}) | "
+        adj = f", {self.adjudicated} adjudicated" if self.adjudicated else ""
+        return (f"games={self.num_games} (decided {self.decided_games}{adj}) | "
                 f"candidate {self.candidate_wins} "
                 f"({self.candidate_win_rate:.1%} of decided, "
                 f"fair={self.fair_share:.1%}) | "
@@ -283,7 +313,7 @@ class EvalResultMP:
 def evaluate_mp(env, candidate: AgentFn, opponent: AgentFn,
                 num_games: int = 24, max_moves: int = 400,
                 verbose: bool = False, on_progress=None,
-                base_seed: int = 0) -> EvalResultMP:
+                base_seed: int = 0, adjudicate: bool = False) -> EvalResultMP:
     """Candidate rotates through seats 0..N-1; opponent fills the rest.
 
     on_progress: optional callback(games_done, total, result) invoked every few
@@ -297,9 +327,10 @@ def evaluate_mp(env, candidate: AgentFn, opponent: AgentFn,
         cand_seat = g % N
         agents = {s: (candidate if s == cand_seat else opponent)
                   for s in range(N)}
-        winner = play_eval_game(env, agents, max_moves,
-                                rng=eval_rng(base_seed, g))
-        tally_game(res, cand_seat, winner)
+        winner, adjudicated = play_eval_game(env, agents, max_moves,
+                                             rng=eval_rng(base_seed, g),
+                                             adjudicate=adjudicate)
+        tally_game(res, cand_seat, winner, adjudicated)
         if verbose and (g + 1) % max(1, num_games // 4) == 0:
             logger.info("  [%d/%d] %s", g + 1, num_games, res.summary())
         # Progress heartbeat every 5 games (and on the last one).

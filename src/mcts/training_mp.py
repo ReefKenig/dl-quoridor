@@ -86,6 +86,11 @@ class TrainingConfigMP:
     # each other far past the self-play cap (v8: 32-38 of 40 gate games timed
     # out, so the decided floor was unreachable at any strength). 0 = max_game_moves.
     gate_max_game_moves: int = 0
+    # Adjudicate gate games that still hit the cap by shortest-path distance
+    # (unique leader wins, tie stays a draw). v9 showed no cap is enough:
+    # 3-6 of 40 decided at 320 plies. Gate only; the yardstick evals keep
+    # their play-to-the-goal semantics.
+    gate_adjudicate: bool = False
     # "constant" keeps existing scripts unchanged; 9x9 opts into cosine.
     lr_schedule: str = "constant"
     lr_final_frac: float = 0.1           # cosine end point, as a fraction of base_lr
@@ -1186,7 +1191,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                         {**eval_config_dict, "max_game_moves": gate_moves,
                          "max_turns": max(eval_config_dict.get("max_turns",
                                                                gate_moves),
-                                          gate_moves)},
+                                          gate_moves),
+                         "adjudicate_timeouts": cfg.gate_adjudicate},
                         num_games=cfg.eval_games,
                         num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
                         on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
@@ -1196,7 +1202,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                         temperature=0.1, opening_plies=cfg.eval_opening_plies)
                     ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
                                      max_moves=gate_moves, on_progress=_eval_progress,
-                                     base_seed=it * 100_003)
+                                     base_seed=it * 100_003,
+                                     adjudicate=cfg.gate_adjudicate)
                 accepted = ev.should_accept(threshold)
                 eval_best_secs = time.time() - t_eval_best
                 ev_wr = ev.candidate_win_rate
@@ -1229,13 +1236,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 else:
                     thin_evals = 0
                     verdict = "ACCEPT" if accepted else "reject"
+                adj_txt = (f", {ev.adjudicated} adjudicated"
+                           if ev.adjudicated else "")
                 _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
-                     f"{100*ev_wr:.1f}% of {ev.decided_games} decided {verdict} "
-                     f"({eval_best_secs:.0f}s)")
+                     f"{100*ev_wr:.1f}% of {ev.decided_games} decided{adj_txt} "
+                     f"{verdict} ({eval_best_secs:.0f}s)")
                 # Persist the accept/reject before eval-vs-random, so best.pt and the
                 # row's `accepted` stay consistent even if the next phase is interrupted.
                 row.update(win_vs_best=ev_wr, accepted=accepted, gate_armed=True,
                            decided_games=ev.decided_games,
+                           eval_adjudicated=ev.adjudicated,
                            eval_timeouts=ev.num_games - ev.decided_games,
                            eval_best_secs=eval_best_secs, secs=time.time() - t0)
                 _write_meta()

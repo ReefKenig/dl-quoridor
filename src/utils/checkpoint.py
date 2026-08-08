@@ -47,10 +47,14 @@ logger = logging.getLogger(__name__)
 def resolve_ship_checkpoint(run_dir):
     """(path, label) of the checkpoint to ship, or (None, reason).
 
-    best.pt is written up front from the untrained model, so a run that never
-    accepted has a random best.pt; fall back to latest.pt and say which."""
+    Preference: best.pt when the gate accepted at least once, then
+    greedy_peak.pt (the strongest greedy eval), then latest.pt. best.pt is
+    written up front from the untrained model, so with zero accepts it is
+    the random init (or the arming seed), and latest.pt can sit well past
+    the peak — v8 ended at 60% vs greedy after peaking at 81%."""
     run = Path(run_dir)
     best, latest = run / "best.pt", run / "latest.pt"
+    peak = run / "greedy_peak.pt"
 
     history = []
     try:
@@ -63,6 +67,12 @@ def resolve_ship_checkpoint(run_dir):
 
     if accepts and best.exists():
         return str(best), f"best.pt (accepted at iter {accepts[-1]}, {len(accepts)} accepts)"
+    if peak.exists():
+        top = max((r for r in history if r.get("win_vs_greedy") is not None),
+                  key=lambda r: r["win_vs_greedy"], default=None)
+        detail = (f"{top['win_vs_greedy']:.1%} vs greedy at iter {top['iter']}"
+                  if top else "rate unknown — no greedy rows in meta.json")
+        return str(peak), f"greedy_peak.pt ({detail})"
     if latest.exists():
         why = ("no iteration was ever accepted, so best.pt is the untrained "
                "initialization" if history else "no history in meta.json")

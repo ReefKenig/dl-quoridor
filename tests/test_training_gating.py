@@ -150,3 +150,46 @@ def test_the_bar_is_configurable():
 
 def test_disabling_the_feature_keeps_the_old_always_armed_behaviour():
     assert _armed(_Cfg(gate_arm_on_greedy=False), [])
+
+
+# --- ship resolution (resolve_ship_checkpoint) ---------------------------------
+# v8 shipped its iteration-20 model (60% vs greedy) while iteration 12's 81% was
+# never written anywhere; greedy_peak.pt now holds the strongest greedy eval and
+# outranks latest.pt whenever the gate never accepted.
+
+import json
+
+from src.utils.checkpoint import resolve_ship_checkpoint
+
+
+def _write_run(ckpt_dir, history, files):
+    with open(os.path.join(ckpt_dir, "meta.json"), "w") as f:
+        json.dump({"history": history}, f)
+    for name in files:
+        FakeModel(name).save(os.path.join(ckpt_dir, name))
+
+
+def test_an_accepted_best_still_outranks_the_greedy_peak(ckpt_dir):
+    _write_run(ckpt_dir,
+               [{"iter": 4, "accepted": True, "win_vs_greedy": 0.4}],
+               ["best.pt", "latest.pt", "greedy_peak.pt"])
+    path, label = resolve_ship_checkpoint(ckpt_dir)
+    assert path.endswith("best.pt") and "accepted at iter 4" in label
+
+
+def test_with_no_accepts_the_greedy_peak_outranks_latest(ckpt_dir):
+    _write_run(ckpt_dir,
+               [{"iter": 12, "accepted": False, "win_vs_greedy": 0.812},
+                {"iter": 20, "accepted": False, "win_vs_greedy": 0.60}],
+               ["best.pt", "latest.pt", "greedy_peak.pt"])
+    path, label = resolve_ship_checkpoint(ckpt_dir)
+    assert path.endswith("greedy_peak.pt")
+    assert "81.2%" in label and "iter 12" in label
+
+
+def test_without_a_peak_file_latest_remains_the_fallback(ckpt_dir):
+    _write_run(ckpt_dir,
+               [{"iter": 20, "accepted": False, "win_vs_greedy": 0.6}],
+               ["best.pt", "latest.pt"])
+    path, label = resolve_ship_checkpoint(ckpt_dir)
+    assert path.endswith("latest.pt") and "iter 20" in label

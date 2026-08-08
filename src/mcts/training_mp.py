@@ -82,6 +82,10 @@ class TrainingConfigMP:
     # reaches its goal, so gate games cannot finish against it.
     gate_arm_on_greedy: bool = False
     gate_arm_greedy_min: float = 0.0     # arm once win_vs_greedy exceeds this
+    # Move cap for the vs-best eval only. Two trained wall-capable models stall
+    # each other far past the self-play cap (v8: 32-38 of 40 gate games timed
+    # out, so the decided floor was unreachable at any strength). 0 = max_game_moves.
+    gate_max_game_moves: int = 0
     # "constant" keeps existing scripts unchanged; 9x9 opts into cosine.
     lr_schedule: str = "constant"
     lr_final_frac: float = 0.1           # cosine end point, as a fraction of base_lr
@@ -806,6 +810,12 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     greedy_below_floor = 0
     stop_reason = None
 
+    # Strongest greedy eval so far, ratcheted to greedy_peak.pt. The gate can go
+    # a whole run without accepting while latest.pt declines past the peak, so
+    # neither checkpoint holds the strongest model without this one.
+    greedy_peak_rate = max(
+        (r.get("win_vs_greedy") or 0.0) for r in history) if history else 0.0
+
     # Gate liveness (see cfg.gate_arm_on_greedy). Recovered from history rather
     # than persisted, so a resume cannot silently re-disarm an armed gate.
     gate_armed = not cfg.gate_arm_on_greedy or any(
@@ -1126,9 +1136,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
                          f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
 
+                gate_moves = cfg.gate_max_game_moves or cfg.max_game_moves
                 if cfg.parallel_eval:
+                    # max_turns raised alongside: the env ends games there on its own.
                     ev = evaluate_parallel_mp(
-                        model, best, eval_config_dict, num_games=cfg.eval_games,
+                        model, best,
+                        {**eval_config_dict, "max_game_moves": gate_moves,
+                         "max_turns": max(eval_config_dict["max_turns"], gate_moves)},
+                        num_games=cfg.eval_games,
                         num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
                         on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
                 else:
@@ -1142,7 +1157,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                         _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
                         temperature=0.1, opening_plies=cfg.eval_opening_plies)
                     ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
-                                     max_moves=cfg.max_game_moves, on_progress=_eval_progress,
+                                     max_moves=gate_moves, on_progress=_eval_progress,
                                      base_seed=it * 100_003)
                 accepted = ev.should_accept(threshold)
                 eval_best_secs = time.time() - t_eval_best
@@ -1263,6 +1278,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                            greedy_in_training=bool(cfg.opponent_greedy_share),
                            secs=time.time() - t0)
 
+                if evg_wr > greedy_peak_rate:
+                    greedy_peak_rate = evg_wr
+                    model.save(os.path.join(checkpoint_dir, "greedy_peak.pt"))
+                    row["greedy_peak_saved"] = True
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] new greedy peak "
+                         f"{evg_wr:.1%} — saved greedy_peak.pt")
+
                 # Arm the gate the moment the learner clears the absolute bar,
                 # and seed the champion from it — a racer that reaches its goal,
                 # so gate games can decide.
@@ -1350,7 +1372,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                                 f"racing decay: best per-seat greedy rate {100*best_seat:.0f}% "
                                 f"stayed >={100*cfg.greedy_stop_drop:.0f} pts below its peak "
                                 f"{100*greedy_peak:.0f}% for {greedy_below_peak} consecutive "
-                                f"evals. best.pt holds the peak; resume by raising "
+                                f"evals. greedy_peak.pt holds the strongest greedy eval "
+                                f"({greedy_peak_rate:.1%} pooled); resume by raising "
                                 f"greedy_stop_patience if this was noise.")
                 _write_meta()
         else:

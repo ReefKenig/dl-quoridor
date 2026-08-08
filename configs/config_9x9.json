@@ -30,9 +30,9 @@
         "_ply_counted_note": "max_game_moves and explore_moves both count plies, not rounds — set per variant so each player gets the same budget; see variants.n2/n4",
         "warmup_min_samples": 5000,
         "accept_margin": 0.14,
-        "_gate_arm_note": "The vs-best gate is HELD until the learner beats the greedy racer at least once, then the champion is seeded from that checkpoint. v7 never accepted in 53 iterations at either player count: 128 of 131 legal opening actions are walls, so the untrained champion is a wall-spammer (measured policy wall mass 0.9774 vs 0.2603 for the trained net) that never advances toward its goal, and 134-151 of 160 gate games ran past max_game_moves. That closed a loop — cannot accept, so the champion stays the random init, so games never finish, so it cannot accept — and burned 41% of wall time. Against greedy, which actually races, all 40 games decide. Arming at the first non-zero win_vs_greedy fixes the cause; the decided floor and the move cap only treat symptoms.",
+        "_gate_arm_note": "The vs-best gate is HELD until win_vs_greedy exceeds gate_arm_greedy_min, then the champion is seeded from that checkpoint. v7 never accepted (untrained champion = wall-spammer, gate games never decided, 41% of wall time). v8 armed correctly (N=2 at iter 4, 73.8%) and STILL never accepted: two trained wall-capable models stall each other past max_game_moves 160 (32-38 of 40 gate games timed out, decided floor 10/40 unreachable at any strength) — hence gate_max_game_moves. The min is 0.05 because v8's N=4 armed on a single 1/80 win and seeded a champion that was not a racer.",
         "gate_arm_on_greedy": true,
-        "gate_arm_greedy_min": 0.0,
+        "gate_arm_greedy_min": 0.05,
         "eval_every": 4,
         "reward_decay": 0.99,
         "_discount_unit_note": "Per-variant: 'round' decays per the mover's own turns, 'ply' per move by anybody. Measured better at N=2, worse at N=4.",
@@ -59,7 +59,9 @@
         "_greedy_min_seat_after_note": "The floor arms at max(wall_mask_iters, this). A mixed run sets wall_mask_iters=0, so without this the floor would arm at iteration 0 and — at eval_every 4, patience 2 — could abort a healthy run at iteration 8 before it has trained. 12 gives three evals of grace.",
         "greedy_min_seat_after": 12,
         "_eval_every_note": "4, not 5: probe_n2_ramp peaked at iteration 4 (45% vs greedy, seat 1 18/20) and the gate must land ON it to put it in best.pt. The peak is early; missing it costs the deliverable.",
-        "wall_mask_fraction": 0.5
+        "wall_mask_fraction": 0.5,
+        "gate_max_game_moves": 320,
+        "_gate_max_game_moves_note": "vs-best eval only; self-play and the other evals keep max_game_moves. 320 = 2x the N=2 cap. Costs time only on games that would otherwise time out at 160 anyway."
     },
     "parallel": {
         "_num_workers_note": "Match the pod's cgroup cpu quota (16). Above it the jupyter server stops answering its own health check, whose entrypoint runs pkill -9 on failure.",

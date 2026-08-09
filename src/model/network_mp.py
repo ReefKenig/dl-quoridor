@@ -156,12 +156,11 @@ class QuoridorModelMP:
         loss_value = F.mse_loss(value, z)           # MSE over the vector
         total = loss_policy + self.value_loss_weight * loss_value
         if anchor_model is not None and anchor_weight > 0:
-            anchor_model.network.eval()             # frozen batchnorm stats
-            with torch.no_grad():
-                anchor_log, _ = anchor_model.network(x)
-                anchor_probs = torch.exp(anchor_log)
+            # Through the public batch path: eval mode, no_grad and autocast
+            # handled there, and the anchor forward runs at inference precision.
+            anchor_probs, _ = anchor_model.predict_batch(x)
             total = total - anchor_weight * torch.sum(
-                anchor_probs * log_policy) / x.size(0)
+                anchor_probs * log_policy) / pi.size(0)
         self.optimizer.zero_grad()
         total.backward()
         self.optimizer.step()

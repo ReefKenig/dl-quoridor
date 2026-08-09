@@ -35,6 +35,7 @@ Usage:
 """
 
 import json
+import os
 import pickle
 import shutil
 import logging
@@ -42,6 +43,19 @@ from typing import Optional, Any, Dict, List
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def atomic_model_save(model, path):
+    """Write a checkpoint via tmp + fsync + rename, so a kill mid-save cannot
+    leave a truncated file where a good one (or none) should be."""
+    tmp = f"{path}.tmp"
+    model.save(tmp)
+    fd = os.open(tmp, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(tmp, path)
 
 
 def resolve_ship_checkpoint(run_dir):
@@ -68,8 +82,12 @@ def resolve_ship_checkpoint(run_dir):
     last_iter = history[-1]["iter"] if history else None
 
     if peak.exists():
-        top = max((r for r in history if r.get("win_vs_greedy") is not None),
-                  key=lambda r: r["win_vs_greedy"], default=None)
+        # The writer stamps the row it saved from; the max-scan is only the
+        # fallback for meta written before that flag existed.
+        top = next((r for r in reversed(history) if r.get("greedy_peak_saved")),
+                   None) or max(
+            (r for r in history if r.get("win_vs_greedy") is not None),
+            key=lambda r: r["win_vs_greedy"], default=None)
         detail = (f"{top['win_vs_greedy']:.1%} vs greedy at iter {top.get('iter', '?')}"
                   if top else "rate unknown — no greedy rows in meta.json")
         if accepts:

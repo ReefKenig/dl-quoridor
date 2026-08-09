@@ -32,6 +32,8 @@ from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
                                        evaluate_against_greedy_parallel_mp,
                                        evaluate_against_minimax_parallel_mp,
                                        evaluate_against_random_parallel_mp)
+from src.mcts.pretrain_data import pretrain_report_path
+from src.utils.checkpoint import atomic_model_save
 from src.utils.config import read_frozen_config
 from src.utils.logger import make_progress_logger
 
@@ -725,6 +727,22 @@ def anchored_walled_share_by_seat(cfg):
             for seat, n in sorted(total.items())}
 
 
+def _load_warm_start(target, path):
+    """Load init_checkpoint weights with errors that name the usual causes.
+    Shared by the learner (fresh start) and the policy anchor (every start)."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"init_checkpoint={path} does not exist. Build it with "
+            f"scripts/pretrain_greedy.py (the notebooks have a cell that does "
+            f"this when it is missing).")
+    try:
+        target.load(path)
+    except Exception as exc:
+        raise RuntimeError(
+            f"init_checkpoint {path} failed to load — usually a channels/"
+            f"blocks/players mismatch with this run's network config.") from exc
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion and make it durable from iteration 0.
 
@@ -823,20 +841,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         if cfg.init_checkpoint:
             # Before init_champion, so the iteration-0 gate opponent is the
             # pretrained racer rather than a wall-spamming random init.
-            if not os.path.exists(cfg.init_checkpoint):
-                raise FileNotFoundError(
-                    f"init_checkpoint={cfg.init_checkpoint} does not exist. "
-                    f"Build it with scripts/pretrain_greedy.py (the notebooks "
-                    f"have a cell that does this when it is missing).")
-            try:
-                model.load(cfg.init_checkpoint)
-            except Exception as exc:
-                raise RuntimeError(
-                    f"init_checkpoint {cfg.init_checkpoint} failed to load — "
-                    f"usually a channels/blocks/players mismatch with this "
-                    f"run's network config.") from exc
+            _load_warm_start(model, cfg.init_checkpoint)
             _log(f"Learner warm-started from {cfg.init_checkpoint}")
-            report_path = os.path.splitext(cfg.init_checkpoint)[0] + "_report.json"
+            report_path = pretrain_report_path(cfg.init_checkpoint)
             if os.path.exists(report_path):
                 with open(report_path) as f:
                     rep = json.load(f)
@@ -856,33 +863,28 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     # branch: a resumed run must keep pulling toward the same prior.
     anchor = None
     if cfg.anchor_weight:
-        if not os.path.exists(cfg.init_checkpoint):
-            raise FileNotFoundError(
-                f"anchor_weight={cfg.anchor_weight} but init_checkpoint="
-                f"{cfg.init_checkpoint} does not exist.")
         anchor = make_model()
-        anchor.load(cfg.init_checkpoint)
-        anchor.network.eval()
+        _load_warm_start(anchor, cfg.init_checkpoint)
         _log(f"Policy anchored to {cfg.init_checkpoint} "
              f"(anchor_weight={cfg.anchor_weight})")
 
     # Racing-decay watch (see cfg.greedy_stop_patience).
-    greedy_peak = None
+    best_seat_peak = None
     greedy_below_peak = 0
     greedy_below_floor = 0
     stop_reason = None
 
+    greedy_rates = [(r.get("win_vs_greedy") or 0.0) for r in history]
     # Strongest POOLED greedy eval so far, ratcheted to greedy_peak.pt — distinct
-    # from `greedy_peak` above, the best-seat watermark the decay watch tracks.
+    # from best_seat_peak above, the per-seat watermark the decay watch tracks.
     # The gate can go a whole run without accepting while latest.pt declines
     # past the peak, so neither checkpoint holds the strongest model without it.
-    greedy_peak_rate = max(
-        ((r.get("win_vs_greedy") or 0.0) for r in history), default=0.0)
+    greedy_peak_rate = max(greedy_rates, default=0.0)
 
     # Gate liveness (see cfg.gate_arm_on_greedy). Recovered from history rather
     # than persisted, so a resume cannot silently re-disarm an armed gate.
     gate_armed = not cfg.gate_arm_on_greedy or any(
-        (r.get("win_vs_greedy") or 0.0) > cfg.gate_arm_greedy_min for r in history)
+        rate > cfg.gate_arm_greedy_min for rate in greedy_rates)
     thin_evals = 0
     warned_unreachable = False
     if cfg.gate_arm_on_greedy and not gate_armed:
@@ -1181,6 +1183,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "mcts_dirichlet_alpha": cfg.mcts_dirichlet_alpha,
                 "minimax_depth": cfg.minimax_depth,
                 "minimax_wall_candidates": cfg.minimax_wall_candidates,
+                "adjudicate": False,
+            }
+            # How the GATE deviates from a normal eval, defined once for both
+            # engines: its own move cap (max_turns raised alongside — the env
+            # ends games there on its own) and timeout adjudication.
+            gate_moves = cfg.gate_max_game_moves or cfg.max_game_moves
+            gate_overrides = {
+                "max_game_moves": gate_moves,
+                "max_turns": max(eval_config_dict["max_turns"], gate_moves),
+                "adjudicate": cfg.gate_adjudicate,
             }
             if not cfg.parallel_eval:
                 # The learner's eval agent, shared by every sequential eval
@@ -1210,16 +1222,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
                          f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
 
-                gate_moves = cfg.gate_max_game_moves or cfg.max_game_moves
                 if cfg.parallel_eval:
-                    # max_turns raised alongside: the env ends games there on its own.
                     ev = evaluate_parallel_mp(
-                        model, best,
-                        {**eval_config_dict, "max_game_moves": gate_moves,
-                         "max_turns": max(eval_config_dict.get("max_turns",
-                                                               gate_moves),
-                                          gate_moves),
-                         "adjudicate_timeouts": cfg.gate_adjudicate},
+                        model, best, {**eval_config_dict, **gate_overrides},
                         num_games=cfg.eval_games,
                         num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
                         on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
@@ -1228,9 +1233,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                         _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
                         temperature=0.1, opening_plies=cfg.eval_opening_plies)
                     ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
-                                     max_moves=gate_moves, on_progress=_eval_progress,
+                                     max_moves=gate_overrides["max_game_moves"],
+                                     on_progress=_eval_progress,
                                      base_seed=it * 100_003,
-                                     adjudicate=cfg.gate_adjudicate)
+                                     adjudicate=gate_overrides["adjudicate"])
                 accepted = ev.should_accept(threshold)
                 eval_best_secs = time.time() - t_eval_best
                 ev_wr = ev.candidate_win_rate
@@ -1263,10 +1269,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 else:
                     thin_evals = 0
                     verdict = "ACCEPT" if accepted else "reject"
-                adj_txt = (f", {ev.adjudicated} adjudicated"
-                           if ev.adjudicated else "")
                 _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
-                     f"{100*ev_wr:.1f}% of {ev.decided_games} decided{adj_txt} "
+                     f"{100*ev_wr:.1f}% of {ev.decided_games} decided{ev.adj_note} "
                      f"{verdict} ({eval_best_secs:.0f}s)")
                 # Persist the accept/reject before eval-vs-random, so best.pt and the
                 # row's `accepted` stay consistent even if the next phase is interrupted.
@@ -1355,11 +1359,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
                 if evg_wr > greedy_peak_rate:
                     greedy_peak_rate = evg_wr
-                    # tmp + rename, like the replay buffer: a kill mid-save must
-                    # not leave a truncated peak checkpoint.
-                    peak_path = os.path.join(checkpoint_dir, "greedy_peak.pt")
-                    model.save(peak_path + ".tmp")
-                    os.replace(peak_path + ".tmp", peak_path)
+                    atomic_model_save(
+                        model, os.path.join(checkpoint_dir, "greedy_peak.pt"))
                     row["greedy_peak_saved"] = True
                     _log(f"[iter {it+1}/{cfg.num_iterations}] new greedy peak "
                          f"{evg_wr:.1%} — saved greedy_peak.pt")
@@ -1422,8 +1423,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     best_seat, best_seat_n = max(seated) if seated else (0.0, 0)
                     row["greedy_best_seat"] = best_seat
                     prev_below = greedy_below_peak
-                    greedy_peak, greedy_below_peak = racing_decay_strike(
-                        best_seat, greedy_peak, greedy_below_peak,
+                    best_seat_peak, greedy_below_peak = racing_decay_strike(
+                        best_seat, best_seat_peak, greedy_below_peak,
                         cfg.greedy_stop_drop, best_seat_n, cfg.greedy_stop_z)
                     floor_after = max(cfg.wall_mask_iters,
                                       getattr(cfg, "greedy_min_seat_after", 0))
@@ -1443,14 +1444,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                                 f"not fix it.")
                     if greedy_below_peak > prev_below:
                         _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: racing decay — "
-                             f"best seat {100*best_seat:.0f}% is {100*(greedy_peak-best_seat):.0f} "
-                             f"pts below the peak {100*greedy_peak:.0f}% "
+                             f"best seat {100*best_seat:.0f}% is {100*(best_seat_peak-best_seat):.0f} "
+                             f"pts below the peak {100*best_seat_peak:.0f}% "
                              f"({greedy_below_peak}/{cfg.greedy_stop_patience} evals)")
                         if greedy_below_peak >= cfg.greedy_stop_patience:
                             stop_reason = (
                                 f"racing decay: best per-seat greedy rate {100*best_seat:.0f}% "
                                 f"stayed >={100*cfg.greedy_stop_drop:.0f} pts below its peak "
-                                f"{100*greedy_peak:.0f}% for {greedy_below_peak} consecutive "
+                                f"{100*best_seat_peak:.0f}% for {greedy_below_peak} consecutive "
                                 f"evals. greedy_peak.pt holds the strongest greedy eval "
                                 f"({greedy_peak_rate:.1%} pooled); resume by raising "
                                 f"greedy_stop_patience if this was noise.")

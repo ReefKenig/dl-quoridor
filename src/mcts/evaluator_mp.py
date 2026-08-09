@@ -54,6 +54,16 @@ def random_agent() -> AgentFn:
     return agent
 
 
+def raw_policy_agent(model) -> AgentFn:
+    """Argmax of the raw policy over valid actions — no search. The strength
+    floor: any MCTS on top only adds to it."""
+    def agent(env, state, ply: int = 0, rng=None) -> int:
+        policy, _ = model.predict(env.state_to_tensor(state))
+        valid = env.get_valid_actions(state)
+        return int(max(valid, key=lambda a: policy[a]))
+    return agent
+
+
 # Actions 0..11 are pawn moves; everything above is a wall placement. Re-exported
 # from the env, which owns the action layout.
 
@@ -292,6 +302,11 @@ class EvalResultMP:
     def fair_share(self) -> float:
         return 1.0 / self.num_players
 
+    @property
+    def adj_note(self) -> str:
+        """', N adjudicated' when any win came from adjudication, else ''."""
+        return f", {self.adjudicated} adjudicated" if self.adjudicated else ""
+
     def should_accept(self, threshold: float) -> bool:
         min_decided = self.num_games * self.MIN_DECIDED_FRACTION
         if self.decided_games < min_decided or self.decided_games == 0:
@@ -303,8 +318,8 @@ class EvalResultMP:
             f"s{seat}:{self.seat_wins.get(seat, 0)}/{self.games_per_seat.get(seat, 0)}"
             for seat in range(self.num_players)
         )
-        adj = f", {self.adjudicated} adjudicated" if self.adjudicated else ""
-        return (f"games={self.num_games} (decided {self.decided_games}{adj}) | "
+        return (f"games={self.num_games} (decided {self.decided_games}"
+                f"{self.adj_note}) | "
                 f"candidate {self.candidate_wins} "
                 f"({self.candidate_win_rate:.1%} of decided, "
                 f"fair={self.fair_share:.1%}) | "

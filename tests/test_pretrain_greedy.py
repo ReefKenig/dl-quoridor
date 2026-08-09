@@ -9,7 +9,7 @@ import pytest
 from src.env.quoridor_env_mp import NUM_MOVE_ACTIONS, QuoridorEnvMP
 from src.env.tensor_spec_mp import CURRENT_SPEC
 
-from scripts.pretrain_greedy import generate_games, to_arrays
+from src.mcts.pretrain_data import generate_games, to_arrays
 
 
 @pytest.fixture(scope="module")

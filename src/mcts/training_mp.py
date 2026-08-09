@@ -806,8 +806,26 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         if cfg.init_checkpoint:
             # Before init_champion, so the iteration-0 gate opponent is the
             # pretrained racer rather than a wall-spamming random init.
-            model.load(cfg.init_checkpoint)
+            if not os.path.exists(cfg.init_checkpoint):
+                raise FileNotFoundError(
+                    f"init_checkpoint={cfg.init_checkpoint} does not exist. "
+                    f"Build it with scripts/pretrain_greedy.py (the notebooks "
+                    f"have a cell that does this when it is missing).")
+            try:
+                model.load(cfg.init_checkpoint)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"init_checkpoint {cfg.init_checkpoint} failed to load — "
+                    f"usually a channels/blocks/players mismatch with this "
+                    f"run's network config.") from exc
             _log(f"Learner warm-started from {cfg.init_checkpoint}")
+            report_path = os.path.splitext(cfg.init_checkpoint)[0] + "_report.json"
+            if os.path.exists(report_path):
+                with open(report_path) as f:
+                    rep = json.load(f)
+                _log(f"Warm-start report: agreement={rep.get('agreement')} "
+                     f"opening_wall_mass={rep.get('opening_wall_mass')} "
+                     f"({rep.get('games')} games, {rep.get('samples')} samples)")
         init_champion(best, model, checkpoint_dir, log=_log)
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")

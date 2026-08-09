@@ -78,6 +78,10 @@ def generate_games(env, num_games, opening_max, max_moves, discount,
 
 def to_arrays(games):
     flat = [s for game in games for s in game]
+    if not flat:
+        raise ValueError(
+            "no samples from greedy game generation — every game timed out or "
+            "none were played; check --games/--opening-max/--max-moves")
     S = np.stack([s[0] for s in flat]).astype(np.float32)
     P = np.stack([s[1] for s in flat]).astype(np.float32)
     V = np.stack([s[2] for s in flat]).astype(np.float32)

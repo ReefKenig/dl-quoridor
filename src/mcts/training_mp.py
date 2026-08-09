@@ -180,6 +180,11 @@ class TrainingConfigMP:
     # Iterations before that floor arms. Defaults to the masked phase, but a
     # mixed curriculum has no phase to end, so it needs its own grace window.
     greedy_min_seat_after: int = 0
+    # Stop when this many consecutive greedy evals pass without a new pooled
+    # peak. greedy_peak.pt already holds the deliverable, so running on is
+    # only justified while a new peak is plausible — v9's N=2 spent ~44
+    # iterations (~20 h) after its last improvement. 0 = off.
+    peak_stall_evals: int = 0
     # Held-out baseline. greedy becomes a training opponent once the pool
     # anchors on it, so it stops measuring generalisation; minimax never trains
     # and it places walls. 0 games = off.
@@ -448,6 +453,17 @@ def sample_diagnostics(samples, num_players, model=None, max_states=512):
     if err_free:
         out["value_mae_wallfree"] = float(np.mean(err_free))
     return out
+
+
+def evals_since_last_peak(history):
+    """Greedy evals since the last new pooled peak, from the writer's
+    greedy_peak_saved stamps — so a resume keeps the staleness clock."""
+    since = 0
+    for r in history:
+        if r.get("win_vs_greedy") is None:
+            continue
+        since = 0 if r.get("greedy_peak_saved") else since + 1
+    return since
 
 
 def stalled_below_floor(best_seat, floor, below):
@@ -868,13 +884,20 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         _log(f"Policy anchored to {cfg.init_checkpoint} "
              f"(anchor_weight={cfg.anchor_weight})")
 
-    # Racing-decay watch (see cfg.greedy_stop_patience).
-    best_seat_peak = None
+    # Racing-decay watch (see cfg.greedy_stop_patience). The watermark is
+    # recovered from history like every other resumed state: v9's N=2 restart
+    # at iteration ~40 silently reset an in-memory peak of 100% to 97.5%, and
+    # the weakened reference let the run coast past its true stop.
+    seat_rates = [w / n for r in history
+                  for w, n in (r.get("greedy_by_seat") or {}).values() if n]
+    best_seat_peak = max(seat_rates, default=None)
     greedy_below_peak = 0
     greedy_below_floor = 0
     stop_reason = None
 
     greedy_rates = [(r.get("win_vs_greedy") or 0.0) for r in history]
+    # Peak staleness (see cfg.peak_stall_evals), resumed like everything else.
+    evals_since_peak = evals_since_last_peak(history)
     # Strongest POOLED greedy eval so far, ratcheted to greedy_peak.pt — distinct
     # from best_seat_peak above, the per-seat watermark the decay watch tracks.
     # The gate can go a whole run without accepting while latest.pt declines
@@ -1359,11 +1382,22 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
                 if evg_wr > greedy_peak_rate:
                     greedy_peak_rate = evg_wr
+                    evals_since_peak = 0
                     atomic_model_save(
                         model, os.path.join(checkpoint_dir, "greedy_peak.pt"))
                     row["greedy_peak_saved"] = True
                     _log(f"[iter {it+1}/{cfg.num_iterations}] new greedy peak "
                          f"{evg_wr:.1%} — saved greedy_peak.pt")
+                else:
+                    evals_since_peak += 1
+                    if (cfg.peak_stall_evals
+                            and evals_since_peak >= cfg.peak_stall_evals):
+                        stop_reason = (
+                            f"peak stall: {evals_since_peak} consecutive greedy "
+                            f"evals without a new pooled peak (best "
+                            f"{greedy_peak_rate:.1%}). greedy_peak.pt holds it; "
+                            f"resume by raising peak_stall_evals to search "
+                            f"longer.")
 
                 # Arm the gate the moment the learner clears the absolute bar,
                 # and seed the champion from it — a racer that reaches its goal,

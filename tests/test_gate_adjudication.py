@@ -48,6 +48,15 @@ def test_an_untouched_opening_is_a_tie(env):
     assert adjudicate_timeout(env, env.reset()) is None
 
 
+def test_everyone_walled_in_stays_a_draw(env):
+    """distance None for every player must not crown a winner."""
+    class WalledEnv:
+        num_players = 2
+        def distance_to_goal(self, state, player):
+            return None
+    assert adjudicate_timeout(WalledEnv(), object()) is None
+
+
 def test_play_eval_game_adjudicates_only_when_asked(env):
     agents = {0: _pawn_forward, 1: _pawn_sideways}
     # 3 plies: nobody reaches a 5x5 goal; player 0 leads on distance.

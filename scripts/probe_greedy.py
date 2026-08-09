@@ -32,8 +32,8 @@ def probe(env, agent_for, games, seats, base_seed):
             cand = agent_for()
             agents = {s: (cand if s == seat else greedy_agent())
                       for s in range(env.num_players)}
-            winner = play_eval_game(env, agents, env.max_turns,
-                                    rng=eval_rng(base_seed + 1000 * seat, g))
+            winner, _ = play_eval_game(env, agents, env.max_turns,
+                                       rng=eval_rng(base_seed + 1000 * seat, g))
             if winner is not None:
                 decided += 1
                 if winner == seat:

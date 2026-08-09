@@ -9,6 +9,8 @@ threshold that should sit above 1/N (the training loop sets it per N).
 At N=2 this reduces to the usual candidate-vs-opponent duel (fair share 0.5).
 """
 import logging
+import math
+
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -211,10 +213,10 @@ def adjudicate_timeout(env, state) -> Optional[int]:
     Racing opponents finish their games on their own and stay unadjudicated.
     """
     dists = [env.distance_to_goal(state, p) for p in range(env.num_players)]
-    dists = [float("inf") if d is None else d for d in dists]
+    dists = [math.inf if d is None else d for d in dists]
     best = min(dists)
     leaders = [p for p, d in enumerate(dists) if d == best]
-    return leaders[0] if len(leaders) == 1 and best < float("inf") else None
+    return leaders[0] if len(leaders) == 1 and best < math.inf else None
 
 
 def play_eval_game(env, agents, max_moves: int, rng=None,

@@ -70,7 +70,7 @@ def resolve_ship_checkpoint(run_dir):
     if peak.exists():
         top = max((r for r in history if r.get("win_vs_greedy") is not None),
                   key=lambda r: r["win_vs_greedy"], default=None)
-        detail = (f"{top['win_vs_greedy']:.1%} vs greedy at iter {top['iter']}"
+        detail = (f"{top['win_vs_greedy']:.1%} vs greedy at iter {top.get('iter', '?')}"
                   if top else "rate unknown — no greedy rows in meta.json")
         return str(peak), f"greedy_peak.pt ({detail})"
     if latest.exists():

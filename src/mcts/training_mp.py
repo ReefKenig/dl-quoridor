@@ -810,11 +810,12 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     greedy_below_floor = 0
     stop_reason = None
 
-    # Strongest greedy eval so far, ratcheted to greedy_peak.pt. The gate can go
-    # a whole run without accepting while latest.pt declines past the peak, so
-    # neither checkpoint holds the strongest model without this one.
+    # Strongest POOLED greedy eval so far, ratcheted to greedy_peak.pt — distinct
+    # from `greedy_peak` above, the best-seat watermark the decay watch tracks.
+    # The gate can go a whole run without accepting while latest.pt declines
+    # past the peak, so neither checkpoint holds the strongest model without it.
     greedy_peak_rate = max(
-        (r.get("win_vs_greedy") or 0.0) for r in history) if history else 0.0
+        ((r.get("win_vs_greedy") or 0.0) for r in history), default=0.0)
 
     # Gate liveness (see cfg.gate_arm_on_greedy). Recovered from history rather
     # than persisted, so a resume cannot silently re-disarm an armed gate.
@@ -1142,7 +1143,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     ev = evaluate_parallel_mp(
                         model, best,
                         {**eval_config_dict, "max_game_moves": gate_moves,
-                         "max_turns": max(eval_config_dict["max_turns"], gate_moves)},
+                         "max_turns": max(eval_config_dict.get("max_turns",
+                                                               gate_moves),
+                                          gate_moves)},
                         num_games=cfg.eval_games,
                         num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
                         on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
@@ -1280,7 +1283,11 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
                 if evg_wr > greedy_peak_rate:
                     greedy_peak_rate = evg_wr
-                    model.save(os.path.join(checkpoint_dir, "greedy_peak.pt"))
+                    # tmp + rename, like the replay buffer: a kill mid-save must
+                    # not leave a truncated peak checkpoint.
+                    peak_path = os.path.join(checkpoint_dir, "greedy_peak.pt")
+                    model.save(peak_path + ".tmp")
+                    os.replace(peak_path + ".tmp", peak_path)
                     row["greedy_peak_saved"] = True
                     _log(f"[iter {it+1}/{cfg.num_iterations}] new greedy peak "
                          f"{evg_wr:.1%} — saved greedy_peak.pt")

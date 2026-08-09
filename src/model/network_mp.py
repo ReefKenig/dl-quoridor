@@ -136,8 +136,15 @@ class QuoridorModelMP:
             value_vec = value.float().squeeze(0).cpu().numpy()   # (num_players,)
         return policy, value_vec
 
-    def train_step(self, states, target_policies, target_values):
-        """target_values: (B, num_players)."""
+    def train_step(self, states, target_policies, target_values,
+                   anchor_model=None, anchor_weight=0.0):
+        """target_values: (B, num_players).
+
+        anchor_model/anchor_weight: adds a cross-entropy pull toward a frozen
+        reference policy on the same batch (KL up to a constant). The returned
+        loss_policy stays the MCTS-target term alone, so history rows remain
+        comparable with unanchored runs.
+        """
         self.network.train()
         x = torch.from_numpy(states).float().permute(
             0, 3, 1, 2).to(self.device)
@@ -148,6 +155,13 @@ class QuoridorModelMP:
         loss_policy = -torch.sum(pi * log_policy) / pi.size(0)
         loss_value = F.mse_loss(value, z)           # MSE over the vector
         total = loss_policy + self.value_loss_weight * loss_value
+        if anchor_model is not None and anchor_weight > 0:
+            anchor_model.network.eval()             # frozen batchnorm stats
+            with torch.no_grad():
+                anchor_log, _ = anchor_model.network(x)
+                anchor_probs = torch.exp(anchor_log)
+            total = total - anchor_weight * torch.sum(
+                anchor_probs * log_policy) / x.size(0)
         self.optimizer.zero_grad()
         total.backward()
         self.optimizer.step()

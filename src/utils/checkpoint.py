@@ -47,11 +47,13 @@ logger = logging.getLogger(__name__)
 def resolve_ship_checkpoint(run_dir):
     """(path, label) of the checkpoint to ship, or (None, reason).
 
-    Preference: best.pt when the gate accepted at least once, then
-    greedy_peak.pt (the strongest greedy eval), then latest.pt. best.pt is
-    written up front from the untrained model, so with zero accepts it is
-    the random init (or the arming seed), and latest.pt can sit well past
-    the peak — v8 ended at 60% vs greedy after peaking at 81%."""
+    Preference: greedy_peak.pt (the strongest ABSOLUTE eval) whenever it
+    exists, then best.pt if the gate accepted, then latest.pt. The old order
+    put the accepted champion first, assuming accepts imply strength —
+    n4_9x9_v9 falsified that: the gate accepted at iterations 20/24/28 while
+    win_vs_greedy fell 40% -> 0%, and shipped the 0% model over the saved
+    10% peak. Accepts measure relative-to-champion; the deliverable is
+    measured against the fixed yardstick."""
     run = Path(run_dir)
     best, latest = run / "best.pt", run / "latest.pt"
     peak = run / "greedy_peak.pt"
@@ -65,14 +67,16 @@ def resolve_ship_checkpoint(run_dir):
     accepts = [row["iter"] for row in history if row.get("accepted")]
     last_iter = history[-1]["iter"] if history else None
 
-    if accepts and best.exists():
-        return str(best), f"best.pt (accepted at iter {accepts[-1]}, {len(accepts)} accepts)"
     if peak.exists():
         top = max((r for r in history if r.get("win_vs_greedy") is not None),
                   key=lambda r: r["win_vs_greedy"], default=None)
         detail = (f"{top['win_vs_greedy']:.1%} vs greedy at iter {top.get('iter', '?')}"
                   if top else "rate unknown — no greedy rows in meta.json")
+        if accepts:
+            detail += f"; outranks best.pt's {len(accepts)} accepts — see docstring"
         return str(peak), f"greedy_peak.pt ({detail})"
+    if accepts and best.exists():
+        return str(best), f"best.pt (accepted at iter {accepts[-1]}, {len(accepts)} accepts)"
     if latest.exists():
         why = ("no iteration was ever accepted, so best.pt is the untrained "
                "initialization" if history else "no history in meta.json")

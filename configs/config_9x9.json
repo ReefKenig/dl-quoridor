@@ -67,7 +67,9 @@
         "_init_checkpoint_note": "Warm-start weights for a FRESH run (ignored on resume), produced by scripts/pretrain_greedy.py. Attacks the opening prior directly: 128 of 131 legal opening actions are walls, so an untrained net is a wall-spammer and six N=4 attempts (v5-v8) never acquired racing from RL alone. Empty = cold start.",
         "init_checkpoint": "",
         "gate_adjudicate": true,
-        "_gate_adjudicate_note": "Adjudicate gate games that hit gate_max_game_moves by shortest-path distance (unique leader wins; tie stays a draw) — the standard Quoridor adjudication. v9 proved no cap fixes the stall: 3-6 of 40 gate games decided at 320 plies while the candidate won 80-100% of the games that DID finish. Gate only; greedy/minimax/random keep play-to-the-goal semantics so their history columns stay comparable across runs."
+        "_gate_adjudicate_note": "Adjudicate gate games that hit gate_max_game_moves by shortest-path distance (unique leader wins; tie stays a draw) — the standard Quoridor adjudication. v9 proved no cap fixes the stall: 3-6 of 40 gate games decided at 320 plies while the candidate won 80-100% of the games that DID finish. Gate only; greedy/minimax/random keep play-to-the-goal semantics so their history columns stay comparable across runs.",
+        "anchor_weight": 0.0,
+        "_anchor_weight_note": "Cross-entropy pull toward the init_checkpoint policy on every training batch. n4_9x9_v9 is the evidence the data-mix lever cannot do this job: seat-0 anchored games held their configured 40 games/~580 samples EVERY iteration and the racer still eroded from 8/20 to 0/20 vs greedy by iteration 28, with first_wall_ply falling 3.4 -> 0.7 — the 65%-walled self-play gradient outweighs any realistic sample share. 0.2 at N=4: strong enough to hold racing lines, weak enough that genuinely better moves (walls that WIN eval games) can still overrule the prior. 0 at N=2, which consolidated racing+walls without help (93.8% at iter 12)."
     },
     "parallel": {
         "_num_workers_note": "Match the pod's cgroup cpu quota (16). Above it the jupyter server stops answering its own health check, whose entrypoint runs pkill -9 on failure.",
@@ -121,7 +123,8 @@
             "_eval_greedy_note": "80, not 40: the greedy eval rotates the candidate through all N seats, so at N=4 a 40-game eval is only 10 games per seat — and greedy_stop_patience keys on the BEST per-seat rate, which at n=10 has SE ~0.095, making the 20-pt abort threshold barely 2 sigma. 80 gives 20/seat, matching n2, where 20-pt is ~4 sigma. Costs ~20s an eval against a ~500s iteration.",
             "_sizing_note": "40 x 40, smaller than n2's 60 x 80 because N=4 games run to a 320-ply cap and cost roughly twice as much per game. Both earlier N=4 probes used the phase/ramp curriculum now known to be inert, so the mixed curriculum is untried here — this run is a real test, not a repeat. The racing-decay and never-acquired stops bound it.",
             "anchored_seat0_share": 0.5,
-            "init_checkpoint": "runs/pretrain_n4_9x9/pretrain.pt"
+            "init_checkpoint": "runs/pretrain_n4_9x9/pretrain.pt",
+            "anchor_weight": 0.2
         }
     }
 }

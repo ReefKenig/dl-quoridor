@@ -154,8 +154,9 @@ def test_disabling_the_feature_keeps_the_old_always_armed_behaviour():
 
 # --- ship resolution (resolve_ship_checkpoint) ---------------------------------
 # v8 shipped its iteration-20 model (60% vs greedy) while iteration 12's 81% was
-# never written anywhere; greedy_peak.pt now holds the strongest greedy eval and
-# outranks latest.pt whenever the gate never accepted.
+# never written anywhere; v9's N=4 then accepted three times WHILE greedy fell
+# 40% -> 0% and shipped the 0% model. greedy_peak.pt is the absolute yardstick
+# and outranks both the accepted champion and latest.pt.
 
 import json
 
@@ -169,10 +170,21 @@ def _write_run(ckpt_dir, history, files):
         FakeModel(name).save(os.path.join(ckpt_dir, name))
 
 
-def test_an_accepted_best_still_outranks_the_greedy_peak(ckpt_dir):
+def test_the_greedy_peak_outranks_even_an_accepted_best(ckpt_dir):
+    """The n4_9x9_v9 shape: accepts late in the run, absolute peak earlier."""
+    _write_run(ckpt_dir,
+               [{"iter": 12, "accepted": False, "win_vs_greedy": 0.10},
+                {"iter": 28, "accepted": True, "win_vs_greedy": 0.0}],
+               ["best.pt", "latest.pt", "greedy_peak.pt"])
+    path, label = resolve_ship_checkpoint(ckpt_dir)
+    assert path.endswith("greedy_peak.pt")
+    assert "10.0%" in label and "iter 12" in label and "1 accepts" in label
+
+
+def test_an_accepted_best_ships_when_there_is_no_peak_file(ckpt_dir):
     _write_run(ckpt_dir,
                [{"iter": 4, "accepted": True, "win_vs_greedy": 0.4}],
-               ["best.pt", "latest.pt", "greedy_peak.pt"])
+               ["best.pt", "latest.pt"])
     path, label = resolve_ship_checkpoint(ckpt_dir)
     assert path.endswith("best.pt") and "accepted at iter 4" in label
 

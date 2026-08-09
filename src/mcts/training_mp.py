@@ -203,10 +203,22 @@ class TrainingConfigMP:
     # Warm-start weights for a FRESH run (ignored on resume). Lets supervised
     # pretraining set the opening prior instead of hoping self-play finds it.
     init_checkpoint: str = ""
+    # Cross-entropy pull toward the init_checkpoint policy on every training
+    # batch. n4_9x9_v9 measured why the data-mix lever is not enough: seat-0
+    # anchored games held their configured 40 games/~580 samples every
+    # iteration and the racer still eroded to 0/80 by iteration 28
+    # (first_wall_ply 3.4 -> 0.7) — 65%-walled self-play gradient outweighs
+    # any realistic sample share, so the prior must be defended in the loss.
+    # 0 = off.
+    anchor_weight: float = 0.0
     # Champion snapshots kept for the past-opponent share.
     champion_pool_size: int = 5
 
     def __post_init__(self):
+        if self.anchor_weight and not self.init_checkpoint:
+            raise ValueError(
+                "anchor_weight requires init_checkpoint — the warm-start "
+                "policy is the anchor.")
         if self.opponent_past_share and not self.parallel_self_play:
             raise NotImplementedError(
                 "opponent_past_share needs the parallel engine — the champion "
@@ -840,6 +852,20 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     champion_pool = champion_pool_paths(checkpoint_dir) if cfg.opponent_past_share else []
     past_model = make_model() if cfg.opponent_past_share else None
 
+    # Frozen policy anchor (see cfg.anchor_weight). Built OUTSIDE the fresh-start
+    # branch: a resumed run must keep pulling toward the same prior.
+    anchor = None
+    if cfg.anchor_weight:
+        if not os.path.exists(cfg.init_checkpoint):
+            raise FileNotFoundError(
+                f"anchor_weight={cfg.anchor_weight} but init_checkpoint="
+                f"{cfg.init_checkpoint} does not exist.")
+        anchor = make_model()
+        anchor.load(cfg.init_checkpoint)
+        anchor.network.eval()
+        _log(f"Policy anchored to {cfg.init_checkpoint} "
+             f"(anchor_weight={cfg.anchor_weight})")
+
     # Racing-decay watch (see cfg.greedy_stop_patience).
     greedy_peak = None
     greedy_below_peak = 0
@@ -1023,7 +1049,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             S, P, V = buffer.sample_batch(
                 cfg.batch_size, source="greedy",
                 source_share=cfg.anchored_sample_share)
-            a, b = model.train_step(S, P, V)
+            a, b = model.train_step(S, P, V, anchor_model=anchor,
+                                    anchor_weight=cfg.anchor_weight)
             lp += a
             lv += b
         lp /= max(steps, 1)

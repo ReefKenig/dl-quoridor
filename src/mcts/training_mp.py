@@ -8,6 +8,7 @@ random → checkpoint best/latest. Reduces to the standard duel at N=2.
 import json
 import math
 import os
+import shutil
 import time
 import logging
 from collections import deque
@@ -266,6 +267,25 @@ def racing_decay_strike(best_seat, peak, below, drop, n_per_seat=0, z_min=0.0):
     if not drop_is_significant(peak, best_seat, n_per_seat, z_min):
         return peak, 0
     return peak, below + 1
+
+
+def capture_racing_peak(checkpoint_dir, prev_peak, peak):
+    """Copy latest.pt aside when the racing probe sets a new high. Returns True
+    if it did.
+
+    latest.pt holds this iteration's weights (saved before eval, which does not
+    touch the model), so the copy is exact. Nothing else preserves the peak:
+    best.pt follows the accept gate, which on n4_9x9_v9 accepted three times
+    while the racer decayed to 0%, and v8's iter-12 peak was overwritten by
+    later iterations before anyone could ship it.
+    """
+    if peak is None or (prev_peak is not None and peak <= prev_peak):
+        return False
+    latest = os.path.join(checkpoint_dir, "latest.pt")
+    if not os.path.exists(latest):
+        return False
+    shutil.copy2(latest, os.path.join(checkpoint_dir, "greedy_peak.pt"))
+    return True
 
 
 SELF_PLAY_MODES = ("sequential", "parallel", "vectorized")
@@ -899,9 +919,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     best_seat, best_seat_n = max(seated) if seated else (0.0, 0)
                     row["greedy_best_seat"] = best_seat
                     prev_below = greedy_below_peak
+                    prev_peak = greedy_peak
                     greedy_peak, greedy_below_peak = racing_decay_strike(
                         best_seat, greedy_peak, greedy_below_peak,
                         cfg.greedy_stop_drop, best_seat_n, cfg.greedy_stop_z)
+                    if capture_racing_peak(checkpoint_dir, prev_peak, greedy_peak):
+                        _log(f"[iter {it+1}/{cfg.num_iterations}] racing peak "
+                             f"{100*greedy_peak:.0f}% best-seat -> greedy_peak.pt")
                     floor_after = max(cfg.wall_mask_iters,
                                       getattr(cfg, "greedy_min_seat_after", 0))
                     if cfg.greedy_min_seat and it >= floor_after:

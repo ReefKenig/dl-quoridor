@@ -33,6 +33,7 @@ dl-quoridor/
 │   └── utils/                  # Shared utilities
 │       ├── checkpoint.py       #   Model checkpointing & resume
 │       ├── config.py           #   JSON config loader
+│       ├── model_registry.py   #   Which checkpoint backs which board/players
 │       └── logger.py           #   Training metrics & W&B logging
 ├── tests/                      # Unit & integration tests
 ├── notebooks/                  # Colab training notebooks
@@ -107,8 +108,14 @@ See `scripts/run_train_eval.py` for a smoke-test example. Wall counts are delibe
 ## Play vs AI
 
 ```bash
-python -m src.ui.game_ui
+python -m src.ui.game_ui                      # 5x5, 4 players
+python -m src.ui.game_ui --board 9 --players 2   # full-size Quoridor
 ```
+
+`--board {5,9}`, `--players {2,4}`, `--difficulty {easy,medium,hard}`. Which
+checkpoint each combination loads — along with the architecture, tensor spec and
+wall count it was trained under — comes from `runs/MODELS.json`; the UI prints
+the file it resolved and why on startup.
 
 ## Run Tests
 

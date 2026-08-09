@@ -7,8 +7,9 @@ ceiling that a competent racer sits at.
 """
 import pytest
 
-from src.mcts.training_mp import (TrainingConfigMP, drop_is_significant,
-                                  racing_decay_strike, stalled_below_floor)
+from src.mcts.training_mp import (TrainingConfigMP, capture_racing_peak,
+                                  drop_is_significant, racing_decay_strike,
+                                  stalled_below_floor)
 
 
 def _watch(rates, patience=2, drop=0.20, n_per_seat=0, z_min=0.0):
@@ -148,3 +149,41 @@ def test_a_healthy_run_never_strikes_the_floor():
 
 def test_the_floor_is_off_by_default():
     assert TrainingConfigMP().greedy_min_seat == 0.0
+
+
+def _peak_run(tmp_path, rates, drop=0.20):
+    """Replay the loop's peak capture over a sequence of best-per-seat rates.
+
+    Returns the list of rates at which greedy_peak.pt was (re)written.
+    """
+    (tmp_path / "latest.pt").write_bytes(b"iter 0")
+    peak, below, captured = None, 0, []
+    for rate in rates:
+        (tmp_path / "latest.pt").write_bytes(f"iter at {rate}".encode())
+        prev_peak = peak
+        peak, below = racing_decay_strike(rate, peak, below, drop)
+        if capture_racing_peak(tmp_path, prev_peak, peak):
+            captured.append(rate)
+    return captured
+
+
+def test_the_first_eval_captures_a_peak(tmp_path):
+    assert _peak_run(tmp_path, [0.35]) == [0.35]
+    assert (tmp_path / "greedy_peak.pt").read_bytes() == b"iter at 0.35"
+
+
+def test_the_peak_holds_while_the_racer_decays(tmp_path):
+    """n4_9x9_v9: peaks at iter 12, then the gate accepts its way down to 0%."""
+    captured = _peak_run(tmp_path, [0.25, 0.10, 0.40, 0.20, 0.35, 0.25, 0.0, 0.0])
+    assert captured == [0.25, 0.40]
+    assert (tmp_path / "greedy_peak.pt").read_bytes() == b"iter at 0.4"
+
+
+def test_an_equal_rate_does_not_overwrite_the_peak(tmp_path):
+    """Ties keep the earlier weights, matching how the label dates the peak."""
+    assert _peak_run(tmp_path, [0.9, 0.9]) == [0.9]
+
+
+def test_nothing_is_captured_without_a_latest_checkpoint(tmp_path):
+    assert capture_racing_peak(tmp_path, None, 0.5) is False
+    assert not (tmp_path / "greedy_peak.pt").exists()

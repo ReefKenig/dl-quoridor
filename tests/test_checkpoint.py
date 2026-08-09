@@ -4,12 +4,13 @@ Checkpoint Manager Tests
 Run: pytest tests/test_checkpoint.py -v
 """
 
+import json
 import shutil
 import tempfile
 import numpy as np
 import pytest
 
-from src.utils.checkpoint import CheckpointManager
+from src.utils.checkpoint import CheckpointManager, resolve_ship_checkpoint
 from src.mcts.self_play import ReplayBuffer, TrainingSample
 
 
@@ -94,6 +95,92 @@ def test_pruning(tmp_dir):
     remaining = ckpt.list_checkpoints()
     assert len(remaining) == 2
     assert remaining == [4, 5]
+
+
+def _run_dir(tmp_path, files, history=None):
+    for name in files:
+        (tmp_path / name).write_bytes(b"weights")
+    if history is not None:
+        with open(tmp_path / "meta.json", "w") as f:
+            json.dump({"history": history}, f)
+    return tmp_path
+
+
+def test_ship_prefers_the_racing_peak(tmp_path):
+    """greedy_peak.pt outranks an accepted best.pt.
+
+    This is n4_9x9_v9: the gate accepted at iters 20/24/28 while the per-seat
+    greedy rate fell 35% -> 0%, so accepts pointed at the dead model.
+    """
+    run = _run_dir(
+        tmp_path,
+        ["best.pt", "latest.pt", "greedy_peak.pt"],
+        [{"iter": 12, "greedy_best_seat": 0.4, "accepted": False},
+         {"iter": 20, "greedy_best_seat": 0.35, "accepted": True},
+         {"iter": 28, "greedy_best_seat": 0.0, "accepted": True}],
+    )
+    path, label = resolve_ship_checkpoint(run)
+    assert path.endswith("greedy_peak.pt")
+    assert "40% best-seat" in label and "iter 12" in label
+
+
+def test_ship_dates_the_peak_by_first_maximum(tmp_path):
+    """A rate matched twice is dated to the iteration that first reached it."""
+    run = _run_dir(
+        tmp_path,
+        ["greedy_peak.pt"],
+        [{"iter": 4, "greedy_best_seat": 0.5},
+         {"iter": 8, "greedy_best_seat": 0.9},
+         {"iter": 12, "greedy_best_seat": 0.9}],
+    )
+    _, label = resolve_ship_checkpoint(run)
+    assert "iter 8" in label
+
+
+def test_ship_falls_back_to_latest_when_nothing_accepted(tmp_path):
+    """n2_9x9_v9: 56 iterations, zero accepts, so best.pt is the random init."""
+    run = _run_dir(
+        tmp_path,
+        ["best.pt", "latest.pt"],
+        [{"iter": 56, "accepted": False}],
+    )
+    path, label = resolve_ship_checkpoint(run)
+    assert path.endswith("latest.pt")
+    assert "iter 56" in label and "untrained initialization" in label
+
+
+def test_ship_takes_accepted_best_over_latest(tmp_path):
+    run = _run_dir(
+        tmp_path,
+        ["best.pt", "latest.pt"],
+        [{"iter": 10, "accepted": True}, {"iter": 20, "accepted": False}],
+    )
+    path, label = resolve_ship_checkpoint(run)
+    assert path.endswith("best.pt")
+    assert "accepted at iter 10" in label
+
+
+def test_ship_ignores_ship_pt(tmp_path):
+    """ship.pt is written *from* this resolver, so reading it back is circular."""
+    run = _run_dir(tmp_path, ["ship.pt", "latest.pt"], [{"iter": 3}])
+    path, _ = resolve_ship_checkpoint(run)
+    assert path.endswith("latest.pt")
+
+
+def test_ship_reports_an_empty_run(tmp_path):
+    path, reason = resolve_ship_checkpoint(tmp_path)
+    assert path is None
+    assert "greedy_peak.pt" in reason
+
+
+def test_ship_survives_a_missing_or_corrupt_meta(tmp_path):
+    run = _run_dir(tmp_path, ["latest.pt"])
+    path, label = resolve_ship_checkpoint(run)
+    assert path.endswith("latest.pt") and "no history" in label
+
+    (run / "meta.json").write_text("{not json")
+    path, label = resolve_ship_checkpoint(run)
+    assert path.endswith("latest.pt") and "no history" in label
 
 
 def test_resume_training(tmp_dir):

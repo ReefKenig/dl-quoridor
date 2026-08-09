@@ -1,4 +1,3 @@
-import json
 import os
 
 import numpy as np
@@ -8,14 +7,12 @@ from flask_cors import CORS
 
 from src.env.quoridor_env import (
     MOVE_MAP,
-    compute_action_space_size,
     decode_action,
 )
-from src.env.quoridor_env_mp import QuoridorEnvMP
 from src.mcts.mcts import MCTS, MCTSConfig
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig as MCTSConfigMaxN
-from src.model.network_mp import QuoridorModelMP
 from src.utils.config import DIFFICULTY_SETTINGS, DEFAULT_DIFFICULTY
+from src.utils.model_registry import load_variant
 
 torch.set_num_threads(1)
 
@@ -23,30 +20,13 @@ root_dir = os.path.abspath(os.path.join(os.path.dirname(__name__), "."))
 app = Flask(__name__, static_folder=os.path.join(root_dir, "static"))
 CORS(app)
 
-# ── Load model registry ──
-MODELS_PATH = os.path.join(root_dir, "runs", "MODELS.json")
-with open(MODELS_PATH) as f:
-    MODEL_REGISTRY = json.load(f)["models"]
-
 BOARD_SIZE = 5
-ACTION_SIZE = compute_action_space_size(BOARD_SIZE)
 
-# ── Load 2-player model ──
-cfg_2p = MODEL_REGISTRY["2p_vector"]
-# spec_version from the registry, not the default: these checkpoints were trained
-# under tensor spec v1 and read the distance planes on that scale.
-env_2p = QuoridorEnvMP(board_size=BOARD_SIZE,
-                       num_players=2, max_walls_per_player=3,
-                       spec_version=cfg_2p["tensor_spec"])
-model_2p = QuoridorModelMP(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE,
-                           in_channels=cfg_2p["in_channels"],
-                           num_channels=64, num_res_blocks=4,
-                           num_players=cfg_2p["num_players"])
-if os.path.exists(cfg_2p["path"]):
-    model_2p.load(cfg_2p["path"])
-    print(f"[2P] Loaded: {cfg_2p['path']}")
-else:
-    print(f"[2P] WARNING: {cfg_2p['path']} not found")
+# ── Load models ──
+# The registry pairs each checkpoint with the architecture, tensor spec and wall
+# count it was trained under; serving any of those from a different source is how
+# a model ends up reading planes on a scale it never saw.
+env_2p, model_2p, spec_2p = load_variant(BOARD_SIZE, 2)
 
 
 def eval_2p(state):
@@ -62,20 +42,7 @@ def make_mcts_2p(settings):
     return MCTS(config=cfg, evaluate_fn=eval_2p)
 
 
-# ── Load 4-player model ──
-cfg_4p = MODEL_REGISTRY["4p_ship"]
-env_4p = QuoridorEnvMP(board_size=BOARD_SIZE, num_players=4,
-                       max_turns=300, max_walls_per_player=4,
-                       spec_version=cfg_4p["tensor_spec"])
-model_4p = QuoridorModelMP(board_size=BOARD_SIZE, action_space_size=ACTION_SIZE,
-                           in_channels=cfg_4p["in_channels"],
-                           num_channels=64, num_res_blocks=4,
-                           num_players=cfg_4p["num_players"])
-if os.path.exists(cfg_4p["path"]):
-    model_4p.load(cfg_4p["path"])
-    print(f"[4P] Loaded: {cfg_4p['path']}")
-else:
-    print(f"[4P] WARNING: {cfg_4p['path']} not found")
+env_4p, model_4p, spec_4p = load_variant(BOARD_SIZE, 4)
 
 
 def eval_4p(state):

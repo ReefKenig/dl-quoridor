@@ -5,11 +5,11 @@ from typing import Optional
 import numpy as np
 import pygame
 
-from src.env.pathing import SPEC_V1_DIST_SQ
-from src.env.quoridor_env_mp import QuoridorEnvMP, QuoridorStateMP, ACTION_TO_MOVE
+from src.env.quoridor_env import decode_action
+from src.env.quoridor_env_mp import QuoridorEnvMP, QuoridorStateMP
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
-from src.model.network_mp import QuoridorModelMP
 from src.utils.config import DIFFICULTY_SETTINGS, DEFAULT_DIFFICULTY
+from src.utils.model_registry import available_variants, load_variant, variant_key
 
 # Constants
 FPS = 30
@@ -34,19 +34,6 @@ COLORS = {
     "hover_move": (100, 255, 100, 100),
     "hover_wall": (255, 255, 255, 150),
 }
-
-
-def decode_action(action: int, board_size: int):
-    W = board_size - 1
-    v_offset = 12 + W ** 2
-    if action < 12:
-        return "pawn", ACTION_TO_MOVE[action]
-    elif action < v_offset:
-        w = action - 12
-        return "h_wall", (w // W, w % W)
-    else:
-        w = action - v_offset
-        return "v_wall", (w // W, w % W)
 
 
 class GameUI:
@@ -262,38 +249,18 @@ class GameUI:
         sys.exit()
 
 
-def load_ai_and_run(num_players: int = 4, num_simulations: int = 100,
+def load_ai_and_run(board_size: int = 5, num_players: int = 4,
+                    num_simulations: int = 100,
                     temperature: float = 0.3, c_puct: float = 1.41,
                     dirichlet_epsilon: float = 0.25):
-    board_size = 5
-    print(
-        f"Setting up {num_players}-player Quoridor on {board_size}x{board_size} board...")
+    print(f"Setting up {num_players}-player Quoridor on "
+          f"{board_size}x{board_size} board...")
 
-    # checkpoints_mp_n* are the 5x5 POC runs, all trained under tensor spec v1.
-    env = QuoridorEnvMP(board_size=board_size, num_players=num_players,
-                        spec_version=SPEC_V1_DIST_SQ)
-    in_channels = 3 * num_players + 3
-
-    print("Loading model...")
-    model = QuoridorModelMP(
-        board_size=board_size,
-        action_space_size=env.action_space_size,
-        num_channels=64,
-        num_res_blocks=4,
-        in_channels=in_channels,
-        num_players=num_players,
-    )
-
-    # Try to load the best checkpoint for this player count
-    import os
-    ckpt_dir = f"checkpoints_mp_n{num_players}"
-    best_path = os.path.join(ckpt_dir, "best.pt")
-    if os.path.exists(best_path):
-        model.load(best_path)
-        print(f"Loaded model from {best_path}")
-    else:
-        print(
-            f"WARNING: No model found at {best_path}. AI will play randomly.")
+    # The registry owns the checkpoint, the architecture, the tensor spec and
+    # the wall count together — they are only correct as a set.
+    env, model, spec = load_variant(board_size, num_players)
+    print(f"  {spec.max_walls} walls/player, tensor spec v{spec.tensor_spec}, "
+          f"{spec.num_channels}ch/{spec.num_res_blocks} blocks")
 
     def nn_evaluate(state):
         tensor = env.state_to_tensor(state)
@@ -313,6 +280,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Quoridor Human vs AI (2-4 players)")
     parser.add_argument(
+        "--board", "-b",
+        type=int,
+        default=5,
+        choices=[5, 9],
+        help="Board size: 5 for the POC, 9 for full-size Quoridor",
+    )
+    parser.add_argument(
         "--players", "-p",
         type=int,
         default=4,
@@ -328,9 +302,15 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    if variant_key(args.board, args.players) not in available_variants():
+        parser.error(f"no model for {args.board}x{args.board} with "
+                     f"{args.players} players; have "
+                     f"{sorted(available_variants())}")
+
     settings = DIFFICULTY_SETTINGS[args.difficulty]
 
     load_ai_and_run(
+        board_size=args.board,
         num_players=args.players,
         num_simulations=settings["num_simulations"],
         temperature=settings["temperature"],

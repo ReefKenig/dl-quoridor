@@ -109,29 +109,54 @@ def _run_dir(tmp_path, files, history=None):
 def test_ship_prefers_the_racing_peak(tmp_path):
     """greedy_peak.pt outranks an accepted best.pt.
 
-    This is n4_9x9_v9: the gate accepted at iters 20/24/28 while the per-seat
-    greedy rate fell 35% -> 0%, so accepts pointed at the dead model.
+    This is n4_9x9_v9: the gate accepted at iters 20/24/28 while the greedy
+    rate fell 10% -> 0%, so accepts pointed at the dead model.
+
+    The rate is the POOLED win_vs_greedy, because that is what the ratchet in
+    training_mp compares against greedy_peak_rate before writing the file.
+    greedy_best_seat is a different watermark — it drives the racing-decay stop
+    rule and never decides which checkpoint is saved.
     """
     run = _run_dir(
         tmp_path,
         ["best.pt", "latest.pt", "greedy_peak.pt"],
-        [{"iter": 12, "greedy_best_seat": 0.4, "accepted": False},
-         {"iter": 20, "greedy_best_seat": 0.35, "accepted": True},
-         {"iter": 28, "greedy_best_seat": 0.0, "accepted": True}],
+        [{"iter": 12, "win_vs_greedy": 0.4, "accepted": False},
+         {"iter": 20, "win_vs_greedy": 0.35, "accepted": True},
+         {"iter": 28, "win_vs_greedy": 0.0, "accepted": True}],
     )
     path, label = resolve_ship_checkpoint(run)
     assert path.endswith("greedy_peak.pt")
-    assert "40% best-seat" in label and "iter 12" in label
+    assert "40.0% vs greedy" in label and "iter 12" in label
+    assert "outranks best.pt's 2 accepts" in label
 
 
-def test_ship_dates_the_peak_by_first_maximum(tmp_path):
-    """A rate matched twice is dated to the iteration that first reached it."""
+def test_ship_dates_the_peak_by_the_writers_own_stamp(tmp_path):
+    """greedy_peak_saved marks the row the file was actually written from.
+
+    It outranks the max-scan: the scan is only the fallback for runs whose meta
+    predates the stamp, and it cannot see a peak that a later, lower eval would
+    otherwise hide.
+    """
     run = _run_dir(
         tmp_path,
         ["greedy_peak.pt"],
-        [{"iter": 4, "greedy_best_seat": 0.5},
-         {"iter": 8, "greedy_best_seat": 0.9},
-         {"iter": 12, "greedy_best_seat": 0.9}],
+        [{"iter": 4, "win_vs_greedy": 0.5, "greedy_peak_saved": True},
+         {"iter": 8, "win_vs_greedy": 0.9, "greedy_peak_saved": True},
+         {"iter": 12, "win_vs_greedy": 0.7}],
+    )
+    _, label = resolve_ship_checkpoint(run)
+    assert "90.0% vs greedy" in label and "iter 8" in label
+
+
+def test_ship_dates_the_peak_by_first_maximum(tmp_path):
+    """Without a stamp, a rate matched twice dates to the iteration that first
+    reached it — the run stopped saving once the peak stopped being beaten."""
+    run = _run_dir(
+        tmp_path,
+        ["greedy_peak.pt"],
+        [{"iter": 4, "win_vs_greedy": 0.5},
+         {"iter": 8, "win_vs_greedy": 0.9},
+         {"iter": 12, "win_vs_greedy": 0.9}],
     )
     _, label = resolve_ship_checkpoint(run)
     assert "iter 8" in label

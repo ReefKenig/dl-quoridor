@@ -101,7 +101,7 @@ def resolve_ship_checkpoint(run_dir):
         return str(latest), f"latest.pt (iter {last_iter}) — {why}"
     if best.exists():
         return str(best), "best.pt (no latest.pt found)"
-    return None, f"no best.pt or latest.pt in {run_dir}"
+    return None, f"no greedy_peak.pt, best.pt or latest.pt in {run_dir}"
 
 
 class CheckpointManager:

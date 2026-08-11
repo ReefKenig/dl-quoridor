@@ -94,3 +94,102 @@ def test_resume_after_fallback_is_stable(ckpt_dir):
 
     assert loaded is True
     assert best.weights == "learner-A"
+
+
+# --- gate liveness (cfg.gate_arm_on_greedy) -----------------------------------
+# The second instance of "the gate cannot fire" in this project, by a different
+# route: 128 of 131 legal opening actions at 9x9 are walls, so an untrained
+# champion spams walls and never advances. 134-151 of 160 gate games then ran
+# past max_game_moves, decided stayed under the 25% floor, and the gate could not
+# accept — which kept the champion at the random init. v7 accepted 0 times in 53
+# iterations while win_vs_best read as high as 1.000.
+
+class _Cfg:
+    def __init__(self, **kw):
+        self.gate_arm_on_greedy = True
+        self.gate_arm_greedy_min = 0.0
+        self.__dict__.update(kw)
+
+
+def _armed(cfg, history):
+    """The arming expression from training_loop_mp."""
+    return not cfg.gate_arm_on_greedy or any(
+        (r.get("win_vs_greedy") or 0.0) > cfg.gate_arm_greedy_min for r in history)
+
+
+def test_a_fresh_run_starts_disarmed():
+    assert not _armed(_Cfg(), [])
+
+
+def test_the_gate_stays_held_while_the_learner_never_beats_greedy():
+    # v7's shape: many evals, every one at zero.
+    assert not _armed(_Cfg(), [{"win_vs_greedy": 0.0} for _ in range(13)])
+
+
+def test_a_single_win_arms_the_gate():
+    assert _armed(_Cfg(), [{"win_vs_greedy": 0.0}, {"win_vs_greedy": 0.05}])
+
+
+def test_arming_survives_a_resume_and_is_not_re_disarmed():
+    """Recovered from history rather than persisted separately: a later zero
+    must not put the gate back to sleep and re-seed a champion."""
+    history = [{"win_vs_greedy": 0.5}, {"win_vs_greedy": 0.0}]
+    assert _armed(_Cfg(), history)
+
+
+def test_rows_without_a_greedy_eval_do_not_arm():
+    # eval_every skips greedy on most iterations; a missing key is not a win.
+    assert not _armed(_Cfg(), [{"win_vs_best": 1.0}, {"win_vs_greedy": None}])
+
+
+def test_the_bar_is_configurable():
+    history = [{"win_vs_greedy": 0.1}]
+    assert _armed(_Cfg(gate_arm_greedy_min=0.05), history)
+    assert not _armed(_Cfg(gate_arm_greedy_min=0.25), history)
+
+
+def test_disabling_the_feature_keeps_the_old_always_armed_behaviour():
+    assert _armed(_Cfg(gate_arm_on_greedy=False), [])
+
+
+# --- ship resolution (resolve_ship_checkpoint) ---------------------------------
+# v8 shipped its iteration-20 model (60% vs greedy) while iteration 12's 81% was
+# never written anywhere; greedy_peak.pt now holds the strongest greedy eval and
+# outranks latest.pt whenever the gate never accepted.
+
+import json
+
+from src.utils.checkpoint import resolve_ship_checkpoint
+
+
+def _write_run(ckpt_dir, history, files):
+    with open(os.path.join(ckpt_dir, "meta.json"), "w") as f:
+        json.dump({"history": history}, f)
+    for name in files:
+        FakeModel(name).save(os.path.join(ckpt_dir, name))
+
+
+def test_an_accepted_best_still_outranks_the_greedy_peak(ckpt_dir):
+    _write_run(ckpt_dir,
+               [{"iter": 4, "accepted": True, "win_vs_greedy": 0.4}],
+               ["best.pt", "latest.pt", "greedy_peak.pt"])
+    path, label = resolve_ship_checkpoint(ckpt_dir)
+    assert path.endswith("best.pt") and "accepted at iter 4" in label
+
+
+def test_with_no_accepts_the_greedy_peak_outranks_latest(ckpt_dir):
+    _write_run(ckpt_dir,
+               [{"iter": 12, "accepted": False, "win_vs_greedy": 0.812},
+                {"iter": 20, "accepted": False, "win_vs_greedy": 0.60}],
+               ["best.pt", "latest.pt", "greedy_peak.pt"])
+    path, label = resolve_ship_checkpoint(ckpt_dir)
+    assert path.endswith("greedy_peak.pt")
+    assert "81.2%" in label and "iter 12" in label
+
+
+def test_without_a_peak_file_latest_remains_the_fallback(ckpt_dir):
+    _write_run(ckpt_dir,
+               [{"iter": 20, "accepted": False, "win_vs_greedy": 0.6}],
+               ["best.pt", "latest.pt"])
+    path, label = resolve_ship_checkpoint(ckpt_dir)
+    assert path.endswith("latest.pt") and "iter 20" in label

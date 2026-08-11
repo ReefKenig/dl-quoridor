@@ -32,6 +32,47 @@ class MCTSConfig:
     # batching entirely (the sequential path, byte-identical to the original).
     leaf_batch: int = 1
     virtual_loss: float = 1.0
+    # Expand only pawn moves + this many walls (those cutting a shortest path).
+    # 0 = expand every legal action. Narrows SEARCH, never the rules: 131 legal
+    # actions at the 9x9 opening leave 4.6 visits each at 600 sims, so the visit
+    # histogram cannot move away from the prior it was seeded with.
+    wall_candidates: int = 0
+
+
+# Search settings live under two spellings: TrainingConfigMP attributes
+# (mcts_*) and the worker config_dict keys the engines are handed. Every field
+# a run can set has to be forwarded at EVERY construction site, and a field
+# that is missed reaches no search at all — which is how dirichlet_alpha and
+# c_puct sat inert in configs/config_9x9.json through v7.
+_FROM_RUN_CONFIG = (
+    ("num_simulations", "mcts_simulations"),
+    ("c_puct", "mcts_c_puct"),
+    ("dirichlet_alpha", "mcts_dirichlet_alpha"),
+    ("dirichlet_epsilon", "mcts_dirichlet_epsilon"),
+    ("wall_candidates", "mcts_wall_candidates"),
+)
+# leaf_batch/virtual_loss are deliberately NOT derived: they select the search
+# ENGINE, and a caller's evaluate_fn has to match. training_mp._mcts passes a
+# single-state lambda, so inheriting leaf_batch=16 from the run config would put
+# it on the leaf-parallel path with a function that cannot serve batches. The
+# engines that want batching pass it explicitly.
+
+
+def mcts_config_for(run_cfg, **overrides):
+    """Build the max-n MCTSConfig a run's settings imply.
+
+    `run_cfg` is a TrainingConfigMP or a worker config_dict. Anything absent
+    keeps the MCTSConfig default; `overrides` win (eval passes
+    dirichlet_epsilon=0.0, and max_rollout_depth differs per caller).
+    """
+    get = run_cfg.get if isinstance(run_cfg, dict) else lambda k, d=None: getattr(run_cfg, k, d)
+    kwargs = {}
+    for field, source in _FROM_RUN_CONFIG:
+        value = get(source)
+        if value is not None:
+            kwargs[field] = value
+    kwargs.update({k: v for k, v in overrides.items() if v is not None})
+    return MCTSConfig(**kwargs)
 
 
 class Node:
@@ -74,6 +115,18 @@ class MCTSMaxN:
         self.config = config
         self.evaluate_fn = evaluate_fn
         self.num_players = num_players
+        self.reset_search_stats()
+
+    def reset_search_stats(self):
+        self._expanded_actions = 0
+        self._expansions = 0
+        self._sims = 0
+
+    def search_stats(self):
+        """Running counters since the last reset — how wide the search actually
+        branched (expanded_actions/expansions) and how many sims paid for it."""
+        return {"expanded_actions": self._expanded_actions,
+                "expansions": self._expansions, "sims": self._sims}
 
     def search(self, env, state, temperature=None):
         root = Node(num_players=self.num_players)
@@ -144,10 +197,22 @@ class MCTSMaxN:
         return value
 
     def _expand_valids(self, node, env, state):
-        """Set node.current_player + valid_actions; return the valid action list."""
+        """Set node.current_player + valid_actions; return the actions to expand.
+
+        The single choke point for every engine — sequential, root-batched,
+        leaf-parallel descend and vectorized all come through here, so the
+        candidate restriction applies everywhere from one place.
+        """
         node.current_player = env.get_current_player(state)
-        valid_actions = env.get_valid_actions(state)
+        k = self.config.wall_candidates
+        if k > 0 and hasattr(env, "get_search_actions"):
+            valid_actions = env.get_search_actions(state, k)
+        else:
+            valid_actions = env.get_valid_actions(state)
         node.valid_actions = valid_actions
+        # Two int adds per expansion: the only place search width is observable.
+        self._expanded_actions += len(valid_actions)
+        self._expansions += 1
         return valid_actions
 
     def _set_children_from_policy(self, node, env, valid_actions, policy, value):
@@ -287,6 +352,8 @@ class MCTSMaxN:
         return np.zeros(N)
 
     def _backpropagate(self, node, value):
+        # One backprop == one completed simulation, on every engine.
+        self._sims += 1
         # add the SAME vector to every ancestor; no flip
         while node is not None:
             node.visit_count += 1

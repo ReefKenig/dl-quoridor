@@ -12,6 +12,7 @@ survive that. `lr_at(cfg, it)` gives the same answer on a fresh run and on a
 run resumed at iteration `it`, with nothing extra to persist.
 """
 import math
+from collections import namedtuple
 
 SCHEDULES = ("constant", "cosine")
 
@@ -54,14 +55,91 @@ def wall_budget_at(it, mask_iters, ramp_hold, max_walls):
     return min(max_walls, 1 + (it - mask_iters) // ramp_hold)
 
 
-def game_is_masked(game_index, fraction):
-    """Whether game `game_index` of an iteration plays wall-free.
+def takes_share(index, fraction):
+    """Whether item `index` falls in `fraction` of the stream.
 
-    Spread evenly across the iteration (Bresenham), so any prefix of the games is
-    already near the target mix and a short/interrupted iteration stays balanced.
+    Spread evenly (Bresenham), so any prefix is already near the target share
+    and a short or interrupted iteration stays balanced.
     """
     if fraction <= 0:
         return False
     if fraction >= 1:
         return True
-    return int((game_index + 1) * fraction) > int(game_index * fraction)
+    return int((index + 1) * fraction) > int(index * fraction)
+
+
+def game_is_masked(game_index, fraction):
+    """Whether game `game_index` of an iteration plays wall-free."""
+    return takes_share(game_index, fraction)
+
+
+ANCHORED_OPPONENTS = ("greedy", "past")
+
+GamePlan = namedtuple("GamePlan", "opponent model_seat walls_masked")
+
+
+def iteration_plans(total_games, num_players, greedy_share, past_share=0.0,
+                    mask_fraction=0.0, seat0_share=0.0):
+    """(opponent, model_seat, walls_masked) for every game of one iteration.
+
+    Decided together because deciding them separately made them the same
+    predicate: `takes_share(g, 0.5)` is "g is odd", and so was a seat of
+    `g % 2`. Same substream trick `opponent_for_game` uses below -- the mask
+    counts a game's position within its own opponent class, and the seat
+    rotates within its (anchored, walls_masked) cell, so every cell fills.
+
+    seat0_share pins that fraction of each cell's anchored games to seat 0,
+    with the rest rotating over seats 1..N-1. At N=4 seat 0 is the only seat
+    a racer can win, and its games are the shortest, so uniform rotation
+    leaves the one seat that matters with the fewest samples. 0 = uniform.
+
+    Deterministic in the game index alone: workers claim games off a shared
+    counter, so nothing may depend on which worker ran a game, or in what order.
+    """
+    plans = []
+    in_class = {True: 0, False: 0}      # anchored -> games placed so far
+    in_cell = {True: 0, False: 0}       # walls_masked -> anchored games so far
+    others = {True: 0, False: 0}        # rotation over seats 1..N-1
+    for g in range(total_games):
+        opponent = opponent_for_game(g, greedy_share, past_share)
+        anchored = opponent in ANCHORED_OPPONENTS
+        walls_masked = takes_share(in_class[anchored], mask_fraction)
+        in_class[anchored] += 1
+        seat = None
+        if anchored:
+            idx = in_cell[walls_masked]
+            in_cell[walls_masked] += 1
+            if seat0_share <= 0 or num_players < 2:
+                seat = idx % num_players
+            elif takes_share(idx, seat0_share):
+                seat = 0
+            else:
+                seat = 1 + others[walls_masked] % (num_players - 1)
+                others[walls_masked] += 1
+        plans.append(GamePlan(opponent, seat, walls_masked))
+    return plans
+
+
+def opponent_for_game(game_index, greedy_share, past_share=0.0):
+    """Which opponent game `game_index` trains against: 'greedy', 'past', 'self'.
+
+    Anchored games put the model in one seat against a scripted racer, which is
+    the distribution the greedy baseline scores and the one pure self-play
+    drifts away from — at N=4 it converges on jump-camping, which wins among
+    four identical agents and loses to three racers. 'past' plays a frozen
+    earlier champion, which is what keeps a self-play run from cycling.
+
+    past is drawn from the games greedy did NOT take, at the rate that share
+    implies over the remainder. Testing the two schedules independently on the
+    same index does not work: with equal shares they fire on exactly the same
+    games and past is never chosen at all.
+    """
+    if takes_share(game_index, greedy_share):
+        return "greedy"
+    if greedy_share >= 1.0 or past_share <= 0:
+        return "self"
+    # Position within the non-greedy substream, and the rate over it.
+    remaining_index = game_index - int(game_index * greedy_share)
+    return ("past" if takes_share(remaining_index,
+                                  past_share / (1.0 - greedy_share))
+            else "self")

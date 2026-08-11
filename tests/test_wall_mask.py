@@ -177,7 +177,7 @@ def test_the_worker_sets_the_budget_per_game():
     import inspect
 
     src = inspect.getsource(parallel_self_play_mp)
-    assert "game_is_masked(game_index, mask_fraction)" in src
+    assert "plan.walls_masked" in src
     assert "env.wall_budget = 0" in src
 
 

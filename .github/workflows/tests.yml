@@ -1,0 +1,45 @@
+name: tests
+
+# Every review on this repo so far has had to quote local test output, because
+# `gh pr checks` reported "no checks reported" on every branch including dev.
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+# No cancel-in-progress: a superseded run reports as "failure" in `gh pr checks`,
+# which is indistinguishable from a real one. The suite is short enough that
+# letting both finish is cheaper than the confusion.
+concurrency:
+  group: tests-${{ github.ref }}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # torch first, from the CPU wheel index — requirements-test.txt omits it
+      # so nothing re-resolves it against PyPI and drags in the CUDA build.
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-test.txt
+
+      - name: Run the suite
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          # Caps torch intra-op threads: the runner has 2 cores and the tests
+          # fan out worker processes, so per-process thread pools oversubscribe.
+          OMP_NUM_THREADS: "1"
+        # -n auto: 2 workers on ubuntu-latest, which took the suite from
+        # 15m26s to ~4m locally at the same width. --timeout so a hang reports
+        # the test rather than leaving pytest orphaned with no output.
+        run: pytest tests/ -q -n auto --timeout=600 --timeout-method=thread --durations=10

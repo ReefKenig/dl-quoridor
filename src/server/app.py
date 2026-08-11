@@ -20,48 +20,53 @@ root_dir = os.path.abspath(os.path.join(os.path.dirname(__name__), "."))
 app = Flask(__name__, static_folder=os.path.join(root_dir, "static"))
 CORS(app)
 
-BOARD_SIZE = 5
-
 # ── Load models ──
-# The registry pairs each checkpoint with the architecture, tensor spec and wall
-# count it was trained under; serving any of those from a different source is how
-# a model ends up reading planes on a scale it never saw.
-env_2p, model_2p, spec_2p = load_variant(BOARD_SIZE, 2)
+# The registry pairs each checkpoint with architecture + tensor spec + wall
+# count it was trained under; serving any of those from a different source is
+# how a model ends up reading planes on a scale it never saw.
+SUPPORTED_VARIANTS = [(5, 2), (5, 4), (9, 2), (9, 4)]
 
 
-def eval_2p(state):
-    tensor = env_2p.state_to_tensor(state)
-    policy, value_vec = model_2p.predict(tensor)
-    return policy, float(value_vec[state.current_player])
+def _build_loaded_variant(board_size, num_players):
+    env, model, spec = load_variant(board_size, num_players)
+
+    if num_players == 2:
+        def evaluate(state):
+            tensor = env.state_to_tensor(state)
+            policy, value_vec = model.predict(tensor)
+            return policy, float(value_vec[state.current_player])
+
+        def make_mcts(settings):
+            cfg = MCTSConfig(num_simulations=settings["num_simulations"],
+                             c_puct=settings["c_puct"],
+                             dirichlet_epsilon=settings["dirichlet_epsilon"])
+            return MCTS(config=cfg, evaluate_fn=evaluate)
+    else:
+        def evaluate(state):
+            tensor = env.state_to_tensor(state)
+            return model.predict(tensor)
+
+        def make_mcts(settings):
+            cfg = MCTSConfigMaxN(num_simulations=settings["num_simulations"],
+                                 c_puct=settings["c_puct"],
+                                 dirichlet_epsilon=settings["dirichlet_epsilon"],
+                                 wall_candidates=settings.get("wall_candidates", 16))
+            return MCTSMaxN(config=cfg, evaluate_fn=evaluate, num_players=num_players)
+
+    return {"env": env, "model": model, "spec": spec, "make_mcts": make_mcts}
 
 
-def make_mcts_2p(settings):
-    cfg = MCTSConfig(num_simulations=settings["num_simulations"],
-                     c_puct=settings["c_puct"],
-                     dirichlet_epsilon=settings["dirichlet_epsilon"])
-    return MCTS(config=cfg, evaluate_fn=eval_2p)
-
-
-env_4p, model_4p, spec_4p = load_variant(BOARD_SIZE, 4)
-
-
-def eval_4p(state):
-    tensor = env_4p.state_to_tensor(state)
-    return model_4p.predict(tensor)
-
-
-def make_mcts_4p(settings):
-    cfg = MCTSConfigMaxN(num_simulations=settings["num_simulations"],
-                         c_puct=settings["c_puct"],
-                         dirichlet_epsilon=settings["dirichlet_epsilon"])
-    return MCTSMaxN(config=cfg, evaluate_fn=eval_4p, num_players=4)
+AGENTS = {
+    key: _build_loaded_variant(*key)
+    for key in SUPPORTED_VARIANTS
+}
 
 
 # ── Game state ──
 current_game_state = None
 current_num_players = 2
-current_env = env_2p
-current_mcts = make_mcts_2p(DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY])
+current_env = AGENTS[(5, 2)]["env"]
+current_mcts = AGENTS[(5, 2)]["make_mcts"](DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY])
 current_temperature = DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY]["temperature"]
 
 
@@ -89,14 +94,19 @@ def reset_game(board_size):
     settings = DIFFICULTY_SETTINGS[difficulty]
     current_temperature = settings["temperature"]
 
-    if num_players == 4:
-        current_num_players = 4
-        current_env = env_4p
-        current_mcts = make_mcts_4p(settings)
-    else:
-        current_num_players = 2
-        current_env = env_2p
-        current_mcts = make_mcts_2p(settings)
+    try:
+        bs = int(str(board_size).lower().split("x")[0])
+    except (ValueError, IndexError):
+        bs = 5
+
+    current_num_players = 4 if num_players == 4 else 2
+    variant_key = (bs, current_num_players)
+    if variant_key not in AGENTS:
+        variant_key = (5, current_num_players)
+
+    agent = AGENTS[variant_key]
+    current_env = agent["env"]
+    current_mcts = agent["make_mcts"](settings)
 
     current_game_state = current_env.reset()
     return jsonify(_extract_positions(current_env, current_game_state))
@@ -232,4 +242,4 @@ def _extract_positions(env, state):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

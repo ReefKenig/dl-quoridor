@@ -18,17 +18,20 @@ from dataclasses import dataclass
 import numpy as np
 
 from src.env.pathing import CURRENT_SPEC
-from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig
+from src.env.quoridor_env_mp import NUM_MOVE_ACTIONS
+from src.mcts.mcts_maxn import MCTSMaxN, mcts_config_for
 from src.mcts.self_play_mp import play_one_game
-from src.utils.schedule import lr_at, wall_budget_at, game_is_masked
+from src.utils.schedule import (ANCHORED_OPPONENTS, iteration_plans, lr_at,
+                                wall_budget_at)
 from src.mcts.batched_inference_mp import DEFAULT_BATCH_WAIT_MS
 from src.mcts.parallel_self_play_mp import generate_parallel_self_play_mp
 from src.mcts.vectorized_self_play_mp import generate_vectorized_self_play_mp
 from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
                                    evaluate_against_random_mp, greedy_agent,
-                                   mcts_agent_mp)
+                                   mcts_agent_mp, minimax_agent)
 from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
                                        evaluate_against_greedy_parallel_mp,
+                                       evaluate_against_minimax_parallel_mp,
                                        evaluate_against_random_parallel_mp)
 from src.utils.config import read_frozen_config
 from src.utils.logger import make_progress_logger
@@ -75,6 +78,15 @@ class TrainingConfigMP:
     # hit 100% vs random at iter 5 and stayed there). 0 disables it.
     eval_greedy_games: int = 0
     accept_margin: float = 0.05          # accept if win_rate > fair_share + margin
+    # Hold the gate until the learner clears an absolute bar, then seed the
+    # champion from it. An untrained 9x9 net is a wall-spammer that never
+    # reaches its goal, so gate games cannot finish against it.
+    gate_arm_on_greedy: bool = False
+    gate_arm_greedy_min: float = 0.0     # arm once win_vs_greedy exceeds this
+    # Move cap for the vs-best eval only. Two trained wall-capable models stall
+    # each other far past the self-play cap (v8: 32-38 of 40 gate games timed
+    # out, so the decided floor was unreachable at any strength). 0 = max_game_moves.
+    gate_max_game_moves: int = 0
     # "constant" keeps existing scripts unchanged; 9x9 opts into cosine.
     lr_schedule: str = "constant"
     lr_final_frac: float = 0.1           # cosine end point, as a fraction of base_lr
@@ -90,6 +102,10 @@ class TrainingConfigMP:
     discount_unit: str = "round"
     explore_moves: int = 15
     mcts_dirichlet_epsilon: float = 0.25
+    # Defaults match MCTSConfig, which is what every run through v7 actually
+    # used: neither reached the search before, so the config values were inert.
+    mcts_dirichlet_alpha: float = 0.3
+    mcts_c_puct: float = 1.41
     # --- self-play engine selector ---
     # "auto" (default) => derive from parallel_self_play (back-compat: parallel if
     # True else sequential). Explicit values override:
@@ -110,6 +126,10 @@ class TrainingConfigMP:
     # diversify the concurrent tree walks. leaf_batch=1 keeps the one-leaf path.
     leaf_batch: int = 1
     virtual_loss: float = 1.0
+    # Expand only pawn moves + this many path-cutting walls. 0 = every legal
+    # action (4.6 visits/action at the 9x9 opening, i.e. search cannot move away
+    # from the prior). Applies to self-play, eval and the UI alike.
+    mcts_wall_candidates: int = 0
     # GPU-batched parallel evaluation (candidate/champion served by one batcher).
     # Reuses num_workers / inference_batch_size. Opt-in; sequential eval otherwise.
     parallel_eval: bool = False
@@ -154,22 +174,138 @@ class TrainingConfigMP:
     # Iterations before that floor arms. Defaults to the masked phase, but a
     # mixed curriculum has no phase to end, so it needs its own grace window.
     greedy_min_seat_after: int = 0
+    # Held-out baseline. greedy becomes a training opponent once the pool
+    # anchors on it, so it stops measuring generalisation; minimax never trains
+    # and it places walls. 0 games = off.
+    eval_minimax_games: int = 0
+    minimax_depth: int = 2
+    minimax_wall_candidates: int = 16
+    # Self-play opponent pool. Shares of each iteration's games; the remainder
+    # after past/greedy is played against the current model, i.e. plain
+    # self-play. A single fixed opponent overfits and pure self-play at N=4
+    # converges on a jump-camping equilibrium the evaluation never rewards.
+    opponent_past_share: float = 0.0
+    opponent_greedy_share: float = 0.0
+    # Target share of each TRAINING BATCH drawn from anchored games. The shares
+    # above govern how many games are produced; this governs how much gradient
+    # they get, and the two diverge by ~9x at N=2 and ~20x at N=4. 0 = uniform,
+    # which let 35% of games become ~10% of the gradient — enough to acquire
+    # racing at iteration 8 and not enough to still have it at iteration 12.
+    anchored_sample_share: float = 0.0
+    # Fraction of anchored games pinned to seat 0 (rest rotate over 1..N-1).
+    # At N=4 seat 0 is the only seat a racer can win and its games are the
+    # shortest, so uniform rotation starves the one seat that matters.
+    anchored_seat0_share: float = 0.0
+    # Warm-start weights for a FRESH run (ignored on resume). Lets supervised
+    # pretraining set the opening prior instead of hoping self-play finds it.
+    init_checkpoint: str = ""
+    # Champion snapshots kept for the past-opponent share.
+    champion_pool_size: int = 5
+
+    def __post_init__(self):
+        if self.opponent_past_share and not self.parallel_self_play:
+            raise NotImplementedError(
+                "opponent_past_share needs the parallel engine — the champion "
+                "is served as model_id 1 on the shared inference batcher.")
+        total = self.opponent_past_share + self.opponent_greedy_share
+        if total > 1.0:
+            raise ValueError(
+                f"opponent shares sum to {total:.2f}; they are fractions of "
+                f"each iteration's games and cannot exceed 1.0.")
 
 
 BUFFER_FILE = "replay_buffer.npz"
 
 
+SELF_SOURCE = "self"
+
+# Fixed width so the persisted array and the in-memory cache agree; source names
+# are short labels ("self", "greedy", "past"), not free text.
+SOURCE_DTYPE = "U16"
+
+
 class ReplayBufferMP:
+    """Replay buffer that can draw a batch at a TARGET source mix.
+
+    Uniform sampling makes the gradient share a consequence of how many samples
+    each opponent happened to produce, which is not what the config asks for: an
+    anchored game yields only the model's own plies and ends sooner, so 35% of
+    games came out as ~10% of the gradient and the anchored signal was too weak
+    to hold. Sampling to a target share decouples production from consumption.
+
+    NOT thread-safe, and deliberately so: `add`, `sample_batch`, `save` and
+    `load` all assume a single caller. The buffer lives in the main training
+    process only — self-play workers are separate processes that ship samples
+    back over a queue, and `training_loop_mp` adds and samples sequentially. The
+    two deques and the source cache are mutated without a lock on that basis, so
+    concurrent access would need locking added here first.
+    """
+
     def __init__(self, max_size=50_000):
         self.buffer = deque(maxlen=max_size)
+        # Parallel deque: same maxlen, appended and evicted in lockstep, so a
+        # source always describes the sample at the same index.
+        self.sources = deque(maxlen=max_size)
+        # Vectorized view of `sources`, rebuilt lazily. Sampling runs
+        # train_steps_per_iter times against a buffer that only changes once per
+        # iteration, so the O(N) build is paid once rather than per batch.
+        self._sources_cache = None
 
-    def add(self, samples):
-        # each sample: (state_hwc, policy, value_vec)
+    def add(self, samples, sources=None):
+        samples = list(samples)
         self.buffer.extend(samples)
+        if sources is None:
+            self.sources.extend([SELF_SOURCE] * len(samples))
+        else:
+            sources = list(sources)
+            if len(sources) != len(samples):
+                raise ValueError(
+                    f"{len(sources)} sources for {len(samples)} samples — the "
+                    f"two deques must stay index-aligned.")
+            self.sources.extend(sources)
+        self._sources_cache = None      # eviction can shift every index
 
-    def sample_batch(self, batch_size):
+    def sources_array(self):
+        """`sources` as a numpy array, cached until the next `add`."""
+        if self._sources_cache is None:
+            self._sources_cache = np.array(list(self.sources), dtype=SOURCE_DTYPE)
+        return self._sources_cache
+
+    def indices_by_source(self, source):
+        return np.flatnonzero(self.sources_array() == source)
+
+    def sample_batch(self, batch_size, source=None, source_share=0.0):
+        """A batch, optionally drawing `source_share` of it from `source`.
+
+        Falls back to whatever is available rather than failing: early
+        iterations may hold fewer anchored samples than the target asks for.
+        """
         n = min(batch_size, len(self.buffer))
-        idx = np.random.choice(len(self.buffer), n, replace=False)
+        if source and source_share > 0:
+            wanted = int(round(n * min(source_share, 1.0)))
+            is_source = self.sources_array() == source
+            pool = np.flatnonzero(is_source)
+            rest = np.flatnonzero(~is_source)
+            take = min(wanted, len(pool))
+            chosen = (np.random.choice(pool, take, replace=False) if take
+                      else np.empty(0, dtype=int))
+            need = n - len(chosen)
+            if need > 0:
+                if len(rest) >= need:
+                    extra = np.random.choice(rest, need, replace=False)
+                else:                       # not enough of the other source yet
+                    spare_mask = np.ones(len(self.buffer), dtype=bool)
+                    spare_mask[chosen] = False
+                    spare = np.flatnonzero(spare_mask)
+                    extra = np.random.choice(
+                        spare, min(need, len(spare)), replace=False)
+                chosen = np.concatenate([chosen, extra])
+            idx = chosen.astype(int)
+        else:
+            idx = np.random.choice(len(self.buffer), n, replace=False)
+        # The source-mixed path appends its two draws in blocks, so without this
+        # every batch would be ordered source-first.
+        np.random.shuffle(idx)
         b = [self.buffer[i] for i in idx]
         S = np.array([x[0] for x in b], np.float32)
         P = np.array([x[1] for x in b], np.float32)
@@ -187,8 +323,9 @@ class ReplayBufferMP:
         S = np.array([x[0] for x in self.buffer], np.float32)
         P = np.array([x[1] for x in self.buffer], np.float32)
         V = np.array([x[2] for x in self.buffer], np.float32)
+        src = self.sources_array()
         with open(tmp, "wb") as f:
-            np.savez(f, S=S, P=P, V=V)
+            np.savez(f, S=S, P=P, V=V, src=src)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
@@ -203,14 +340,25 @@ class ReplayBufferMP:
         try:
             with np.load(path) as data:
                 S, P, V = data["S"], data["P"], data["V"]
+                # Buffers written before source tagging have no "src"; treating
+                # them as self-play is what they were.
+                src = data["src"] if "src" in data else None
         except (OSError, ValueError, KeyError) as exc:
             log(f"WARNING: could not read {path} ({exc}) — starting with an "
                 f"empty buffer, as if it had not been persisted.")
             return 0
+        # A truncated src would silently shift every label onto the wrong sample
+        # and quietly mis-weight the source mix for the rest of the run.
+        if src is not None and len(src) != len(S):
+            log(f"WARNING: {path} holds {len(src)} source labels for {len(S)} "
+                f"samples — dropping the labels and treating the buffer as "
+                f"self-play rather than mislabelling it.")
+            src = None
         # .copy() because iterating a stacked array yields views: one surviving
         # view keeps the entire ~500 MB base alive. maxlen trims the oldest if
         # the run resumes at a smaller buffer size.
-        self.add((s.copy(), p.copy(), v.copy()) for s, p, v in zip(S, P, V))
+        self.add([(s.copy(), p.copy(), v.copy()) for s, p, v in zip(S, P, V)],
+                 sources=(list(src) if src is not None else None))
         return len(self.buffer)
 
 
@@ -220,9 +368,8 @@ def _mcts(model, env, cfg, sims=None, dirichlet_epsilon=None):
     eps = (dirichlet_epsilon if dirichlet_epsilon is not None
            else getattr(cfg, 'mcts_dirichlet_epsilon', 0.25))
     return MCTSMaxN(
-        config=MCTSConfig(num_simulations=sims or cfg.mcts_simulations,
-                          dirichlet_epsilon=eps,
-                          max_rollout_depth=cfg.max_game_moves),
+        config=mcts_config_for(cfg, num_simulations=sims, dirichlet_epsilon=eps,
+                               max_rollout_depth=cfg.max_game_moves),
         evaluate_fn=lambda st: model.predict(env.state_to_tensor(st)),
         num_players=cfg.num_players,
     )
@@ -239,6 +386,50 @@ def drop_is_significant(peak, now, n_per_seat, z_min):
     pooled = (peak + now) / 2
     se = math.sqrt(2 * pooled * (1 - pooled) / n_per_seat)
     return se == 0 or (peak - now) >= z_min * se
+
+
+def sample_diagnostics(samples, num_players, model=None, max_states=512):
+    """What the iteration actually trained on, and how well the value head knows it.
+
+    Channels N and N+1 are the wall planes (see build_tensor_mp), so a position
+    is "walled" iff either is non-zero. Splitting value error that way measures
+    the coverage gap directly: a masked phase leaves the head with no walled
+    states, and exploration then drives self-play straight into them.
+    """
+    if not samples:
+        return {}
+    wall_ch = slice(num_players, num_players + 2)
+    walled, wall_counts, policy_wall = [], [], []
+    for tensor, policy, _v in samples:
+        planes = tensor[:, :, wall_ch]
+        n_walls = int(np.count_nonzero(planes))
+        wall_counts.append(n_walls)
+        walled.append(n_walls > 0)
+        policy_wall.append(float(policy[NUM_MOVE_ACTIONS:].sum()))
+    out = {
+        # The 0.00024 -> 0.245 quantity from the curriculum analysis, but on the
+        # POLICY TARGET rather than the prior: this is what training consumes.
+        "policy_wall_mass": float(np.mean(policy_wall)),
+        "walled_state_share": float(np.mean(walled)),
+        # Non-zero wall-plane CELLS, not walls: a wall spans ~2 cells, so halve
+        # it to read walls. Sample-weighted, so long timeout games dominate.
+        "walls_on_board_mean": float(np.mean(wall_counts)),
+    }
+    if model is None:
+        return out
+    idx = np.random.choice(len(samples), min(max_states, len(samples)),
+                           replace=False)
+    err_walled, err_free = [], []
+    for i in idx:
+        tensor, _p, target = samples[int(i)]
+        _policy, value = model.predict(tensor)
+        err = float(np.mean(np.abs(np.asarray(value) - np.asarray(target))))
+        (err_walled if walled[int(i)] else err_free).append(err)
+    if err_walled:
+        out["value_mae_walled"] = float(np.mean(err_walled))
+    if err_free:
+        out["value_mae_wallfree"] = float(np.mean(err_free))
+    return out
 
 
 def stalled_below_floor(best_seat, floor, below):
@@ -468,6 +659,75 @@ def freeze_config(cfg, checkpoint_dir, log=print):
     return path
 
 
+CHAMPION_DIR = "champions"
+
+
+def snapshot_champion(best, checkpoint_dir, iteration, pool_size):
+    """Save this champion and drop the oldest beyond `pool_size`. Returns its path."""
+    pool_dir = os.path.join(checkpoint_dir, CHAMPION_DIR)
+    os.makedirs(pool_dir, exist_ok=True)
+    path = os.path.join(pool_dir, f"champion_iter{iteration:04d}.pt")
+    best.save(path)
+    kept = sorted(f for f in os.listdir(pool_dir) if f.endswith(".pt"))
+    for stale in kept[:max(0, len(kept) - pool_size)]:
+        os.remove(os.path.join(pool_dir, stale))
+    return path
+
+
+def champion_pool_paths(checkpoint_dir):
+    """Snapshot paths currently on disk, oldest first. Survives a resume."""
+    pool_dir = os.path.join(checkpoint_dir, CHAMPION_DIR)
+    if not os.path.isdir(pool_dir):
+        return []
+    return [os.path.join(pool_dir, f)
+            for f in sorted(os.listdir(pool_dir)) if f.endswith(".pt")]
+
+
+def load_past_champion(past_model, path, env):
+    """Load a pooled champion and prove it can serve a forward pass.
+
+    The past opponent rides the shared inference batcher as a second model. A
+    checkpoint that loads but cannot predict (wrong player count, stale tensor
+    spec) would otherwise surface an hour later, mid-iteration.
+    """
+    try:
+        past_model.load(path)
+        past_model.predict(env.state_to_tensor(env.reset()))
+    except Exception as exc:
+        raise RuntimeError(
+            f"past-opponent champion {path} failed to load or serve a warmup "
+            f"forward pass — it cannot be used on the inference batcher") from exc
+    return past_model
+
+
+def _iteration_plans(cfg):
+    """The (opponent, seat, wall-mask) plan the self-play workers will follow."""
+    return iteration_plans(
+        cfg.games_per_iteration, cfg.num_players,
+        getattr(cfg, "opponent_greedy_share", 0.0) or 0.0,
+        getattr(cfg, "opponent_past_share", 0.0) or 0.0,
+        getattr(cfg, "wall_mask_fraction", 0.0) or 0.0,
+        getattr(cfg, "anchored_seat0_share", 0.0) or 0.0)
+
+
+def anchored_walled_share_by_seat(cfg):
+    """Fraction of each seat's anchored games that are played WITH walls legal.
+
+    In meta.json because the aliasing it replaces was invisible in every metric
+    the run recorded. A seat pinned at 0.0/1.0, or missing, is the signature.
+    """
+    walled, total = {}, {}
+    for plan in _iteration_plans(cfg):
+        if plan.opponent not in ANCHORED_OPPONENTS:
+            continue
+        seat = plan.model_seat
+        total[seat] = total.get(seat, 0) + 1
+        if not plan.walls_masked:
+            walled[seat] = walled.get(seat, 0) + 1
+    return {str(seat): round(walled.get(seat, 0) / n, 4)
+            for seat, n in sorted(total.items())}
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion and make it durable from iteration 0.
 
@@ -563,15 +823,43 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             f"Replay buffer restored: {n_buffered} samples" if n_buffered else
             "Replay buffer not on disk — refilling from scratch")
     else:
+        if cfg.init_checkpoint:
+            # Before init_champion, so the iteration-0 gate opponent is the
+            # pretrained racer rather than a wall-spamming random init.
+            model.load(cfg.init_checkpoint)
+            _log(f"Learner warm-started from {cfg.init_checkpoint}")
         init_champion(best, model, checkpoint_dir, log=_log)
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")
+
+    # Champion snapshots for the past-opponent share; repopulated from disk so a
+    # resumed run keeps the pool it built rather than starting from one self.
+    champion_pool = champion_pool_paths(checkpoint_dir) if cfg.opponent_past_share else []
+    past_model = make_model() if cfg.opponent_past_share else None
 
     # Racing-decay watch (see cfg.greedy_stop_patience).
     greedy_peak = None
     greedy_below_peak = 0
     greedy_below_floor = 0
     stop_reason = None
+
+    # Strongest greedy eval so far, ratcheted to greedy_peak.pt. The gate can go
+    # a whole run without accepting while latest.pt declines past the peak, so
+    # neither checkpoint holds the strongest model without this one.
+    greedy_peak_rate = max(
+        (r.get("win_vs_greedy") or 0.0) for r in history) if history else 0.0
+
+    # Gate liveness (see cfg.gate_arm_on_greedy). Recovered from history rather
+    # than persisted, so a resume cannot silently re-disarm an armed gate.
+    gate_armed = not cfg.gate_arm_on_greedy or any(
+        (r.get("win_vs_greedy") or 0.0) > cfg.gate_arm_greedy_min for r in history)
+    thin_evals = 0
+    warned_unreachable = False
+    if cfg.gate_arm_on_greedy and not gate_armed:
+        _log(f"Gate held: eval-vs-best is skipped until win_vs_greedy > "
+             f"{cfg.gate_arm_greedy_min:.2f}, then the champion is seeded from "
+             f"the learner. An untrained net cannot reach its goal, so gate "
+             f"games against it time out rather than decide.")
 
     for it in range(start_iter, cfg.num_iterations):
         t0 = time.time()
@@ -584,8 +872,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                           f", WALLS MASKED" if budget == 0 else
                           f", {budget}/{cfg.max_walls_per_player} WALLS")
             if frac:
-                n_masked = sum(game_is_masked(g, frac)
-                               for g in range(cfg.games_per_iteration))
+                # The same plan the workers follow, so the log cannot describe a
+                # different mix than the one that is played.
+                n_masked = sum(p.walls_masked for p in _iteration_plans(cfg))
                 curriculum = (f", MIXED {n_masked}/{cfg.games_per_iteration} "
                               f"race-only")
             _log(f"[iter {it+1}/{cfg.num_iterations}] self-play starting "
@@ -597,6 +886,18 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     _log(
                         f"[iter {it+1}/{cfg.num_iterations}] self-play: {done}/{total} games...")
 
+            # Only the parallel engine samples an opponent pool; the others
+            # report an empty mix rather than a wrong one.
+            sp_stats = {}
+            # One champion per iteration rather than per game: a uniform draw
+            # over the pool still spreads across earlier selves over a run, and
+            # keeps a single extra model on the batcher.
+            past_for_iter = pick = None
+            if cfg.opponent_past_share and champion_pool:
+                pick = champion_pool[np.random.randint(len(champion_pool))]
+                past_for_iter = load_past_champion(past_model, pick, env)
+                _log(f"[iter {it+1}/{cfg.num_iterations}] past opponent: "
+                     f"{os.path.basename(pick)} (pool of {len(champion_pool)})")
             if sp_mode == "vectorized":
                 # In-process vectorized self-play (Option B): G games share one
                 # predict_batch; exact sequential MCTS per game.
@@ -617,7 +918,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 n_new_samples = len(sp_samples)
             elif sp_mode == "parallel":
                 # GPU-batched parallel self-play
-                sp_samples, wins = generate_parallel_self_play_mp(
+                sp_samples, wins, sp_stats = generate_parallel_self_play_mp(
                     model, cfg,
                     num_workers=cfg.num_workers,
                     total_games=cfg.games_per_iteration,
@@ -628,6 +929,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     # iterations never reuse each other's seeds.
                     base_seed=it * cfg.games_per_iteration,
                     log=_log,
+                    past_model=past_for_iter,
                 )
                 if not sp_samples:
                     # Either self-play stalled (usually: the GPU inference thread died
@@ -638,7 +940,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     raise RuntimeError(zero_sample_reason(
                         it + 1, "parallel", wins, cfg.games_per_iteration,
                         checkpoint_dir))
-                buffer.add(sp_samples)
+                buffer.add(sp_samples, sources=sp_stats.get("sources"))
                 n_new_samples = len(sp_samples)
             else:
                 # Sequential self-play (original path)
@@ -679,6 +981,18 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         _log(f"[iter {it+1}/{cfg.num_iterations}] self-play done: "
              f"{cfg.games_per_iteration} games ({sp_secs:.0f}s) | wins: {win_dist} "
              f"| draw_rate={100*draw_rate:.0f}% avg_len~{avg_len:.0f}")
+        # One timer: sp_secs is the column the row reports, so the rate cannot
+        # disagree with its own denominator.
+        learner_sims = sp_stats.get("learner_sims")
+        learner_sims_per_second = (round(learner_sims / sp_secs, 2)
+                                   if learner_sims and sp_secs > 0 else None)
+        if sp_stats.get("mean_expanded_actions"):
+            _log(f"[iter {it+1}/{cfg.num_iterations}] search: "
+                 f"expanded={sp_stats['mean_expanded_actions']:.1f} actions/node "
+                 f"visits/action={sp_stats['visits_per_action']:.1f} "
+                 f"walls/game={sp_stats['walls_placed_per_game']:.2f} "
+                 f"first_wall_ply={sp_stats['first_wall_ply']} "
+                 f"learner_sims/s={learner_sims_per_second}")
         if draw_rate > 0.20:
             _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: draw_rate "
                  f"{100*draw_rate:.0f}% > 20% — games timing out at "
@@ -702,7 +1016,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             _log(f"[iter {it+1}/{cfg.num_iterations}] training skipped — "
                  f"buffer {len(buffer)} < warmup {warmup} (filling)")
         for _ in range(steps):
-            S, P, V = buffer.sample_batch(cfg.batch_size)
+            S, P, V = buffer.sample_batch(
+                cfg.batch_size, source="greedy",
+                source_share=cfg.anchored_sample_share)
             a, b = model.train_step(S, P, V)
             lp += a
             lv += b
@@ -711,6 +1027,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         train_secs = time.time() - t_train
         _log(f"[iter {it+1}/{cfg.num_iterations}] training done: "
              f"loss_p={lp:.3f} loss_v={lv:.3f} ({train_secs:.0f}s)")
+        # After training, so the value error describes the head the next
+        # iteration will actually self-play with.
+        diagnostics = sample_diagnostics(sp_samples, cfg.num_players, model)
+        if diagnostics:
+            _log(f"[iter {it+1}/{cfg.num_iterations}] data: "
+                 f"policy_wall_mass={diagnostics['policy_wall_mass']:.3f} "
+                 f"walled_states={100*diagnostics['walled_state_share']:.0f}% "
+                 f"walls_on_board={diagnostics['walls_on_board_mean']:.1f} "
+                 f"value_mae walled={diagnostics.get('value_mae_walled', float('nan')):.3f} "
+                 f"free={diagnostics.get('value_mae_wallfree', float('nan')):.3f}")
 
         # --- 2b. Checkpoint immediately after training, BEFORE eval. ---
         # Eval is a long (~hours), sequential, best-effort phase. If the process
@@ -750,6 +1076,33 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # the record rather than only in games.log.
                    wall_budget=budget,
                    wall_mask_fraction=frac or None,
+                   # Realised, not configured — the two diverge if the sampler
+                   # or a worker misbehaves, and only the realised one explains
+                   # the data the iteration actually trained on.
+                   opponent_mix=sp_stats.get("opponent_mix") or None,
+                   samples_by_source=sp_stats.get("samples_by_source") or None,
+                   # Per seat, the share of its anchored games with walls legal.
+                   anchored_walled_share_by_seat=(
+                       anchored_walled_share_by_seat(cfg)
+                       if (getattr(cfg, "opponent_greedy_share", 0.0) or
+                           getattr(cfg, "opponent_past_share", 0.0)) else None),
+                   # The same cross-tab COUNTED FROM SELF-PLAY, plus samples:
+                   # a run can match the intended game counts and still put
+                   # almost no gradient on a seat whose games end in 6 plies.
+                   anchored_realized_by_seat=sp_stats.get(
+                       "anchored_realized_by_seat"),
+                   # Search resolution: how wide expansion actually was and how
+                   # many visits per action the sim budget bought.
+                   mean_expanded_actions=sp_stats.get("mean_expanded_actions"),
+                   visits_per_action=sp_stats.get("visits_per_action"),
+                   walls_placed_per_game=sp_stats.get("walls_placed_per_game"),
+                   first_wall_ply=sp_stats.get("first_wall_ply"),
+                   # Learner searches only; see search_wall_metrics.
+                   learner_sims_per_second=learner_sims_per_second,
+                   # Which snapshot the past share played, so a result can be replayed.
+                   champion_pool_size=len(champion_pool) or None,
+                   past_opponent=(os.path.basename(pick) if past_for_iter else None),
+                   **diagnostics,
                    # Denominators, so a rate in meta.json is readable on its own.
                    decided_games=None, eval_timeouts=None,
                    rand_decided_games=None, greedy_decided_games=None,
@@ -774,6 +1127,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         # eval_every: skip eval on most iterations to save time (eval is expensive).
         if run_eval:
             # Geometry + sims for the parallel eval workers (spawned processes).
+            # Built for every eval below, not just the gate.
             eval_config_dict = {
                 "num_players": cfg.num_players,
                 "board_size": getattr(cfg, "board_size", None) or model.board_size,
@@ -788,56 +1142,102 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "virtual_loss": cfg.virtual_loss,
                 "eval_opening_plies": cfg.eval_opening_plies,
                 "batch_wait_ms": cfg.batch_wait_ms,
+                # Every search setting, not just the wall cap: the gate compares
+                # a candidate to a champion, so eval must search the way
+                # self-play does or it measures a different pair of agents.
+                "mcts_wall_candidates": cfg.mcts_wall_candidates,
+                "mcts_c_puct": cfg.mcts_c_puct,
+                "mcts_dirichlet_alpha": cfg.mcts_dirichlet_alpha,
+                "minimax_depth": cfg.minimax_depth,
+                "minimax_wall_candidates": cfg.minimax_wall_candidates,
             }
-            t_eval_best = time.time()
-            _log(
-                f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games, {eval_sims} sims)...")
-
-            def _eval_progress(done, total, r):
-                elapsed = time.time() - t_eval_best
-                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
-                     f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
-
-            if cfg.parallel_eval:
-                ev = evaluate_parallel_mp(
-                    model, best, eval_config_dict, num_games=cfg.eval_games,
-                    num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
-                    on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
-            else:
-                # dirichlet_epsilon=0 → best-play eval (matches the parallel path,
-                # which also disables exploration noise). Game diversity comes from
-                # the sampled opening, not from search noise.
+            if not cfg.parallel_eval:
+                # The learner's eval agent, shared by every sequential eval
+                # below — vs-random/greedy/minimax still run while the gate is
+                # held, so it cannot live inside the vs-best branch.
+                # dirichlet_epsilon=0 → best-play eval (matches the parallel
+                # path); game diversity comes from the sampled opening.
                 cand = mcts_agent_mp(
                     _mcts(model, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
                     temperature=0.1, opening_plies=cfg.eval_opening_plies)
-                champ = mcts_agent_mp(
-                    _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
-                    temperature=0.1, opening_plies=cfg.eval_opening_plies)
-                ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
-                                 max_moves=cfg.max_game_moves, on_progress=_eval_progress,
-                                 base_seed=it * 100_003)
-            accepted = ev.should_accept(threshold)
-            eval_best_secs = time.time() - t_eval_best
-            ev_wr = ev.candidate_win_rate
-            if accepted:
-                best.copy_weights_from(model)
-                best.save(os.path.join(checkpoint_dir, "best.pt"))
-            # Distinguish losing the gate from having too little evidence.
-            if not accepted and ev.decided_games < ev.num_games * ev.MIN_DECIDED_FRACTION:
-                verdict = (f"reject (only {ev.decided_games}/{ev.num_games} games "
-                           f"decided — too few to gate on)")
-            else:
-                verdict = "ACCEPT" if accepted else "reject"
-            _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
-                 f"{100*ev_wr:.1f}% of {ev.decided_games} decided {verdict} "
-                 f"({eval_best_secs:.0f}s)")
-            # Persist the accept/reject before eval-vs-random, so best.pt and the
-            # row's `accepted` stay consistent even if the next phase is interrupted.
-            row.update(win_vs_best=ev_wr, accepted=accepted,
-                       decided_games=ev.decided_games,
-                       eval_timeouts=ev.num_games - ev.decided_games,
-                       eval_best_secs=eval_best_secs, secs=time.time() - t0)
-            _write_meta()
+
+            if not gate_armed:
+                # Skipped outright rather than run and discarded: this eval was
+                # 41% of v7's wall time and could not fire.
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best SKIPPED "
+                     f"(gate held until win_vs_greedy > {cfg.gate_arm_greedy_min:.2f})")
+                row.update(gate_armed=False, win_vs_best=None, accepted=False)
+                _write_meta()
+
+            if gate_armed:
+                t_eval_best = time.time()
+                _log(
+                    f"[iter {it+1}/{cfg.num_iterations}] eval vs best ({cfg.eval_games} games, {eval_sims} sims)...")
+
+                def _eval_progress(done, total, r):
+                    elapsed = time.time() - t_eval_best
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
+                         f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
+
+                gate_moves = cfg.gate_max_game_moves or cfg.max_game_moves
+                if cfg.parallel_eval:
+                    # max_turns raised alongside: the env ends games there on its own.
+                    ev = evaluate_parallel_mp(
+                        model, best,
+                        {**eval_config_dict, "max_game_moves": gate_moves,
+                         "max_turns": max(eval_config_dict["max_turns"], gate_moves)},
+                        num_games=cfg.eval_games,
+                        num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
+                        on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
+                else:
+                    champ = mcts_agent_mp(
+                        _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
+                        temperature=0.1, opening_plies=cfg.eval_opening_plies)
+                    ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
+                                     max_moves=gate_moves, on_progress=_eval_progress,
+                                     base_seed=it * 100_003)
+                accepted = ev.should_accept(threshold)
+                eval_best_secs = time.time() - t_eval_best
+                ev_wr = ev.candidate_win_rate
+                if accepted:
+                    best.copy_weights_from(model)
+                    best.save(os.path.join(checkpoint_dir, "best.pt"))
+                    # Snapshot every champion, so the past-opponent share draws from
+                    # a spread of earlier selves rather than only the newest one —
+                    # sampling old versions is what stabilised Bansal et al.
+                    if cfg.opponent_past_share:
+                        champion_pool.append(snapshot_champion(
+                            best, checkpoint_dir, it + 1, cfg.champion_pool_size))
+                # Distinguish losing the gate from having too little evidence.
+                min_decided = ev.num_games * ev.MIN_DECIDED_FRACTION
+                if not accepted and ev.decided_games < min_decided:
+                    verdict = (f"reject (only {ev.decided_games}/{ev.num_games} games "
+                               f"decided — too few to gate on)")
+                    thin_evals += 1
+                    # Nothing aggregated the per-eval line, so 13 consecutive
+                    # unreachable evals went by unnoticed in v7.
+                    if thin_evals >= 3 and not warned_unreachable:
+                        warned_unreachable = True
+                        _log(f"WARNING: {thin_evals} consecutive evals decided "
+                             f"fewer than the {min_decided:.0f} games the accept "
+                             f"gate requires ({ev.MIN_DECIDED_FRACTION:.0%} of "
+                             f"{ev.num_games}). The gate CANNOT accept at this "
+                             f"decided rate regardless of strength — lower "
+                             f"eval_games, raise max_game_moves, or check that "
+                             f"the champion can reach its goal at all.")
+                else:
+                    thin_evals = 0
+                    verdict = "ACCEPT" if accepted else "reject"
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
+                     f"{100*ev_wr:.1f}% of {ev.decided_games} decided {verdict} "
+                     f"({eval_best_secs:.0f}s)")
+                # Persist the accept/reject before eval-vs-random, so best.pt and the
+                # row's `accepted` stay consistent even if the next phase is interrupted.
+                row.update(win_vs_best=ev_wr, accepted=accepted, gate_armed=True,
+                           decided_games=ev.decided_games,
+                           eval_timeouts=ev.num_games - ev.decided_games,
+                           eval_best_secs=eval_best_secs, secs=time.time() - t0)
+                _write_meta()
 
             # --- 4. eval vs random ---
             t_eval_rand = time.time()
@@ -911,8 +1311,69 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 row.update(win_vs_greedy=evg_wr, eval_greedy_secs=eval_greedy_secs,
                            greedy_decided_games=evg.decided_games,
                            greedy_by_seat=greedy_by_seat,
+                           # Whether this number still measures generalisation.
+                           greedy_in_training=bool(cfg.opponent_greedy_share),
                            secs=time.time() - t0)
 
+                if evg_wr > greedy_peak_rate:
+                    greedy_peak_rate = evg_wr
+                    model.save(os.path.join(checkpoint_dir, "greedy_peak.pt"))
+                    row["greedy_peak_saved"] = True
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] new greedy peak "
+                         f"{evg_wr:.1%} — saved greedy_peak.pt")
+
+                # Arm the gate the moment the learner clears the absolute bar,
+                # and seed the champion from it — a racer that reaches its goal,
+                # so gate games can decide.
+                if not gate_armed and evg_wr > cfg.gate_arm_greedy_min:
+                    gate_armed = True
+                    best.copy_weights_from(model)
+                    best.save(os.path.join(checkpoint_dir, "best.pt"))
+                    row.update(gate_armed=True, gate_armed_at=it + 1)
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] GATE ARMED: "
+                         f"win_vs_greedy={evg_wr:.1%} > {cfg.gate_arm_greedy_min:.2f}. "
+                         f"Champion seeded from this iteration; gating resumes "
+                         f"at the next eval.")
+
+            if cfg.eval_minimax_games:
+                t_eval_mm = time.time()
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs minimax "
+                     f"(depth {cfg.minimax_depth}, {cfg.eval_minimax_games} games)...")
+
+                def _eval_mm_progress(done, total, r):
+                    _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs minimax: "
+                         f"{done}/{total} games ({r.candidate_win_rate:.0%})")
+
+                if cfg.parallel_eval:
+                    evm = evaluate_against_minimax_parallel_mp(
+                        model, eval_config_dict, num_games=cfg.eval_minimax_games,
+                        num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
+                        on_progress=_eval_mm_progress,
+                        base_seed=it * 100_003 + 90_001, log=_log)
+                else:
+                    evm = evaluate_mp(
+                        env, cand,
+                        minimax_agent(cfg.minimax_depth, cfg.minimax_wall_candidates),
+                        num_games=cfg.eval_minimax_games,
+                        max_moves=cfg.max_game_moves,
+                        on_progress=_eval_mm_progress,
+                        base_seed=it * 100_003 + 90_001)
+                eval_minimax_secs = time.time() - t_eval_mm
+                minimax_by_seat = {str(s): [evm.seat_wins.get(s, 0), n]
+                                   for s, n in sorted(evm.games_per_seat.items())}
+                mm_seat_str = " ".join(f"seat{s}:{w}/{n}"
+                                       for s, (w, n) in minimax_by_seat.items())
+                _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs minimax done: "
+                     f"{100*evm.candidate_win_rate:.1f}% of {evm.decided_games} "
+                     f"decided [{mm_seat_str}] ({eval_minimax_secs:.0f}s)")
+                row.update(win_vs_minimax=evm.candidate_win_rate,
+                           eval_minimax_secs=eval_minimax_secs,
+                           minimax_decided_games=evm.decided_games,
+                           minimax_by_seat=minimax_by_seat,
+                           minimax_depth=cfg.minimax_depth,
+                           secs=time.time() - t0)
+
+            if cfg.eval_greedy_games:
                 # Racing decay: best per-seat rate against its own running peak.
                 if cfg.greedy_stop_patience:
                     seated = [(w / n, n) for w, n in greedy_by_seat.values() if n]
@@ -952,7 +1413,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                                 f"racing decay: best per-seat greedy rate {100*best_seat:.0f}% "
                                 f"stayed >={100*cfg.greedy_stop_drop:.0f} pts below its peak "
                                 f"{100*greedy_peak:.0f}% for {greedy_below_peak} consecutive "
-                                f"evals. best.pt holds the peak; resume by raising "
+                                f"evals. greedy_peak.pt holds the strongest greedy eval "
+                                f"({greedy_peak_rate:.1%} pooled); resume by raising "
                                 f"greedy_stop_patience if this was noise.")
                 _write_meta()
         else:

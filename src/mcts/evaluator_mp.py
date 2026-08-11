@@ -13,6 +13,8 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from src.env.quoridor_env_mp import NUM_MOVE_ACTIONS, decode_wall_action
+
 logger = logging.getLogger(__name__)
 AgentFn = Callable[[Any, Any], int]   # (env, state) -> action
 
@@ -50,8 +52,8 @@ def random_agent() -> AgentFn:
     return agent
 
 
-# Actions 0..11 are pawn moves; everything above is a wall placement.
-NUM_MOVE_ACTIONS = 12
+# Actions 0..11 are pawn moves; everything above is a wall placement. Re-exported
+# from the env, which owns the action layout.
 
 
 def greedy_agent() -> AgentFn:
@@ -79,6 +81,116 @@ def greedy_agent() -> AgentFn:
             return int(r.choice(moves))
         # Break ties randomly: a deterministic argmin would make every game with
         # the same seat assignment replay identically.
+        return int(r.choice(ties))
+    return agent
+
+
+WIN_SCORE = 1e6
+
+
+def _path_difference(env, state):
+    """Per-player score: how far ahead of the nearest rival each player is.
+
+    Zero-sum at N=2, so the maxn backup below reduces to minimax there — the
+    same reduction `run_reduction.py` proves for the search itself.
+    """
+    n = state.num_players
+    if state.game_over and state.winner is not None:
+        return [WIN_SCORE if i == state.winner else -WIN_SCORE for i in range(n)]
+    # Walled in reads as maximally behind rather than crashing the backup.
+    dist = [env.distance_to_goal(state, i) for i in range(n)]
+    dist = [WIN_SCORE if d is None else d for d in dist]
+    return [min(dist[:i] + dist[i + 1:]) - dist[i] for i in range(n)]
+
+
+def _wall_candidates(env, state, valid, max_candidates):
+    """Wall actions touching some player's shortest path, nearest-first.
+
+    128 wall slots at 9x9 make full-width search hopeless, and almost all of
+    them are nowhere near anybody's route. Restricting to the ones that can
+    actually change a path length is what makes depth 2 affordable.
+    """
+    walls = [a for a in valid if a >= NUM_MOVE_ACTIONS]
+    if not walls or len(walls) <= max_candidates:
+        return walls
+    on_path = set()
+    for i in range(state.num_players):
+        path = env._shortest_path(state.positions[i], state.goals[i],
+                                  state.h_walls, state.v_walls)
+        for cell in (path or []):
+            on_path.add(cell)
+    def rank(action):
+        _is_h, r, c = decode_wall_action(action, env.board_size)
+        # A wall at (r, c) sits between the four cells touching that corner.
+        touching = {(r, c), (r + 1, c), (r, c + 1), (r + 1, c + 1)}
+        return -len(touching & on_path)
+    walls.sort(key=rank)
+    return walls[:max_candidates]
+
+
+MAX_MINIMAX_DEPTH = 3
+
+
+def minimax_agent(depth: int = 2, max_wall_candidates: int = 16) -> AgentFn:
+    """Depth-limited maxn on the path-difference heuristic.
+
+    The conventional Quoridor baseline, and unlike `greedy_agent` it PLACES
+    WALLS — so it probes the skill the 9x9 models lack and does not saturate
+    the way vs-random does. Held out from training on purpose: see
+    docs/opponent_pool_and_evaluation.md.
+
+    Cost: the branching factor is <=12 pawn moves + max_wall_candidates walls,
+    and every leaf runs a BFS per player. At the defaults (28 wide) depth 2 is
+    ~800 leaves per move; depth 4 would be ~600k and stall an eval, so depth is
+    capped at MAX_MINIMAX_DEPTH rather than left to fail as a timeout.
+    """
+    if depth < 1:
+        raise ValueError(f"minimax depth must be at least 1, got {depth}")
+    if depth > MAX_MINIMAX_DEPTH:
+        raise ValueError(
+            f"minimax depth {depth} exceeds MAX_MINIMAX_DEPTH="
+            f"{MAX_MINIMAX_DEPTH}: at a branching factor of "
+            f"{NUM_MOVE_ACTIONS + max_wall_candidates} this is "
+            f"~{(NUM_MOVE_ACTIONS + max_wall_candidates) ** depth:,} leaf "
+            f"evaluations per move, each running a BFS per player.")
+    def search(env, state, d):
+        if state.game_over or d == 0:
+            return _path_difference(env, state)
+        valid = env.get_valid_actions(state)
+        if len(valid) == 0:
+            return _path_difference(env, state)
+        cp = state.current_player
+        actions = [int(a) for a in valid if a < NUM_MOVE_ACTIONS]
+        actions += _wall_candidates(env, state, [int(a) for a in valid],
+                                    max_wall_candidates)
+        best = None
+        for action in actions:
+            nxt, *_ = env.step(state, action)
+            score = search(env, nxt, d - 1)
+            if best is None or score[cp] > best[0][cp]:
+                best = (score, [action])
+            elif score[cp] == best[0][cp]:
+                best[1].append(action)
+        return best[0] if best else _path_difference(env, state)
+
+    def agent(env, state, ply: int = 0, rng=None) -> int:
+        r = np.random if rng is None else rng
+        valid = [int(a) for a in env.get_valid_actions(state)]
+        if not valid:
+            raise ValueError("minimax_agent called on a state with no legal action")
+        cp = state.current_player
+        actions = [a for a in valid if a < NUM_MOVE_ACTIONS]
+        actions += _wall_candidates(env, state, valid, max_wall_candidates)
+        best, ties = None, []
+        for action in actions:
+            nxt, *_ = env.step(state, action)
+            score = search(env, nxt, depth - 1)[cp]
+            if best is None or score > best:
+                best, ties = score, [action]
+            elif score == best:
+                ties.append(action)
+        # Random tie-break, as in greedy_agent: a deterministic argmax would
+        # make every game with the same seat assignment replay identically.
         return int(r.choice(ties))
     return agent
 

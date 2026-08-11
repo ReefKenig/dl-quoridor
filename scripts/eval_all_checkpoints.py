@@ -123,7 +123,8 @@ def load(path, num_players, board):
     model = QuoridorModelMP(
         board_size=board, action_space_size=compute_action_space_size(board),
         in_channels=3 * num_players + 3, num_channels=channels,
-        num_res_blocks=blocks, num_players=num_players, device="cpu")
+        num_res_blocks=blocks, num_players=num_players,
+        device=os.environ.get("DEVICE", "auto"))
     model.network.load_state_dict(state)
     return model, channels, blocks
 

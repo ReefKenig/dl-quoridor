@@ -252,7 +252,7 @@ class GameUI:
 def load_ai_and_run(board_size: int = 5, num_players: int = 4,
                     num_simulations: int = 100,
                     temperature: float = 0.3, c_puct: float = 1.41,
-                    dirichlet_epsilon: float = 0.25):
+                    dirichlet_epsilon: float = 0.0):
     print(f"Setting up {num_players}-player Quoridor on "
           f"{board_size}x{board_size} board...")
 

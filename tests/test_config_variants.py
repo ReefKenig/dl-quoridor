@@ -181,10 +181,35 @@ def test_no_root_noise_at_any_difficulty():
 
 
 def test_hard_reproduces_the_measured_configuration():
-    """Every reported number was scored at eps=0 and temperature ~0, so at
-    least one difficulty must be able to reproduce it."""
+    """Every reported number was scored at eps=0, temperature ~0, c_puct 1.41,
+    so at least one difficulty must be able to reproduce it.
+
+    c_puct is part of the configuration, not a free knob: every run config sets
+    mcts_c_puct=1.41, and probe_greedy scores at the MCTSConfig default, which
+    is the same value.
+    """
     from src.utils.config import DIFFICULTY_SETTINGS
 
     hard = DIFFICULTY_SETTINGS["hard"]
     assert hard["dirichlet_epsilon"] == 0.0
     assert hard["temperature"] == 0.0
+    assert hard["c_puct"] == 1.41
+
+
+def test_the_ui_entrypoint_defaults_to_no_root_noise():
+    """game_ui's own default must not reintroduce what DIFFICULTY_SETTINGS drops.
+
+    Read with ast rather than imported: requirements-test.txt omits pygame on
+    purpose, so this file is unimportable in CI and its defaults would otherwise
+    be unguarded.
+    """
+    import ast
+    import pathlib
+
+    src = pathlib.Path(__file__).resolve().parents[1] / "src/ui/game_ui.py"
+    tree = ast.parse(src.read_text())
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "load_ai_and_run")
+    defaults = dict(zip([a.arg for a in fn.args.args][-len(fn.args.defaults):],
+                        [ast.literal_eval(d) for d in fn.args.defaults]))
+    assert defaults["dirichlet_epsilon"] == 0.0

@@ -32,11 +32,12 @@ logger = logging.getLogger(__name__)
 # a quarter of the demo's moves became near-random walls MCTS could not reject
 # (configs/config_9x9.json, _wall_mask_note). Difficulty is simulations and
 # temperature. "hard" is the configuration every reported number was measured
-# under (eps 0, temperature ~0) — see scripts/probe_greedy.py.
+# under — eps 0, temperature ~0, c_puct 1.41 (scripts/probe_greedy.py, and
+# mcts_c_puct in every run config); it is the only preset that reproduces them.
 DIFFICULTY_SETTINGS = {
     "easy": {"num_simulations": 50, "temperature": 1.5, "c_puct": 1.41, "dirichlet_epsilon": 0.0},
     "medium": {"num_simulations": 200, "temperature": 0.4, "c_puct": 1.41, "dirichlet_epsilon": 0.0},
-    "hard": {"num_simulations": 1200, "temperature": 0.0, "c_puct": 1.0, "dirichlet_epsilon": 0.0},
+    "hard": {"num_simulations": 1200, "temperature": 0.0, "c_puct": 1.41, "dirichlet_epsilon": 0.0},
 }
 DEFAULT_DIFFICULTY = "medium"
 

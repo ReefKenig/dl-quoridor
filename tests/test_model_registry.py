@@ -153,3 +153,19 @@ def test_shipped_registry_serves_each_model_at_its_training_K(
     silently — the demo just plays badly. 5x5 predates the restriction.
     """
     assert variant_spec(board_size, num_players).wall_candidates == expected
+
+
+@pytest.mark.parametrize("board_size,num_players,expected", [
+    (5, 2, 150), (5, 4, 150), (9, 2, 160), (9, 4, 320),
+])
+def test_shipped_registry_serves_each_model_at_its_training_horizon(
+        board_size, num_players, expected):
+    """max_turns counts PLIES, the same unit as training's max_game_moves.
+
+    Values are each run's own horizon (runs/<run>/config.json, untracked so
+    they are literals here). It is set per variant to give every player the
+    same ~80-ply budget, which is why N=4 is double N=2 rather than equal: a
+    demo served below its run's horizon calls a timeout on games the measured
+    configuration had room to convert.
+    """
+    assert variant_spec(board_size, num_players).max_turns == expected

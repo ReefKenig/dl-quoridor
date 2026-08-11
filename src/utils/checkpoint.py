@@ -294,7 +294,8 @@ class CheckpointManager:
     def _save_replay_buffer(self, buffer, path: Path):
         """Serialize replay buffer. Uses pickle — buffer contains numpy arrays."""
         with open(path, "wb") as f:
-            pickle.dump(list(buffer.buffer), f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(list(buffer.buffer), f,
+                        protocol=pickle.HIGHEST_PROTOCOL)
 
     def _load_replay_buffer(self, path: Path, max_size: int = 50_000):
         """Deserialize replay buffer."""

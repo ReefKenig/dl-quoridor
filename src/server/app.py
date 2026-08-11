@@ -66,7 +66,8 @@ AGENTS = {
 current_game_state = None
 current_num_players = 2
 current_env = AGENTS[(5, 2)]["env"]
-current_mcts = AGENTS[(5, 2)]["make_mcts"](DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY])
+current_mcts = AGENTS[(5, 2)]["make_mcts"](
+    DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY])
 current_temperature = DIFFICULTY_SETTINGS[DEFAULT_DIFFICULTY]["temperature"]
 
 

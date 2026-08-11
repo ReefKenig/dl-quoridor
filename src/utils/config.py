@@ -27,9 +27,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Root Dirichlet noise is a SELF-PLAY exploration device and is off at every
+# difficulty: at 9x9 it lifts opening wall prior mass from 0.00024 to 0.245, so
+# a quarter of the demo's moves became near-random walls MCTS could not reject
+# (configs/config_9x9.json, _wall_mask_note). Difficulty is simulations and
+# temperature. "hard" is the configuration every reported number was measured
+# under (eps 0, temperature ~0) — see scripts/probe_greedy.py.
 DIFFICULTY_SETTINGS = {
-    "easy": {"num_simulations": 50, "temperature": 1.5, "c_puct": 1.41, "dirichlet_epsilon": 0.25},
-    "medium": {"num_simulations": 200, "temperature": 0.4, "c_puct": 1.41, "dirichlet_epsilon": 0.25},
+    "easy": {"num_simulations": 50, "temperature": 1.5, "c_puct": 1.41, "dirichlet_epsilon": 0.0},
+    "medium": {"num_simulations": 200, "temperature": 0.4, "c_puct": 1.41, "dirichlet_epsilon": 0.0},
     "hard": {"num_simulations": 1200, "temperature": 0.0, "c_puct": 1.0, "dirichlet_epsilon": 0.0},
 }
 DEFAULT_DIFFICULTY = "medium"

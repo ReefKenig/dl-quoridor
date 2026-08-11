@@ -163,3 +163,28 @@ def test_run_config_drops_note_keys(cfg9):
 
     assert not [k for k in rc if k.startswith("_")]
     assert any(k.startswith("_") for k in cfg9["training"]), "fixture lost its notes"
+
+
+def test_no_root_noise_at_any_difficulty():
+    """Dirichlet noise is a self-play exploration device, not a play-time one.
+
+    At 9x9 eps=0.25 lifts opening wall prior mass from 0.00024 to 0.245, so a
+    quarter of the demo's moves became near-random walls that search could not
+    reject. Difficulty is simulations and temperature.
+    """
+    from src.utils.config import DIFFICULTY_SETTINGS
+
+    noisy = {name: s["dirichlet_epsilon"]
+             for name, s in DIFFICULTY_SETTINGS.items()
+             if s["dirichlet_epsilon"]}
+    assert not noisy, f"root noise at play time: {noisy}"
+
+
+def test_hard_reproduces_the_measured_configuration():
+    """Every reported number was scored at eps=0 and temperature ~0, so at
+    least one difficulty must be able to reproduce it."""
+    from src.utils.config import DIFFICULTY_SETTINGS
+
+    hard = DIFFICULTY_SETTINGS["hard"]
+    assert hard["dirichlet_epsilon"] == 0.0
+    assert hard["temperature"] == 0.0

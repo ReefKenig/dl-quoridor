@@ -9,7 +9,6 @@ from src.env.quoridor_env import (
     MOVE_MAP,
     decode_action,
 )
-from src.mcts.mcts import MCTS, MCTSConfig
 from src.mcts.mcts_maxn import MCTSMaxN, MCTSConfig as MCTSConfigMaxN
 from src.utils.config import DIFFICULTY_SETTINGS, DEFAULT_DIFFICULTY
 from src.utils.model_registry import load_variant
@@ -30,28 +29,20 @@ SUPPORTED_VARIANTS = [(5, 2), (5, 4), (9, 2), (9, 4)]
 def _build_loaded_variant(board_size, num_players):
     env, model, spec = load_variant(board_size, num_players)
 
-    if num_players == 2:
-        def evaluate(state):
-            tensor = env.state_to_tensor(state)
-            policy, value_vec = model.predict(tensor)
-            return policy, float(value_vec[state.current_player])
+    def evaluate(state):
+        tensor = env.state_to_tensor(state)
+        return model.predict(tensor)
 
-        def make_mcts(settings):
-            cfg = MCTSConfig(num_simulations=settings["num_simulations"],
+    # max^n at N=2 is bit-identical to negamax (scripts/run_reduction.py) and is
+    # what every variant trained under, so one path serves all of them. The
+    # negamax MCTSConfig has no wall_candidates field, so routing N=2 through it
+    # silently searched 9x9 unrestricted — half the model's strength.
+    def make_mcts(settings):
+        cfg = MCTSConfigMaxN(num_simulations=settings["num_simulations"],
                              c_puct=settings["c_puct"],
-                             dirichlet_epsilon=settings["dirichlet_epsilon"])
-            return MCTS(config=cfg, evaluate_fn=evaluate)
-    else:
-        def evaluate(state):
-            tensor = env.state_to_tensor(state)
-            return model.predict(tensor)
-
-        def make_mcts(settings):
-            cfg = MCTSConfigMaxN(num_simulations=settings["num_simulations"],
-                                 c_puct=settings["c_puct"],
-                                 dirichlet_epsilon=settings["dirichlet_epsilon"],
-                                 wall_candidates=settings.get("wall_candidates", 16))
-            return MCTSMaxN(config=cfg, evaluate_fn=evaluate, num_players=num_players)
+                             dirichlet_epsilon=settings["dirichlet_epsilon"],
+                             wall_candidates=spec.wall_candidates)
+        return MCTSMaxN(config=cfg, evaluate_fn=evaluate, num_players=num_players)
 
     return {"env": env, "model": model, "spec": spec, "make_mcts": make_mcts}
 

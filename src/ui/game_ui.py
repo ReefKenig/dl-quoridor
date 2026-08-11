@@ -252,7 +252,7 @@ class GameUI:
 def load_ai_and_run(board_size: int = 5, num_players: int = 4,
                     num_simulations: int = 100,
                     temperature: float = 0.3, c_puct: float = 1.41,
-                    dirichlet_epsilon: float = 0.25):
+                    dirichlet_epsilon: float = 0.0):
     print(f"Setting up {num_players}-player Quoridor on "
           f"{board_size}x{board_size} board...")
 
@@ -260,14 +260,18 @@ def load_ai_and_run(board_size: int = 5, num_players: int = 4,
     # the wall count together — they are only correct as a set.
     env, model, spec = load_variant(board_size, num_players)
     print(f"  {spec.max_walls} walls/player, tensor spec v{spec.tensor_spec}, "
-          f"{spec.num_channels}ch/{spec.num_res_blocks} blocks")
+          f"{spec.num_channels}ch/{spec.num_res_blocks} blocks, "
+          f"wall candidates K={spec.wall_candidates or 'unrestricted'}")
 
     def nn_evaluate(state):
         tensor = env.state_to_tensor(state)
         return model.predict(tensor)
 
+    # K must match training: a 9x9 checkpoint trained under restricted wall
+    # expansion loses roughly half its strength when searched unrestricted.
     mcts_cfg = MCTSConfig(num_simulations=num_simulations, c_puct=c_puct,
-                          dirichlet_epsilon=dirichlet_epsilon)
+                          dirichlet_epsilon=dirichlet_epsilon,
+                          wall_candidates=spec.wall_candidates)
     mcts = MCTSMaxN(config=mcts_cfg, evaluate_fn=nn_evaluate,
                     num_players=num_players)
 

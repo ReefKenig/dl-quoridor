@@ -6,8 +6,9 @@ network and environment that checkpoint expects.
 
 One source of truth for the pygame UI and the web server. A checkpoint loaded
 under the wrong architecture fails loudly on a shape mismatch, but one loaded
-under the wrong tensor spec or the wrong wall count fails *silently* — the model
-just plays badly on planes it never saw during training.
+under the wrong tensor spec, wall count or wall-candidate budget fails
+*silently* — the model just plays badly on planes, or under a search, it never
+saw during training.
 
 Usage:
     from src.utils.model_registry import load_variant
@@ -47,6 +48,7 @@ class VariantSpec:
     tensor_spec: int
     max_walls: int
     max_turns: int
+    wall_candidates: int = 0
     notes: str = ""
 
     @property
@@ -110,6 +112,7 @@ def variant_spec(board_size: int, num_players: int, registry=None,
         tensor_spec=entry["tensor_spec"],
         max_walls=variant["max_walls"],
         max_turns=variant.get("max_turns", DEFAULT_MAX_TURNS),
+        wall_candidates=variant.get("wall_candidates", 0),
         notes=entry.get("notes", ""),
     )
 

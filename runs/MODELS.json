@@ -111,25 +111,30 @@
     },
     "variants": {
         "_note": "Which registry model backs each (board_size, num_players) demo, plus the env settings it was trained under. max_walls matters as much as the weights: the walls-remaining plane is scaled by it, so serving a checkpoint at the wrong wall count feeds it planes it never saw. Read via src/utils/model_registry.py.",
+        "_wall_candidates_note": "The MCTS wall-expansion budget K the checkpoint TRAINED under, and therefore the only K it should be served at — a result scored at a different K is not comparable, and the gap is large: n2_9x9_v7 (trained K=16) scores 80.0% vs greedy at K=16 and 47.5% at K=0. 0 means unrestricted; every 5x5 checkpoint predates the restriction, and 9x9 v8 onward trained at 16 (configs/config_9x9.json mcts_wall_candidates). Serving the wrong K fails silently — the model just plays badly. See docs/restricted_wall_search.md.",
         "5x5_2p": {
             "model": "2p_vector",
             "max_walls": 3,
-            "max_turns": 300
+            "max_turns": 300,
+            "wall_candidates": 0
         },
         "5x5_4p": {
             "model": "4p_ship",
             "max_walls": 4,
-            "max_turns": 300
+            "max_turns": 300,
+            "wall_candidates": 0
         },
         "9x9_2p": {
             "model": "2p_9x9_v9",
             "max_walls": 10,
-            "max_turns": 200
+            "max_turns": 200,
+            "wall_candidates": 16
         },
         "9x9_4p": {
             "model": "4p_9x9_v10",
             "max_walls": 5,
-            "max_turns": 200
+            "max_turns": 200,
+            "wall_candidates": 16
         }
     }
 }

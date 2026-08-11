@@ -119,3 +119,37 @@ def test_shipped_registry_builds_a_loadable_pair(board_size, num_players):
     # The tensor the env produces must match the planes the net expects.
     assert env.state_to_tensor(env.reset()).shape[-1] == spec.in_channels
     assert model.network.policy_fc.out_features == env.action_space_size
+
+
+def test_wall_candidates_defaults_to_unrestricted(tmp_path):
+    """Entries that predate the restriction must not silently acquire one."""
+    path, root = _write_registry(
+        tmp_path,
+        {"m": {"path": "x.pt", "tensor_spec": 1, "in_channels": 9}},
+        {"5x5_2p": {"model": "m", "max_walls": 3}},
+    )
+    spec = variant_spec(5, 2, registry=load_registry(path), root=root)
+    assert spec.wall_candidates == 0
+
+
+def test_wall_candidates_comes_from_the_variant(tmp_path):
+    path, root = _write_registry(
+        tmp_path,
+        {"m": {"path": "x.pt", "tensor_spec": 2, "in_channels": 9}},
+        {"9x9_2p": {"model": "m", "max_walls": 10, "wall_candidates": 16}},
+    )
+    spec = variant_spec(9, 2, registry=load_registry(path), root=root)
+    assert spec.wall_candidates == 16
+
+
+@pytest.mark.parametrize("board_size,num_players,expected", [
+    (5, 2, 0), (5, 4, 0), (9, 2, 16), (9, 4, 16),
+])
+def test_shipped_registry_serves_each_model_at_its_training_K(
+        board_size, num_players, expected):
+    """9x9 checkpoints trained under K=16 and are only comparable there.
+
+    Serving one unrestricted costs roughly half its strength and fails
+    silently — the demo just plays badly. 5x5 predates the restriction.
+    """
+    assert variant_spec(board_size, num_players).wall_candidates == expected

@@ -50,7 +50,7 @@ def _build_loaded_variant(board_size, num_players):
             cfg = MCTSConfigMaxN(num_simulations=settings["num_simulations"],
                                  c_puct=settings["c_puct"],
                                  dirichlet_epsilon=settings["dirichlet_epsilon"],
-                                 wall_candidates=settings.get("wall_candidates", 16))
+                                 wall_candidates=spec.wall_candidates)
             return MCTSMaxN(config=cfg, evaluate_fn=evaluate, num_players=num_players)
 
     return {"env": env, "model": model, "spec": spec, "make_mcts": make_mcts}

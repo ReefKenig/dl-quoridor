@@ -55,7 +55,7 @@ def test_greedy_beats_random_decisively(num_players):
     games = 20
     for g in range(games):
         agents = {s: (greedy if s == 0 else rnd) for s in range(num_players)}
-        if play_eval_game(env, agents, max_moves=120, rng=eval_rng(11, g)) == 0:
+        if play_eval_game(env, agents, max_moves=120, rng=eval_rng(11, g))[0] == 0:
             wins += 1
 
     assert wins / games > 1.0 / num_players + 0.25, (

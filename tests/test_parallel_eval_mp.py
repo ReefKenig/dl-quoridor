@@ -115,9 +115,9 @@ def _reference(env, spec, cand, champ_or_none, mode, base_seed):
         cand_seat = g % N
         agents = {s: (cand_agent if s == cand_seat else opp_agent)
                   for s in range(N)}
-        winner = play_eval_game(env, agents, MAX_MOVES,
-                                rng=eval_rng(base_seed, g))
-        tally_game(res, cand_seat, winner)
+        winner, adjudicated = play_eval_game(env, agents, MAX_MOVES,
+                                             rng=eval_rng(base_seed, g))
+        tally_game(res, cand_seat, winner, adjudicated)
     return res
 
 

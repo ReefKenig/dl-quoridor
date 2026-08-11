@@ -119,9 +119,12 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
             # any game's outcome.
             agents = {s: (cand_agent if s == cand_seat else opp_agent)
                       for s in range(N)}
-            winner = play_eval_game(env, agents, config_dict["max_game_moves"],
-                                    rng=eval_rng(base_seed, g))
-            results_queue.put(("game", worker_id, g, cand_seat, winner))
+            winner, adjudicated = play_eval_game(
+                env, agents, config_dict["max_game_moves"],
+                rng=eval_rng(base_seed, g),
+                adjudicate=bool(config_dict.get("adjudicate")))
+            results_queue.put(("game", worker_id, g, cand_seat, winner,
+                               adjudicated))
 
         results_queue.put(("done", worker_id))
     except Exception as e:
@@ -147,8 +150,9 @@ def _run_eval(models, mode, config_dict, num_games, num_workers, batch_size,
 
     def on_result(msg):
         nonlocal done
-        _, _wid, _g, cand_seat, winner = msg  # ("game", wid, g, cand_seat, winner)
-        tally_game(res, cand_seat, winner)
+        # ("game", wid, g, cand_seat, winner, adjudicated)
+        _, _wid, _g, cand_seat, winner, adjudicated = msg
+        tally_game(res, cand_seat, winner, adjudicated)
         done += 1
         # Heartbeat every 5 games and on the last one, matching evaluate_mp.
         if on_progress is not None and (done % 5 == 0 or done == num_games):
@@ -171,7 +175,9 @@ def evaluate_parallel_mp(cand_model, champ_model, config_dict, num_games=24,
     """Parallel candidate-vs-champion gating eval. Drop-in for `evaluate_mp`.
 
     `config_dict` needs: num_players, board_size, max_walls_per_player, max_turns,
-    eval_simulations, max_game_moves. Returns an `EvalResultMP`.
+    eval_simulations, max_game_moves; optional: adjudicate (score timeouts by
+    shortest path — the gate sets it), leaf_batch/virtual_loss, search params.
+    Returns an `EvalResultMP`.
     """
     return _run_eval({0: cand_model, 1: champ_model}, "vs_best", config_dict,
                      num_games, num_workers, batch_size, on_progress, base_seed,

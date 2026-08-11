@@ -99,7 +99,6 @@ def iteration_plans(total_games, num_players, greedy_share, past_share=0.0,
     plans = []
     in_class = {True: 0, False: 0}      # anchored -> games placed so far
     in_cell = {True: 0, False: 0}       # walls_masked -> anchored games so far
-    others = {True: 0, False: 0}        # rotation over seats 1..N-1
     for g in range(total_games):
         opponent = opponent_for_game(g, greedy_share, past_share)
         anchored = opponent in ANCHORED_OPPONENTS
@@ -109,13 +108,14 @@ def iteration_plans(total_games, num_players, greedy_share, past_share=0.0,
         if anchored:
             idx = in_cell[walls_masked]
             in_cell[walls_masked] += 1
-            if seat0_share <= 0 or num_players < 2:
+            if seat0_share <= 0:
                 seat = idx % num_players
             elif takes_share(idx, seat0_share):
                 seat = 0
             else:
-                seat = 1 + others[walls_masked] % (num_players - 1)
-                others[walls_masked] += 1
+                # Bresenham means int(idx*share) of the first idx games were
+                # pinned, so the rotation index needs no counter of its own.
+                seat = 1 + (idx - int(idx * seat0_share)) % (num_players - 1)
         plans.append(GamePlan(opponent, seat, walls_masked))
     return plans
 

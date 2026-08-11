@@ -60,12 +60,18 @@
         "greedy_min_seat_after": 12,
         "_eval_every_note": "4, not 5: probe_n2_ramp peaked at iteration 4 (45% vs greedy, seat 1 18/20) and the gate must land ON it to put it in best.pt. The peak is early; missing it costs the deliverable.",
         "wall_mask_fraction": 0.5,
-        "gate_max_game_moves": 320,
-        "_gate_max_game_moves_note": "vs-best eval only; self-play and the other evals keep max_game_moves. 320 = 2x the N=2 cap. Costs time only on games that would otherwise time out at 160 anyway.",
+        "gate_max_game_moves": 0,
+        "_gate_max_game_moves_note": "0 = the variant's max_game_moves. The 320 override existed to let gate games finish; v9 measured that no cap does (3-6 of 40 decided at 320 plies), and gate_adjudicate now scores the stalls instead — so the long cap only bought wall time (~35 min/gate eval vs ~18 at the normal cap).",
         "_anchored_seat0_note": "Fraction of anchored games pinned to seat 0 (rest rotate over 1..N-1). At N=4 greedy-vs-greedy is 60/60 for seat 0, so it is the ONLY seat a racer can win and the pooled ceiling is 25%; under uniform rotation seat 0 was ~300 of ~8400 samples/iter (v8 measured) because its games are also the shortest. 0 at N=2: both seats are winnable there and rotation already splits them evenly.",
         "anchored_seat0_share": 0.0,
         "_init_checkpoint_note": "Warm-start weights for a FRESH run (ignored on resume), produced by scripts/pretrain_greedy.py. Attacks the opening prior directly: 128 of 131 legal opening actions are walls, so an untrained net is a wall-spammer and six N=4 attempts (v5-v8) never acquired racing from RL alone. Empty = cold start.",
-        "init_checkpoint": ""
+        "init_checkpoint": "",
+        "gate_adjudicate": true,
+        "_gate_adjudicate_note": "Adjudicate gate games that hit gate_max_game_moves by shortest-path distance (unique leader wins; tie stays a draw) — the standard Quoridor adjudication. v9 proved no cap fixes the stall: 3-6 of 40 gate games decided at 320 plies while the candidate won 80-100% of the games that DID finish. Gate only; greedy/minimax/random keep play-to-the-goal semantics so their history columns stay comparable across runs.",
+        "anchor_weight": 0.0,
+        "_anchor_weight_note": "Cross-entropy pull toward the init_checkpoint policy on every training batch. n4_9x9_v9 is the evidence the data-mix lever cannot do this job: seat-0 anchored games held their configured 40 games/~580 samples EVERY iteration and the racer still eroded from 8/20 to 0/20 vs greedy by iteration 28, with first_wall_ply falling 3.4 -> 0.7 — the 65%-walled self-play gradient outweighs any realistic sample share. 0.2 at N=4: strong enough to hold racing lines, weak enough that genuinely better moves (walls that WIN eval games) can still overrule the prior. 0 at N=2, which consolidated racing+walls without help (93.8% at iter 12).",
+        "peak_stall_evals": 5,
+        "_peak_stall_note": "Stop after this many consecutive greedy evals without a new pooled peak. greedy_peak.pt already holds the deliverable, so post-peak iterations are only justified while a new peak is plausible — v9's N=2 ran ~44 iterations (~20 h) after its last improvement at iteration 12/16. 5 evals = 20 iterations of grace at eval_every 4, generous enough for the v10 anchored runs to consolidate before the counter can fire."
     },
     "parallel": {
         "_num_workers_note": "Match the pod's cgroup cpu quota (16). Above it the jupyter server stops answering its own health check, whose entrypoint runs pkill -9 on failure.",
@@ -89,15 +95,18 @@
             "_num_workers_note": "8, not the parallel section's 16, because n2 and n4 run CONCURRENTLY: 8 + 8 matches the 16-cpu cgroup quota exactly. Above the quota the jupyter server stops answering its own health check and the entrypoint pkills the run. Raise to 16 if running this variant alone.",
             "num_workers": 8,
             "eval_games": 40,
-            "eval_random_games": 40,
+            "eval_random_games": 8,
             "eval_greedy_games": 80,
-            "eval_minimax_games": 80,
+            "eval_minimax_games": 40,
             "_opponent_greedy_share_note": "Share of GAMES anchored against the scripted racer. The gradient follows SAMPLES, not games: the model holds 1 of 2 seats and a racer ends the game sooner, so 35% of games was ~10-12% of samples in runs/n2_9x9_anchored. Tune against samples_by_source in the history row, never opponent_mix. Anchoring is what took seat 1 from 0/20 to 17/20 by iteration 8 where the mixed curriculum alone was 0/600 through iteration 20.",
             "opponent_greedy_share": 0.35,
             "discount_unit": "round",
             "_sizing_note": "160 x 60 = 9,600 self-play games, raised from 40 x 60 = 2,400. The 2,400 figure is what n2_9x9_v7 ran, and it is a TENTH of n2_9x9_v4's 160 x 150 = 24,000. Scoring the two against each other at that gap measures budget, not method: v4 also had a live gate (15 accepts over 30 evals, shipping best.pt from iteration 145) while v7's gate never fired once, so v7 shipped an unselected iteration 60. 9,600 plus the repaired gate removes the selection confound outright and most of the budget one — a v8 win over v4 is then decisive, and a v8 loss is still arguable on budget. Full v4 parity would be ~4 days of wall clock. The racing-decay and never-acquired stops still end a failing run early, so 60 iterations is a ceiling, not a plan.",
-            "init_checkpoint": "runs/pretrain_n2_9x9/pretrain.pt",
-            "_init_checkpoint_note": "Warm start for the FINAL N=2 run too: v8 reached 73.8% at iteration 4 from cold, so the saving is small in iterations but large in gate liveness — init_champion seeds the iteration-0 champion from the warm-started learner, so vs-best games can decide from the first armed eval instead of timing out against a wall-spammer."
+            "init_checkpoint": "runs/n2_9x9_v9/greedy_peak.pt",
+            "_init_checkpoint_note": "v10 consolidation design: init AND anchor are v9's own greedy peak (93.8% pooled, iter 12) rather than the pretrain racer. Anchoring N=2 toward the pure racer would fight the seat-0 wall investment that lifts it past 50%; anchoring toward the peak defends the best model ever measured against the erosion both v9 runs showed (N=2 93.8->72% over 40 iters, N=4 40->0% in 16). 0.15, slightly softer than N=4's 0.2: this anchor already walls, so the pull conflicts less with what self-play needs to learn.",
+            "_eval_minimax_note": "80 -> 40. The held-out bar stays (greedy is a training opponent, minimax is the only examiner that walls) but the number has been ~0 at every eval of every run and depth-2 costs ~6-9 s/game — 40 games halve the most expensive eval block while a real breakthrough would still be unmistakable.",
+            "anchor_weight": 0.15,
+            "_eval_random_note": "40 -> 8. vs-random has been saturated (~100%) from iteration ~4 of every run since v4 — it answers nothing at 200-370 s/eval. 8 games remain as a did-the-model-break canary; the greedy and minimax baselines carry the real signal."
         },
         "n4": {
             "num_players": 4,
@@ -109,16 +118,17 @@
             "games_per_iteration": 160,
             "num_workers": 8,
             "eval_games": 40,
-            "eval_random_games": 40,
+            "eval_random_games": 8,
             "eval_greedy_games": 80,
-            "eval_minimax_games": 80,
+            "eval_minimax_games": 40,
             "_opponent_greedy_share_note": "0.5, higher than n2's 0.35: the model holds only 1 of 4 seats, so an anchored game yields roughly a quarter of the samples a self-play game does (measured 20x with an untrained net, narrowing as racing improves). N=4 also needs it most -- self-play among four identical agents rewards camping for jumps, which is close to the opposite of the seat-0 racing the evaluation scores.",
             "opponent_greedy_share": 0.5,
             "discount_unit": "ply",
             "_eval_greedy_note": "80, not 40: the greedy eval rotates the candidate through all N seats, so at N=4 a 40-game eval is only 10 games per seat — and greedy_stop_patience keys on the BEST per-seat rate, which at n=10 has SE ~0.095, making the 20-pt abort threshold barely 2 sigma. 80 gives 20/seat, matching n2, where 20-pt is ~4 sigma. Costs ~20s an eval against a ~500s iteration.",
             "_sizing_note": "40 x 40, smaller than n2's 60 x 80 because N=4 games run to a 320-ply cap and cost roughly twice as much per game. Both earlier N=4 probes used the phase/ramp curriculum now known to be inert, so the mixed curriculum is untried here — this run is a real test, not a repeat. The racing-decay and never-acquired stops bound it.",
             "anchored_seat0_share": 0.5,
-            "init_checkpoint": "runs/pretrain_n4_9x9/pretrain.pt"
+            "init_checkpoint": "runs/pretrain_n4_9x9/pretrain.pt",
+            "anchor_weight": 0.2
         }
     }
 }

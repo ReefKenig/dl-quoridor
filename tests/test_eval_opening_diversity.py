@@ -145,7 +145,9 @@ def test_play_eval_game_reports_timeout_as_none():
     env = CountingEnv(length=100)
     agents = _agents(opening_plies=0)
 
-    winner = play_eval_game(env, agents, max_moves=5, rng=eval_rng(1, 1))
+    winner, adjudicated = play_eval_game(env, agents, max_moves=5,
+                                         rng=eval_rng(1, 1))
+    assert not adjudicated
     res = tally_game(EvalResultMP(num_players=2), cand_seat=0, winner=winner)
 
     assert winner is None

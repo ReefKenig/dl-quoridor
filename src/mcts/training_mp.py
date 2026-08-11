@@ -8,7 +8,6 @@ random → checkpoint best/latest. Reduces to the standard duel at N=2.
 import json
 import math
 import os
-import shutil
 import time
 import logging
 from collections import deque
@@ -33,6 +32,8 @@ from src.mcts.parallel_eval_mp import (evaluate_parallel_mp,
                                        evaluate_against_greedy_parallel_mp,
                                        evaluate_against_minimax_parallel_mp,
                                        evaluate_against_random_parallel_mp)
+from src.mcts.pretrain_data import pretrain_report_path
+from src.utils.checkpoint import atomic_model_save
 from src.utils.config import read_frozen_config
 from src.utils.logger import make_progress_logger
 
@@ -87,6 +88,11 @@ class TrainingConfigMP:
     # each other far past the self-play cap (v8: 32-38 of 40 gate games timed
     # out, so the decided floor was unreachable at any strength). 0 = max_game_moves.
     gate_max_game_moves: int = 0
+    # Adjudicate gate games that still hit the cap by shortest-path distance
+    # (unique leader wins, tie stays a draw). v9 showed no cap is enough:
+    # 3-6 of 40 decided at 320 plies. Gate only; the yardstick evals keep
+    # their play-to-the-goal semantics.
+    gate_adjudicate: bool = False
     # "constant" keeps existing scripts unchanged; 9x9 opts into cosine.
     lr_schedule: str = "constant"
     lr_final_frac: float = 0.1           # cosine end point, as a fraction of base_lr
@@ -174,6 +180,11 @@ class TrainingConfigMP:
     # Iterations before that floor arms. Defaults to the masked phase, but a
     # mixed curriculum has no phase to end, so it needs its own grace window.
     greedy_min_seat_after: int = 0
+    # Stop when this many consecutive greedy evals pass without a new pooled
+    # peak. greedy_peak.pt already holds the deliverable, so running on is
+    # only justified while a new peak is plausible — v9's N=2 spent ~44
+    # iterations (~20 h) after its last improvement. 0 = off.
+    peak_stall_evals: int = 0
     # Held-out baseline. greedy becomes a training opponent once the pool
     # anchors on it, so it stops measuring generalisation; minimax never trains
     # and it places walls. 0 games = off.
@@ -199,10 +210,22 @@ class TrainingConfigMP:
     # Warm-start weights for a FRESH run (ignored on resume). Lets supervised
     # pretraining set the opening prior instead of hoping self-play finds it.
     init_checkpoint: str = ""
+    # Cross-entropy pull toward the init_checkpoint policy on every training
+    # batch. n4_9x9_v9 measured why the data-mix lever is not enough: seat-0
+    # anchored games held their configured 40 games/~580 samples every
+    # iteration and the racer still eroded to 0/80 by iteration 28
+    # (first_wall_ply 3.4 -> 0.7) — 65%-walled self-play gradient outweighs
+    # any realistic sample share, so the prior must be defended in the loss.
+    # 0 = off.
+    anchor_weight: float = 0.0
     # Champion snapshots kept for the past-opponent share.
     champion_pool_size: int = 5
 
     def __post_init__(self):
+        if self.anchor_weight and not self.init_checkpoint:
+            raise ValueError(
+                "anchor_weight requires init_checkpoint — the warm-start "
+                "policy is the anchor.")
         if self.opponent_past_share and not self.parallel_self_play:
             raise NotImplementedError(
                 "opponent_past_share needs the parallel engine — the champion "
@@ -432,6 +455,17 @@ def sample_diagnostics(samples, num_players, model=None, max_states=512):
     return out
 
 
+def evals_since_last_peak(history):
+    """Greedy evals since the last new pooled peak, from the writer's
+    greedy_peak_saved stamps — so a resume keeps the staleness clock."""
+    since = 0
+    for r in history:
+        if r.get("win_vs_greedy") is None:
+            continue
+        since = 0 if r.get("greedy_peak_saved") else since + 1
+    return since
+
+
 def stalled_below_floor(best_seat, floor, below):
     """Advance the never-acquired watch. Returns consecutive evals under floor.
 
@@ -458,25 +492,6 @@ def racing_decay_strike(best_seat, peak, below, drop, n_per_seat=0, z_min=0.0):
     if not drop_is_significant(peak, best_seat, n_per_seat, z_min):
         return peak, 0
     return peak, below + 1
-
-
-def capture_racing_peak(checkpoint_dir, prev_peak, peak):
-    """Copy latest.pt aside when the racing probe sets a new high. Returns True
-    if it did.
-
-    latest.pt holds this iteration's weights (saved before eval, which does not
-    touch the model), so the copy is exact. Nothing else preserves the peak:
-    best.pt follows the accept gate, which on n4_9x9_v9 accepted three times
-    while the racer decayed to 0%, and v8's iter-12 peak was overwritten by
-    later iterations before anyone could ship it.
-    """
-    if peak is None or (prev_peak is not None and peak <= prev_peak):
-        return False
-    latest = os.path.join(checkpoint_dir, "latest.pt")
-    if not os.path.exists(latest):
-        return False
-    shutil.copy2(latest, os.path.join(checkpoint_dir, "greedy_peak.pt"))
-    return True
 
 
 SELF_PLAY_MODES = ("sequential", "parallel", "vectorized")
@@ -728,6 +743,22 @@ def anchored_walled_share_by_seat(cfg):
             for seat, n in sorted(total.items())}
 
 
+def _load_warm_start(target, path):
+    """Load init_checkpoint weights with errors that name the usual causes.
+    Shared by the learner (fresh start) and the policy anchor (every start)."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"init_checkpoint={path} does not exist. Build it with "
+            f"scripts/pretrain_greedy.py (the notebooks have a cell that does "
+            f"this when it is missing).")
+    try:
+        target.load(path)
+    except Exception as exc:
+        raise RuntimeError(
+            f"init_checkpoint {path} failed to load — usually a channels/"
+            f"blocks/players mismatch with this run's network config.") from exc
+
+
 def init_champion(best, model, checkpoint_dir, log=print):
     """Establish the gating champion and make it durable from iteration 0.
 
@@ -826,8 +857,15 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         if cfg.init_checkpoint:
             # Before init_champion, so the iteration-0 gate opponent is the
             # pretrained racer rather than a wall-spamming random init.
-            model.load(cfg.init_checkpoint)
+            _load_warm_start(model, cfg.init_checkpoint)
             _log(f"Learner warm-started from {cfg.init_checkpoint}")
+            report_path = pretrain_report_path(cfg.init_checkpoint)
+            if os.path.exists(report_path):
+                with open(report_path) as f:
+                    rep = json.load(f)
+                _log(f"Warm-start report: agreement={rep.get('agreement')} "
+                     f"opening_wall_mass={rep.get('opening_wall_mass')} "
+                     f"({rep.get('games')} games, {rep.get('samples')} samples)")
         init_champion(best, model, checkpoint_dir, log=_log)
         _log(f"Starting N={cfg.num_players} training: {cfg.num_iterations} iterations, "
              f"{cfg.games_per_iteration} games/iter, {cfg.mcts_simulations} sims")
@@ -837,22 +875,39 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     champion_pool = champion_pool_paths(checkpoint_dir) if cfg.opponent_past_share else []
     past_model = make_model() if cfg.opponent_past_share else None
 
-    # Racing-decay watch (see cfg.greedy_stop_patience).
-    greedy_peak = None
+    # Frozen policy anchor (see cfg.anchor_weight). Built OUTSIDE the fresh-start
+    # branch: a resumed run must keep pulling toward the same prior.
+    anchor = None
+    if cfg.anchor_weight:
+        anchor = make_model()
+        _load_warm_start(anchor, cfg.init_checkpoint)
+        _log(f"Policy anchored to {cfg.init_checkpoint} "
+             f"(anchor_weight={cfg.anchor_weight})")
+
+    # Racing-decay watch (see cfg.greedy_stop_patience). The watermark is
+    # recovered from history like every other resumed state: v9's N=2 restart
+    # at iteration ~40 silently reset an in-memory peak of 100% to 97.5%, and
+    # the weakened reference let the run coast past its true stop.
+    seat_rates = [w / n for r in history
+                  for w, n in (r.get("greedy_by_seat") or {}).values() if n]
+    best_seat_peak = max(seat_rates, default=None)
     greedy_below_peak = 0
     greedy_below_floor = 0
     stop_reason = None
 
-    # Strongest greedy eval so far, ratcheted to greedy_peak.pt. The gate can go
-    # a whole run without accepting while latest.pt declines past the peak, so
-    # neither checkpoint holds the strongest model without this one.
-    greedy_peak_rate = max(
-        (r.get("win_vs_greedy") or 0.0) for r in history) if history else 0.0
+    greedy_rates = [(r.get("win_vs_greedy") or 0.0) for r in history]
+    # Peak staleness (see cfg.peak_stall_evals), resumed like everything else.
+    evals_since_peak = evals_since_last_peak(history)
+    # Strongest POOLED greedy eval so far, ratcheted to greedy_peak.pt — distinct
+    # from best_seat_peak above, the per-seat watermark the decay watch tracks.
+    # The gate can go a whole run without accepting while latest.pt declines
+    # past the peak, so neither checkpoint holds the strongest model without it.
+    greedy_peak_rate = max(greedy_rates, default=0.0)
 
     # Gate liveness (see cfg.gate_arm_on_greedy). Recovered from history rather
     # than persisted, so a resume cannot silently re-disarm an armed gate.
     gate_armed = not cfg.gate_arm_on_greedy or any(
-        (r.get("win_vs_greedy") or 0.0) > cfg.gate_arm_greedy_min for r in history)
+        rate > cfg.gate_arm_greedy_min for rate in greedy_rates)
     thin_evals = 0
     warned_unreachable = False
     if cfg.gate_arm_on_greedy and not gate_armed:
@@ -1019,7 +1074,8 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             S, P, V = buffer.sample_batch(
                 cfg.batch_size, source="greedy",
                 source_share=cfg.anchored_sample_share)
-            a, b = model.train_step(S, P, V)
+            a, b = model.train_step(S, P, V, anchor_model=anchor,
+                                    anchor_weight=cfg.anchor_weight)
             lp += a
             lv += b
         lp /= max(steps, 1)
@@ -1150,6 +1206,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "mcts_dirichlet_alpha": cfg.mcts_dirichlet_alpha,
                 "minimax_depth": cfg.minimax_depth,
                 "minimax_wall_candidates": cfg.minimax_wall_candidates,
+                "adjudicate": False,
+            }
+            # How the GATE deviates from a normal eval, defined once for both
+            # engines: its own move cap (max_turns raised alongside — the env
+            # ends games there on its own) and timeout adjudication.
+            gate_moves = cfg.gate_max_game_moves or cfg.max_game_moves
+            gate_overrides = {
+                "max_game_moves": gate_moves,
+                "max_turns": max(eval_config_dict["max_turns"], gate_moves),
+                "adjudicate": cfg.gate_adjudicate,
             }
             if not cfg.parallel_eval:
                 # The learner's eval agent, shared by every sequential eval
@@ -1179,13 +1245,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best: "
                          f"{done}/{total} games ({elapsed:.0f}s, cand {r.candidate_win_rate:.0%})")
 
-                gate_moves = cfg.gate_max_game_moves or cfg.max_game_moves
                 if cfg.parallel_eval:
-                    # max_turns raised alongside: the env ends games there on its own.
                     ev = evaluate_parallel_mp(
-                        model, best,
-                        {**eval_config_dict, "max_game_moves": gate_moves,
-                         "max_turns": max(eval_config_dict["max_turns"], gate_moves)},
+                        model, best, {**eval_config_dict, **gate_overrides},
                         num_games=cfg.eval_games,
                         num_workers=cfg.num_workers, batch_size=cfg.inference_batch_size,
                         on_progress=_eval_progress, base_seed=it * 100_003, log=_log)
@@ -1194,8 +1256,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                         _mcts(best, env, cfg, sims=eval_sims, dirichlet_epsilon=0.0),
                         temperature=0.1, opening_plies=cfg.eval_opening_plies)
                     ev = evaluate_mp(env, cand, champ, num_games=cfg.eval_games,
-                                     max_moves=gate_moves, on_progress=_eval_progress,
-                                     base_seed=it * 100_003)
+                                     max_moves=gate_overrides["max_game_moves"],
+                                     on_progress=_eval_progress,
+                                     base_seed=it * 100_003,
+                                     adjudicate=gate_overrides["adjudicate"])
                 accepted = ev.should_accept(threshold)
                 eval_best_secs = time.time() - t_eval_best
                 ev_wr = ev.candidate_win_rate
@@ -1229,12 +1293,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     thin_evals = 0
                     verdict = "ACCEPT" if accepted else "reject"
                 _log(f"[iter {it+1}/{cfg.num_iterations}] eval vs best done: "
-                     f"{100*ev_wr:.1f}% of {ev.decided_games} decided {verdict} "
-                     f"({eval_best_secs:.0f}s)")
+                     f"{100*ev_wr:.1f}% of {ev.decided_games} decided{ev.adj_note} "
+                     f"{verdict} ({eval_best_secs:.0f}s)")
                 # Persist the accept/reject before eval-vs-random, so best.pt and the
                 # row's `accepted` stay consistent even if the next phase is interrupted.
                 row.update(win_vs_best=ev_wr, accepted=accepted, gate_armed=True,
                            decided_games=ev.decided_games,
+                           eval_adjudicated=ev.adjudicated,
                            eval_timeouts=ev.num_games - ev.decided_games,
                            eval_best_secs=eval_best_secs, secs=time.time() - t0)
                 _write_meta()
@@ -1317,10 +1382,22 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
                 if evg_wr > greedy_peak_rate:
                     greedy_peak_rate = evg_wr
-                    model.save(os.path.join(checkpoint_dir, "greedy_peak.pt"))
+                    evals_since_peak = 0
+                    atomic_model_save(
+                        model, os.path.join(checkpoint_dir, "greedy_peak.pt"))
                     row["greedy_peak_saved"] = True
                     _log(f"[iter {it+1}/{cfg.num_iterations}] new greedy peak "
                          f"{evg_wr:.1%} — saved greedy_peak.pt")
+                else:
+                    evals_since_peak += 1
+                    if (cfg.peak_stall_evals
+                            and evals_since_peak >= cfg.peak_stall_evals):
+                        stop_reason = (
+                            f"peak stall: {evals_since_peak} consecutive greedy "
+                            f"evals without a new pooled peak (best "
+                            f"{greedy_peak_rate:.1%}). greedy_peak.pt holds it; "
+                            f"resume by raising peak_stall_evals to search "
+                            f"longer.")
 
                 # Arm the gate the moment the learner clears the absolute bar,
                 # and seed the champion from it — a racer that reaches its goal,
@@ -1380,13 +1457,9 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     best_seat, best_seat_n = max(seated) if seated else (0.0, 0)
                     row["greedy_best_seat"] = best_seat
                     prev_below = greedy_below_peak
-                    prev_peak = greedy_peak
-                    greedy_peak, greedy_below_peak = racing_decay_strike(
-                        best_seat, greedy_peak, greedy_below_peak,
+                    best_seat_peak, greedy_below_peak = racing_decay_strike(
+                        best_seat, best_seat_peak, greedy_below_peak,
                         cfg.greedy_stop_drop, best_seat_n, cfg.greedy_stop_z)
-                    if capture_racing_peak(checkpoint_dir, prev_peak, greedy_peak):
-                        _log(f"[iter {it+1}/{cfg.num_iterations}] racing peak "
-                             f"{100*greedy_peak:.0f}% best-seat -> greedy_peak.pt")
                     floor_after = max(cfg.wall_mask_iters,
                                       getattr(cfg, "greedy_min_seat_after", 0))
                     if cfg.greedy_min_seat and it >= floor_after:
@@ -1405,14 +1478,14 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                                 f"not fix it.")
                     if greedy_below_peak > prev_below:
                         _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: racing decay — "
-                             f"best seat {100*best_seat:.0f}% is {100*(greedy_peak-best_seat):.0f} "
-                             f"pts below the peak {100*greedy_peak:.0f}% "
+                             f"best seat {100*best_seat:.0f}% is {100*(best_seat_peak-best_seat):.0f} "
+                             f"pts below the peak {100*best_seat_peak:.0f}% "
                              f"({greedy_below_peak}/{cfg.greedy_stop_patience} evals)")
                         if greedy_below_peak >= cfg.greedy_stop_patience:
                             stop_reason = (
                                 f"racing decay: best per-seat greedy rate {100*best_seat:.0f}% "
                                 f"stayed >={100*cfg.greedy_stop_drop:.0f} pts below its peak "
-                                f"{100*greedy_peak:.0f}% for {greedy_below_peak} consecutive "
+                                f"{100*best_seat_peak:.0f}% for {greedy_below_peak} consecutive "
                                 f"evals. greedy_peak.pt holds the strongest greedy eval "
                                 f"({greedy_peak_rate:.1%} pooled); resume by raising "
                                 f"greedy_stop_patience if this was noise.")

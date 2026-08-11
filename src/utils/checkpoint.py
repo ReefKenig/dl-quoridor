@@ -35,6 +35,7 @@ Usage:
 """
 
 import json
+import os
 import pickle
 import shutil
 import logging
@@ -44,27 +45,32 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def atomic_model_save(model, path):
+    """Write a checkpoint via tmp + fsync + rename, so a kill mid-save cannot
+    leave a truncated file where a good one (or none) should be."""
+    tmp = f"{path}.tmp"
+    model.save(tmp)
+    fd = os.open(tmp, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(tmp, path)
+
+
 def resolve_ship_checkpoint(run_dir):
     """(path, label) of the checkpoint to ship, or (None, reason).
 
-    Preference order, weakest evidence last:
-      1. greedy_peak.pt — the weights at the racing probe's high-water mark.
-      2. best.pt, but only if some iteration was accepted.
-      3. latest.pt — the last trained weights.
-      4. best.pt as a last resort.
-
-    Two traps this exists to avoid. best.pt is written up front from the
-    untrained model, so a run that never accepted has a random best.pt. And
-    accepts are not evidence of strength on their own: n4_9x9_v9 accepted at
-    iters 20/24/28 while its per-seat greedy rate fell 35% -> 0%, so the gate
-    ranked the dead model above the live one.
-
-    Note ship.pt is deliberately not a rung: the notebook export cell *writes*
-    ship.pt from this function's result, so reading it back would be circular.
-    """
+    Preference: greedy_peak.pt (the strongest ABSOLUTE eval) whenever it
+    exists, then best.pt if the gate accepted, then latest.pt. The old order
+    put the accepted champion first, assuming accepts imply strength —
+    n4_9x9_v9 falsified that: the gate accepted at iterations 20/24/28 while
+    win_vs_greedy fell 40% -> 0%, and shipped the 0% model over the saved
+    10% peak. Accepts measure relative-to-champion; the deliverable is
+    measured against the fixed yardstick."""
     run = Path(run_dir)
     best, latest = run / "best.pt", run / "latest.pt"
-    greedy_peak = run / "greedy_peak.pt"
+    peak = run / "greedy_peak.pt"
 
     history = []
     try:
@@ -75,8 +81,18 @@ def resolve_ship_checkpoint(run_dir):
     accepts = [row["iter"] for row in history if row.get("accepted")]
     last_iter = history[-1]["iter"] if history else None
 
-    if greedy_peak.exists():
-        return str(greedy_peak), f"greedy_peak.pt{_peak_suffix(history)}"
+    if peak.exists():
+        # The writer stamps the row it saved from; the max-scan is only the
+        # fallback for meta written before that flag existed.
+        top = next((r for r in reversed(history) if r.get("greedy_peak_saved")),
+                   None) or max(
+            (r for r in history if r.get("win_vs_greedy") is not None),
+            key=lambda r: r["win_vs_greedy"], default=None)
+        detail = (f"{top['win_vs_greedy']:.1%} vs greedy at iter {top.get('iter', '?')}"
+                  if top else "rate unknown — no greedy rows in meta.json")
+        if accepts:
+            detail += f"; outranks best.pt's {len(accepts)} accepts — see docstring"
+        return str(peak), f"greedy_peak.pt ({detail})"
     if accepts and best.exists():
         return str(best), f"best.pt (accepted at iter {accepts[-1]}, {len(accepts)} accepts)"
     if latest.exists():
@@ -85,23 +101,7 @@ def resolve_ship_checkpoint(run_dir):
         return str(latest), f"latest.pt (iter {last_iter}) — {why}"
     if best.exists():
         return str(best), "best.pt (no latest.pt found)"
-    return None, f"no best.pt, latest.pt or greedy_peak.pt in {run_dir}"
-
-
-def _peak_suffix(history):
-    """Which iteration set the racing peak, for the resolver's label.
-
-    The file itself carries no iteration, so recover it from the history: the
-    first iteration holding the maximum greedy_best_seat. Runs whose peak was
-    captured by hand (every 9x9 run before this rung existed) may disagree.
-    """
-    seats = [(row.get("greedy_best_seat"), row.get("iter")) for row in history]
-    seats = [(rate, it) for rate, it in seats if rate is not None]
-    if not seats:
-        return " (racing peak; no greedy history to date it)"
-    peak = max(rate for rate, _ in seats)
-    at = min(it for rate, it in seats if rate == peak)
-    return f" (racing peak {100 * peak:.0f}% best-seat, iter {at})"
+    return None, f"no best.pt or latest.pt in {run_dir}"
 
 
 class CheckpointManager:

@@ -57,6 +57,10 @@ OUT_DIR = os.environ.get("OUT_DIR", "outputs")
 # Newest first. spec and opening plies come from each run's frozen config.json
 # where it has one; a run with no spec_version recorded predates v2, so it is v1.
 CHECKPOINTS = [
+    ("runs/n2_9x9_v9/greedy_peak.pt", 2, 9),
+    ("runs/n2_9x9_v10/greedy_peak.pt", 2, 9),
+    ("runs/n4_9x9_v10/greedy_peak.pt", 4, 9),
+    ("runs/n4_9x9_v9/greedy_peak.pt", 4, 9),
     ("runs/n2_9x9_v7/latest.pt", 2, 9),
     ("runs/n4_9x9_v7/ship.pt", 4, 9),
     ("runs/probe_n2_ramp/best.pt", 2, 9),
@@ -119,7 +123,8 @@ def load(path, num_players, board):
     model = QuoridorModelMP(
         board_size=board, action_space_size=compute_action_space_size(board),
         in_channels=3 * num_players + 3, num_channels=channels,
-        num_res_blocks=blocks, num_players=num_players, device="cpu")
+        num_res_blocks=blocks, num_players=num_players,
+        device=os.environ.get("DEVICE", "auto"))
     model.network.load_state_dict(state)
     return model, channels, blocks
 

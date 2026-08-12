@@ -35,7 +35,7 @@
             "notes": "Original scalar architecture. Trained with negamax MCTS, v3.2 notebook, 40 iterations."
         },
         "2p_9x9": {
-            "path": "runs/n2_9x9_v4/best.pt",
+            "path": "runs/n2_9x9_v4/ship.pt",
             "architecture": "QuoridorModelMP (vector value head, N=2)",
             "in_channels": 9,
             "num_players": 2,
@@ -43,9 +43,9 @@
             "num_channels": 128,
             "num_res_blocks": 8,
             "tensor_spec": 1,
-            "eval_win_rate": "~97-100% vs random (fair share 50%) BUT 0% vs a greedy pawn-rush",
-            "eval_games": 40,
-            "notes": "Full-size 9x9, 10 walls/player. max^n MCTS, 600 sims, γ=0.99. best.pt = accept-gated peak of n2_9x9_v4. NOT DEMO-READY: 0/40 vs the greedy racer on every one of 12 training evals, and 0/12 on a direct per-seat probe at 200 sims (seat 0 and seat 1 both). It spends ~61% of its turns placing walls and loses even the seat where walking forward wins outright. The vs-random number is saturated and hides this — do not quote it alone."
+            "eval_win_rate": "97.5% vs the greedy racer at K=16 (80 games, seat 0 40/40, seat 1 38/40) and 8.3% vs depth-2 minimax — the strongest 9x9 N=2 result on the held-out protocol",
+            "eval_games": 80,
+            "notes": "THE N=2 DELIVERABLE (as of the 2026-08-12 held-out rescore). Full-size 9x9, 10 walls/player. max^n MCTS, 600 sims, gamma=0.99. Scores 97.5% vs greedy and 8.3% vs depth-2 minimax, where the greedy control itself scores 2.5% — the only 9x9 N=2 checkpoint that beats the racer at the minimax bar. It also races rather than walls: opening wall mass 0.26, against 0.88 for v9 and 0.84 for v10. TWO CAVEATS. (1) The lead over n2_9x9_v9 (91.2%) is NOT statistically significant: z=1.72, p~0.09 on 80 games each. Treat them as indistinguishable on the racer and separated only by the minimax column. (2) It is K-dependent in a way its training does not explain: trained at K=0, it scores 70.0% vs greedy at K=0 and 97.5-100% at K=16, so it must be served at K=16 (see _wall_candidates_note). ship.pt and best.pt are byte-identical here (same sha256; the run accepted 15 times, last at iter 145, and has no greedy_peak.pt, so the resolver shipped the gate champion). The path moved to ship.pt only to name the file that was actually rescored — it is the same weights this entry always pointed at. Which is the point: the earlier 'NOT DEMO-READY, 0% vs a greedy pawn-rush' verdict describes THESE weights. It came from training-time evals run at K=0, where the same checkpoint reads 50% at iteration 150; restricting wall expansion to K=16 takes it to 97.5%. The deficit was in the search, not the network."
         },
         "4p_9x9": {
             "path": "runs/n4_9x9_v5/best.pt",
@@ -69,9 +69,9 @@
             "num_channels": 128,
             "num_res_blocks": 8,
             "tensor_spec": 2,
-            "eval_win_rate": "93.8% pooled vs the greedy racer (iter 12, 80 games): seat 0 39/40, seat 1 36/40",
+            "eval_win_rate": "91.2% vs the greedy racer on the held-out protocol (80 games, seat 0 39/40, seat 1 34/40) and 0.0% vs depth-2 minimax; 93.8% pooled at training time (iter 12, 600 sims)",
             "eval_games": 80,
-            "notes": "THE N=2 DELIVERABLE. Full-size 9x9, 10 walls/player, warm-started from runs/pretrain_n2_9x9. First 9x9 model that both races and walls, and the first with BOTH seats over 90%. Identical to that run's ship.pt. Pinned to greedy_peak.pt by path on purpose: the run never accepted in 60 iterations, so best.pt is the untrained initialization, and pooled rate decays to 82% by iter 60. n2_9x9_v10 peaked lower (87.5%, iter 16) and does not replace this."
+            "notes": "The best warm-started N=2 model, and the scientific result of the v9 generation — but no longer the served checkpoint. The 2026-08-12 held-out rescore put n2_9x9_v4/ship.pt at 97.5% vs the racer against this model's 91.2%, and 8.3% vs depth-2 minimax against this model's 0.0%, so the demo serves 2p_9x9. The racer gap is not significant (z=1.72); the minimax column is what decided it. Keep citing this run for what it demonstrates: warm-starting produced the first 9x9 model with BOTH seats over 90%, in twelve iterations rather than ninety-five. Full-size 9x9, 10 walls/player, warm-started from runs/pretrain_n2_9x9. First 9x9 model that both races and walls, and the first with BOTH seats over 90%. Identical to that run's ship.pt. Pinned to greedy_peak.pt by path on purpose: the run never accepted in 60 iterations, so best.pt is the untrained initialization, and pooled rate decays to 82% by iter 60. n2_9x9_v10 peaked lower (87.5%, iter 16) and does not replace this."
         },
         "4p_9x9_v9": {
             "run_dir": "runs/n4_9x9_v9",
@@ -111,7 +111,7 @@
     },
     "variants": {
         "_note": "Which registry model backs each (board_size, num_players) demo, plus the env settings it was trained under. max_walls matters as much as the weights: the walls-remaining plane is scaled by it, so serving a checkpoint at the wrong wall count feeds it planes it never saw. Read via src/utils/model_registry.py.",
-        "_wall_candidates_note": "The MCTS wall-expansion budget K the checkpoint TRAINED under, and therefore the only K it should be served at — a result scored at a different K is not comparable, and the gap is large: n2_9x9_v7 (trained K=16) scores 80.0% vs greedy at K=16 and 47.5% at K=0. 0 means unrestricted; every 5x5 checkpoint predates the restriction, and 9x9 v8 onward trained at 16 (configs/config_9x9.json mcts_wall_candidates). Serving the wrong K fails silently — the model just plays badly. See docs/restricted_wall_search.md.",
+        "_wall_candidates_note": "The MCTS wall-expansion budget K to SERVE this checkpoint at — the K it scores highest under, which is a measured fact per checkpoint and not always the K it trained under. Serving the wrong K fails silently: the model just plays badly. Two examples of the size of it: n2_9x9_v7 (trained K=16) scores 80.0% at K=16 and 47.5% at K=0, and n2_9x9_v4 (trained K=0) scores 97.5-100% at K=16 and 70.0% at K=0 — so restricting wall expansion helps a checkpoint that never saw the restriction, and the earlier rule of thumb 'serve at the trained K' does not survive that case. 0 means unrestricted, which is where both 5x5 checkpoints score best. Separately, and still true: a result SCORED at one K is not comparable to one scored at another, so never put pre- and post-restriction numbers in one table without a K column. See docs/restricted_wall_search.md and outputs/final/.",
         "_max_turns_note": "PLIES, not rounds — QuoridorEnvMP increments turn_count once per step, the same unit as max_game_moves in training and max_moves in the evaluator. Each value is the horizon its own run used (runs/<run>/config.json): 150 for both 5x5 runs, 160 at 9x9 N=2 and 320 at 9x9 N=4, set per variant to give every player the same ~80-ply budget. Serving N=4 at a shorter horizon than 320 scores as a timeout the games the measured configuration had room to convert.",
         "5x5_2p": {
             "model": "2p_vector",
@@ -126,7 +126,7 @@
             "wall_candidates": 0
         },
         "9x9_2p": {
-            "model": "2p_9x9_v9",
+            "model": "2p_9x9",
             "max_walls": 10,
             "max_turns": 160,
             "wall_candidates": 16

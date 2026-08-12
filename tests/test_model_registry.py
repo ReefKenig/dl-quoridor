@@ -145,12 +145,13 @@ def test_wall_candidates_comes_from_the_variant(tmp_path):
 @pytest.mark.parametrize("board_size,num_players,expected", [
     (5, 2, 0), (5, 4, 0), (9, 2, 16), (9, 4, 16),
 ])
-def test_shipped_registry_serves_each_model_at_its_training_K(
+def test_shipped_registry_serves_each_model_at_its_measured_best_K(
         board_size, num_players, expected):
-    """9x9 checkpoints trained under K=16 and are only comparable there.
-
-    Serving one unrestricted costs roughly half its strength and fails
-    silently — the demo just plays badly. 5x5 predates the restriction.
+    """K is the budget each checkpoint scores highest under, not the one it
+    trained under — those coincide for v9/v10 but not for the served 9x9 N=2
+    model, n2_9x9_v4, which trained at K=0 and scores 70.0% there against
+    97.5% at K=16. Serving the wrong K fails silently: the demo plays badly.
+    5x5 scores best unrestricted.
     """
     assert variant_spec(board_size, num_players).wall_candidates == expected
 

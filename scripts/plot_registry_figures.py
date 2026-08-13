@@ -37,10 +37,13 @@ REGISTRY_9X9 = {
 
 def plot_training_comparison(out: Path) -> None:
     """3-panel figure: policy loss, value loss, greedy win-rate for 9×9 runs."""
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.8))
-    fig.suptitle("9×9 Registry Models — Training Comparison",
+    # Kept narrow: the figure is scaled to ~0.92\textwidth in the report, so a
+    # wide canvas shrinks the tick labels below legibility.
+    fig, axes = plt.subplots(1, 3, figsize=(7.5, 2.7))
+    fig.suptitle("9×9 registry models — training comparison",
                  fontsize=14, fontweight="bold")
 
+    ceilings: dict[float, str] = {}
     for label, (path, num_players, color) in REGISTRY_9X9.items():
         if not Path(path).exists():
             continue
@@ -62,27 +65,37 @@ def plot_training_comparison(out: Path) -> None:
                          markersize=4, linewidth=1.5, label=label, alpha=0.85)
             axes[2].axhline(ceiling, color=color, linestyle="--",
                             linewidth=1, alpha=0.4)
+            ceilings[ceiling] = color
 
-    axes[0].set_title("Policy Loss (CE)")
-    axes[0].set_xlabel("Iteration")
-    axes[0].set_ylabel("Loss")
+    axes[0].set_title("Policy loss (CE)", fontsize=11)
+    axes[0].set_xlabel("Iteration", fontsize=10)
+    axes[0].set_ylabel("Loss", fontsize=10)
     axes[0].legend(fontsize=8)
     axes[0].grid(True, alpha=0.25)
 
-    axes[1].set_title("Value Loss (MSE)")
-    axes[1].set_xlabel("Iteration")
-    axes[1].set_ylabel("Loss")
+    axes[1].set_title("Value loss (MSE)", fontsize=11)
+    axes[1].set_xlabel("Iteration", fontsize=10)
+    axes[1].set_ylabel("Loss", fontsize=10)
     axes[1].legend(fontsize=8)
     axes[1].grid(True, alpha=0.25)
 
-    axes[2].set_title("Win Rate vs Greedy Racer")
-    axes[2].set_xlabel("Iteration")
-    axes[2].set_ylabel("%")
-    axes[2].set_ylim(-3, 105)
-    axes[2].legend(fontsize=8)
+    axes[2].set_title("Win rate vs greedy (in-run, $K$=0)", fontsize=11)
+    axes[2].set_xlabel("Iteration", fontsize=10)
+    axes[2].set_ylabel("%", fontsize=10)
+    axes[2].set_ylim(-3, 140)   # headroom so the legend clears the ceiling labels
+    axes[2].legend(fontsize=8, loc="upper right")
     axes[2].grid(True, alpha=0.25)
+    # The dashed rules are the pure-racer ceilings; unlabelled they read as
+    # arbitrary gridlines.
+    for ceiling, color in ceilings.items():
+        axes[2].text(0.02, ceiling + 2, f"pure-racer ceiling ({ceiling:.0f}%)",
+                     transform=axes[2].get_yaxis_transform(), ha="left",
+                     va="bottom", fontsize=7, color=color)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.93])
+    for ax in axes:
+        ax.tick_params(labelsize=9)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.92])
     plt.savefig(out, dpi=180, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {out}")
@@ -100,17 +113,27 @@ HELD_OUT_MODELS = [
 
 
 def _load_held_out() -> list[dict]:
-    """Merge all eval result files."""
+    """Merge eval result files, authoritative ones first.
+
+    The final rescore files (40 games/seat, marked "complete": true) are the
+    report's number of record and must win over the earlier 10-games/seat
+    sweep; files explicitly marked incomplete are dropped entirely.
+    """
     results = []
     for path in [
-        "outputs/held_out_eval.json",
-        "outputs/final/held_out_eval.json",
         "outputs/final/n2/held_out_eval.json",
         "outputs/final/n4/held_out_eval.json",
+        "outputs/final/held_out_eval.json",
+        "outputs/held_out_eval.json",
     ]:
-        if Path(path).exists():
-            with open(path) as f:
-                results.extend(json.load(f)["results"])
+        if not Path(path).exists():
+            continue
+        with open(path) as f:
+            payload = json.load(f)
+        if payload.get("complete") is False:
+            print(f"Skipping incomplete eval file: {path}")
+            continue
+        results.extend(payload["results"])
     return results
 
 
@@ -130,17 +153,18 @@ def plot_held_out_bar(out: Path) -> None:
         return
 
     labels = []
-    greedy_rates = []
-    minimax_rates = []
+    greedy = []   # (rate|None, games)
+    minimax = []
 
     for run_sub, k, display in HELD_OUT_MODELS:
         g = _find_result(results, run_sub, k, "greedy")
         m = _find_result(results, run_sub, k, "minimax")
         if g is None and m is None:
             continue
-        labels.append(display)
-        greedy_rates.append(g["rate"] * 100 if g else 0)
-        minimax_rates.append(m["rate"] * 100 if m else 0)
+        n = (g or m).get("games")
+        labels.append(f"{display}\n$K$={k}, {n} games")
+        greedy.append(g["rate"] * 100 if g else None)
+        minimax.append(m["rate"] * 100 if m else None)
 
     if not labels:
         print("No matching held-out results for registry models")
@@ -149,32 +173,34 @@ def plot_held_out_bar(out: Path) -> None:
     x = np.arange(len(labels))
     width = 0.35
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    bars_g = ax.bar(x - width/2, greedy_rates, width, label="vs Greedy",
+    fig, ax = plt.subplots(figsize=(9.5, 4.4))
+    bars_g = ax.bar(x - width/2, [r or 0 for r in greedy], width,
+                    label="vs greedy racer (in training pool)",
                     color="#4CAF50", alpha=0.85)
-    bars_m = ax.bar(x + width/2, minimax_rates, width, label="vs Minimax (d=2)",
+    bars_m = ax.bar(x + width/2, [r or 0 for r in minimax], width,
+                    label="vs depth-2 minimax (held out)",
                     color="#FF7043", alpha=0.85)
 
-    ax.set_title("Held-Out Evaluation — Registry Models at Serving Configuration",
-                 fontsize=13, fontweight="bold")
-    ax.set_ylabel("Win Rate (%)")
+    ax.set_title("Held-out evaluation — registry models at serving configuration",
+                 fontsize=15, fontweight="bold")
+    ax.set_ylabel("Win rate (%)", fontsize=13)
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontsize=10)
-    ax.set_ylim(0, 110)
-    ax.legend(fontsize=10)
+    ax.set_xticklabels(labels, fontsize=11)
+    ax.tick_params(axis="y", labelsize=11)
+    ax.set_ylim(0, 112)
+    ax.legend(fontsize=11)
     ax.grid(True, alpha=0.2, axis="y")
 
-    # Annotate bars
-    for bar in bars_g:
-        h = bar.get_height()
-        if h > 0:
-            ax.text(bar.get_x() + bar.get_width()/2, h + 1.5,
-                    f"{h:.0f}%", ha="center", va="bottom", fontsize=9)
-    for bar in bars_m:
-        h = bar.get_height()
-        if h > 0:
-            ax.text(bar.get_x() + bar.get_width()/2, h + 1.5,
-                    f"{h:.1f}%", ha="center", va="bottom", fontsize=9)
+    # Annotate every bar: a measured 0% and a missing measurement both draw no
+    # bar, so they have to be told apart in text.
+    for bars, rates in ((bars_g, greedy), (bars_m, minimax)):
+        for bar, rate in zip(bars, rates):
+            label = "not measured" if rate is None else f"{rate:.1f}%"
+            ax.text(bar.get_x() + bar.get_width()/2, (rate or 0) + 1.5, label,
+                    ha="center", va="bottom", fontsize=10,
+                    color="#888" if rate is None else "black",
+                    fontstyle="italic" if rate is None else "normal",
+                    rotation=90 if rate is None else 0)
 
     plt.tight_layout()
     plt.savefig(out, dpi=180, bbox_inches="tight")

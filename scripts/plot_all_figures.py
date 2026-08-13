@@ -290,11 +290,11 @@ def plot_comparison(n4_history: list[dict], metrics_2p: list[dict] | None,
 
 # ── γ-Drift Ablation Overlay ──────────────────────────────────────────────
 DRIFT_RUNS = {
-    "n2 γ=0.99":        ("runs/n2_5x5_v1/meta.json",       {"color": "#E53935", "ls": "-"}),
-    "n2 γ=0.97":        ("runs/n2_5x5_g097_v1/meta.json",  {"color": "#1E88E5", "ls": "-"}),
-    "n4 γ=0.99":        ("runs/n4_5x5_v3/meta.json",       {"color": "#E53935", "ls": "--"}),
-    "n2 γ=0.99 c_v=2":  ("runs/n2_5x5_cv2_v1/meta.json",  {"color": "#E53935", "ls": ":"}),
-    "n2 γ=0.99 buf=10k":("runs/n2_5x5_buf10k_v1/meta.json",{"color": "#E53935", "ls": "-."}),
+    "n2 γ=0.99":        ("runs/n2_5x5_v1/meta.json",       {"color": "#E53935", "ls": "-",  "marker": "o"}),
+    "n2 γ=0.97":        ("runs/n2_5x5_g097_v1/meta.json",  {"color": "#1E88E5", "ls": "-",  "marker": "s"}),
+    "n4 γ=0.99":        ("runs/n4_5x5_v3/meta.json",       {"color": "#E53935", "ls": "--", "marker": "^"}),
+    "n2 γ=0.99 c_v=2":  ("runs/n2_5x5_cv2_v1/meta.json",  {"color": "#E53935", "ls": ":",  "marker": "v"}),
+    "n2 γ=0.99 buf=10k":("runs/n2_5x5_buf10k_v1/meta.json",{"color": "#E53935", "ls": "-.", "marker": "D"}),
 }
 
 
@@ -312,7 +312,8 @@ def plot_gamma_drift(output_path: str | Path, max_iters: int = 30) -> None:
         if len(iters) > max_iters:
             iters, loss_v = iters[:max_iters], loss_v[:max_iters]
         ax.plot(iters, loss_v, label=label, color=style["color"],
-                linestyle=style["ls"], linewidth=2.2, alpha=0.85)
+                linestyle=style["ls"], linewidth=2.0, alpha=0.85,
+                marker=style["marker"], markersize=4, markevery=3)
 
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Value Loss (MSE)")
@@ -333,15 +334,19 @@ def plot_gamma_drift(output_path: str | Path, max_iters: int = 30) -> None:
 
 
 def plot_seat_trajectory(output_path: str | Path) -> None:
+    # v9/v10, not v4: per-seat greedy results were only recorded from the
+    # warm-start generation onward, and these are the runs the erosion and
+    # retention argument is about.
     runs = [
-        ("N=2 · v4", "runs/n2_9x9_v4/meta.json", 2, "#1565C0"),
-        ("N=4 · v10", "runs/n4_9x9_v10/meta.json", 4, "#D84315"),
+        ("N=2 · v9 (warm-started)", "runs/n2_9x9_v9/meta.json", 2, "#1565C0"),
+        ("N=4 · v10 (warm-started)", "runs/n4_9x9_v10/meta.json", 4, "#D84315"),
     ]
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.6), sharey=True)
-    fig.suptitle("9×9 Greedy-Racer Evaluation by Candidate Seat",
+    fig, axes = plt.subplots(1, 2, figsize=(7.8, 3.1), sharey=True)
+    fig.suptitle("9×9 greedy-racer evaluation by candidate seat",
                  fontsize=14, fontweight="bold")
     for ax, (label, path, players, color) in zip(axes, runs):
         history = load_history(path)
+        plotted = 0
         for seat in range(players):
             points = []
             for row in history:
@@ -353,46 +358,65 @@ def plot_seat_trajectory(output_path: str | Path) -> None:
                 x, y = zip(*points)
                 ax.plot(x, y, marker="o", linewidth=1.8, markersize=4,
                         label=f"seat {seat}", alpha=0.9)
+                plotted += 1
+        if not plotted:
+            ax.text(0.5, 0.5, "no per-seat evaluations recorded",
+                    transform=ax.transAxes, ha="center", va="center",
+                    fontsize=11, fontstyle="italic", color="#888")
         ceiling = 50 if players == 2 else 25
         ax.axhline(ceiling, color=color, linestyle="--", linewidth=1.2,
-                   alpha=0.8, label=f"race ceiling ({ceiling}%)")
-        ax.set_title(label)
-        ax.set_xlabel("Training iteration")
+                   alpha=0.8, label=f"pure-racer ceiling ({ceiling}%)")
+        ax.set_title(label, fontsize=11)
+        ax.set_xlabel("Training iteration", fontsize=10)
         ax.set_xlim(left=0)
-        ax.set_ylim(-3, 105)
+        ax.set_ylim(-3, 118)
+        ax.tick_params(labelsize=10)
         ax.grid(True, alpha=0.25)
-        ax.legend(fontsize=8, loc="upper right")
-    axes[0].set_ylabel("Candidate win rate vs greedy (%)")
+        # Keep the legend off the curves: N=2 lives high, N=4 lives low.
+        ax.legend(fontsize=8, ncol=2,
+                  loc="lower left" if players == 2 else "upper left")
+    axes[0].set_ylabel("Candidate win rate vs greedy (%)", fontsize=10)
     fig.text(0.5, 0.01,
-             "Markers show recorded evaluations; blank intervals were not evaluated.",
-             ha="center", fontsize=8, color="#555")
-    plt.tight_layout(rect=[0, 0.04, 1, 0.93])
+             "Markers show recorded evaluations; blank intervals were not evaluated. "
+             "Overlapping flat lines at 0% hide seats 1–3 under seat 3.",
+             ha="center", fontsize=9, color="#555")
+    plt.tight_layout(rect=[0, 0.05, 1, 0.92])
     plt.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {output_path}")
 
 
 def _diagram(output_path: str | Path, title: str, columns: list) -> None:
-    fig, ax = plt.subplots(figsize=(12, 5.5))
+    # Canvas is sized to the content: a fixed tall ylim leaves dead space that
+    # the report then scales the legible text down to fill.
+    rows = max(len(column[1]) for column in columns)
+    fig, ax = plt.subplots(figsize=(12, 1.35 + 1.15 * rows))
     ax.set_xlim(0, 12)
-    ax.set_ylim(0, 6)
+    ax.set_ylim(4.8 - 1.15 * (rows - 1) - 0.6, 5.5)
     ax.axis("off")
-    ax.set_title(title, fontsize=15, fontweight="bold", pad=18)
+    ax.set_title(title, fontsize=17, fontweight="bold", pad=14)
     positions = {}
     for column in columns:
         x = column[0]
         for index, (key, text, color) in enumerate(column[1]):
             y = 4.8 - index * 1.15
-            positions[key] = (x, y)
-            ax.text(x, y, text, ha="center", va="center", fontsize=9,
+            # Half-width estimated from the widest line so arrows start at the
+            # box edge rather than inside the label.
+            positions[key] = (x, y, 0.05 * max(map(len, text.split("\n"))) + 0.1)
+            ax.text(x, y, text, ha="center", va="center", fontsize=12,
                     bbox=dict(boxstyle="round,pad=0.55", facecolor=color,
                               edgecolor="#263238", linewidth=1.1))
     for source, target in columns[-1][2]:
-        x1, y1 = positions[source]
-        x2, y2 = positions[target]
-        ax.annotate("", xy=(x2 - 0.55, y2), xytext=(x1 + 0.55, y1),
+        x1, y1, w1 = positions[source]
+        x2, y2, w2 = positions[target]
+        if abs(x1 - x2) < 0.6:      # same column: route vertically
+            start, end = (x1, y1 - 0.45), (x2, y2 + 0.45)
+        else:
+            start, end = (x1 + w1, y1), (x2 - w2, y2)
+        ax.annotate("", xy=end, xytext=start,
                     arrowprops=dict(arrowstyle="->", color="#455A64",
-                                    linewidth=1.5))
+                                    linewidth=1.5,
+                                    connectionstyle="arc3,rad=-0.15"))
     plt.tight_layout()
     plt.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -499,6 +523,9 @@ def main() -> None:
     att = args.attachments_dir
     if att.parent.exists():
         att.mkdir(parents=True, exist_ok=True)
+        # Written here too, not hand-copied from outputs/, so the report's copy
+        # cannot drift from the generator.
+        plot_gamma_drift(att / "gamma-drift-ablation.png")
         plot_seat_trajectory(att / "seat-trajectory.png")
         plot_topology(att / "topology.png")
         plot_deployment(att / "deployment.png")

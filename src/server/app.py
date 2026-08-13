@@ -27,6 +27,7 @@ CORS(app)
 # count it was trained under; serving any of those from a different source is
 # how a model ends up reading planes on a scale it never saw.
 SUPPORTED_VARIANTS = [(5, 2), (5, 4), (9, 2), (9, 4)]
+GAME_ID_HEADER = "X-Game-Id"
 
 
 def _build_loaded_variant(board_size, num_players):
@@ -72,7 +73,7 @@ def _get_request_game_id():
     game_id = (
         payload.get("game_id")
         or request.args.get("game_id")
-        or request.headers.get("X-Game-Id")
+        or request.headers.get(GAME_ID_HEADER)
     )
     return game_id or _resolve_session_id()
 
@@ -162,7 +163,7 @@ def reset_game(board_size):
     game_id = (
         data.get("game_id")
         or request.args.get("game_id")
-        or request.headers.get("X-Game-Id")
+        or request.headers.get(GAME_ID_HEADER)
     )
 
     try:
@@ -182,7 +183,7 @@ def reset_game(board_size):
 def get_state(board_size):
     game_id = (
         request.args.get("game_id")
-        or request.headers.get("X-Game-Id")
+        or request.headers.get(GAME_ID_HEADER)
         or _get_request_game_id()
     )
     runtime = _get_session_runtime(
@@ -201,7 +202,7 @@ def process_move(board_size):
     game_id = (
         data.get("game_id")
         or request.args.get("game_id")
-        or request.headers.get("X-Game-Id")
+        or request.headers.get(GAME_ID_HEADER)
         or _get_request_game_id()
     )
     runtime = _get_session_runtime(

@@ -1,6 +1,7 @@
 // --- API & GAME LOGIC ---
 
 let moveController = null;
+let currentGameId = null;
 
 async function startGame() {
   if (moveController) {
@@ -30,11 +31,12 @@ async function startGame() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty }),
+        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty, game_id: currentGameId }),
       },
     );
 
     const data = await response.json();
+    currentGameId = data.game_id || currentGameId;
     isPlayerTurn = true;
     gameState = data;
 
@@ -64,11 +66,12 @@ async function restartGame() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty }),
+        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty, game_id: currentGameId }),
       },
     );
     const data = await response.json();
 
+    currentGameId = data.game_id || currentGameId;
     isPlayerTurn = true;
     gameState = data;
 
@@ -147,7 +150,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
   if (moveController) moveController.abort();
   moveController = new AbortController();
   const signal = moveController.signal;
-  
+
   document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "none");
   const diffSelect = document.getElementById("difficulty");
   if (diffSelect) diffSelect.disabled = true;
@@ -157,10 +160,11 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       `/api/${currentGridSize}x${currentGridSize}/move`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Game-Id": currentGameId || "" },
         body: JSON.stringify({
           type: type,
-          target: { row: targetRow, col: targetCol }
+          target: { row: targetRow, col: targetCol },
+          game_id: currentGameId,
         }),
         signal,
       },
@@ -173,15 +177,17 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       showToast("⚠️ " + data.error);
       statusText.innerText = "🎯 Your turn (Player 1)";
       isPlayerTurn = true;
-      
+
       document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
       if (diffSelect) diffSelect.disabled = false;
-      
+
       // Re-sync state from server in case of drift
       try {
-        const sync = await fetch(`/api/${currentGridSize}x${currentGridSize}/state`);
+        const sync = await fetch(`/api/${currentGridSize}x${currentGridSize}/state?game_id=${encodeURIComponent(currentGameId || "")}`);
         if (sync.ok) {
-          gameState = await sync.json();
+          const syncState = await sync.json();
+          currentGameId = syncState.game_id || currentGameId;
+          gameState = syncState;
           drawBoard();
         }
       } catch (_) {}
@@ -237,7 +243,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       }
       isPlayerTurn = false;
       restartBtn.classList.remove("btn-hidden");
-      
+
       document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
       if (diffSelect) diffSelect.disabled = false;
       return;
@@ -245,14 +251,14 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
     statusText.innerText = "🎯 Your turn (Player 1)";
     isPlayerTurn = true;
-    
+
     document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
     if (diffSelect) diffSelect.disabled = false;
   } catch (error) {
     if (error.name === "AbortError") return;
     console.error("Error communicating with AI:", error);
     statusText.innerText = "❌ Server connection lost.";
-    
+
     document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
     if (diffSelect) diffSelect.disabled = false;
   }

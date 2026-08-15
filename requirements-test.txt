@@ -1,7 +1,7 @@
 # What `pytest tests/` needs, and nothing else.
 #
-# Deliberately NOT `-r requirements.txt`: that also carries the server and UI
-# stack (flask, gunicorn, pygame, wandb, shimmy), which no test imports, and an
+# Deliberately NOT `-r requirements.txt`: that also carries the UI stack
+# (gunicorn, pygame, wandb, shimmy), which no test imports, and an
 # unpinned `torch>=2.0.0` that resolves against PyPI rather than the CPU wheel
 # index. CI installs CPU torch first and then this file, so torch is absent here
 # on purpose — listing it would re-resolve it.
@@ -20,3 +20,8 @@ pytest-xdist>=3.5.0
 pytest-timeout>=2.2.0
 gymnasium>=1.0.0
 stable-baselines3>=2.4.0
+# Same reason, for tests/test_server_multi_session.py: it imports src.server.app,
+# which imports flask at module scope. Missing checkpoints are fine there --
+# load_variant returns an untrained model rather than raising.
+flask==3.0.2
+flask-cors

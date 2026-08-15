@@ -8,8 +8,8 @@ After=network.target
 [Service]
 User=cs501
 Group=cs501
-WorkingDirectory=/home/cs501/quoridor
-ExecStart=/home/cs501/quoridor/.venv/bin/gunicorn --bind 127.0.0.1:8000 --timeout 120 --workers 1 src.server.app:app
+WorkingDirectory=/home/cs501/dl-quoridor
+ExecStart=/home/cs501/dl-quoridor/.venv/bin/gunicorn --bind 127.0.0.1:8000 --timeout 120 --workers 1 src.server.app:app
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

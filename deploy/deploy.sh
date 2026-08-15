@@ -6,7 +6,7 @@
 set -e
 
 SERVER="cs501@10.10.248.141"
-REMOTE_DIR="~/quoridor"
+REMOTE_DIR="~/dl-quoridor"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 

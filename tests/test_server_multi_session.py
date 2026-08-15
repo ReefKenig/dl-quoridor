@@ -1,3 +1,4 @@
+from src.server import app as server_app
 from src.server.app import app
 
 BOARD_2P = "5x5"
@@ -44,3 +45,26 @@ def test_game_state_is_isolated_per_client_session():
     _assert_player_count(
         current_state_b, expected_players=4, expected_game_id=SESSION_B
     )
+
+
+def test_session_map_is_bounded_by_max_sessions(monkeypatch):
+    monkeypatch.setattr(server_app, "MAX_SESSIONS", 3)
+    server_app.SESSION_GAMES.clear()
+
+    for i in range(6):
+        _reset_session(app.test_client(), BOARD_2P, num_players=2, game_id=f"cap-{i}")
+
+    assert len(server_app.SESSION_GAMES) == 3
+    # the three most recent survive; the oldest are evicted first
+    assert set(server_app.SESSION_GAMES) == {"cap-3", "cap-4", "cap-5"}
+
+
+def test_idle_sessions_expire(monkeypatch):
+    monkeypatch.setattr(server_app, "SESSION_TTL_SECONDS", 0)
+    server_app.SESSION_GAMES.clear()
+
+    _reset_session(app.test_client(), BOARD_2P, num_players=2, game_id="stale")
+    _reset_session(app.test_client(), BOARD_2P, num_players=2, game_id="fresh")
+
+    assert "stale" not in server_app.SESSION_GAMES
+    assert "fresh" in server_app.SESSION_GAMES

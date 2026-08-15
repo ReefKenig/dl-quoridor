@@ -1,5 +1,7 @@
 import os
+import time
 import uuid
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -57,7 +59,21 @@ AGENTS = {key: _build_loaded_variant(*key) for key in SUPPORTED_VARIANTS}
 
 
 # ── Per-session game state ──
-SESSION_GAMES = {}
+# Bounded on purpose: one board and one search instance are held per game id,
+# so an unevicted map grows without limit on a long-lived process.
+MAX_SESSIONS = int(os.environ.get("MAX_SESSIONS", "64"))
+SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL_SECONDS", "3600"))
+SESSION_GAMES = OrderedDict()
+
+
+def _prune_sessions(keep):
+    """Drop idle then least-recently-used games, never the one being served."""
+    now = time.monotonic()
+    for session_id, runtime in list(SESSION_GAMES.items()):
+        if session_id != keep and now - runtime["last_seen"] > SESSION_TTL_SECONDS:
+            del SESSION_GAMES[session_id]
+    while len(SESSION_GAMES) > MAX_SESSIONS and next(iter(SESSION_GAMES)) != keep:
+        SESSION_GAMES.popitem(last=False)
 
 
 def _resolve_session_id(game_id=None):
@@ -113,6 +129,9 @@ def _get_session_runtime(
             difficulty=difficulty,
         )
         SESSION_GAMES[session_id] = runtime
+    runtime["last_seen"] = time.monotonic()
+    SESSION_GAMES.move_to_end(session_id)
+    _prune_sessions(session_id)
     return runtime
 
 

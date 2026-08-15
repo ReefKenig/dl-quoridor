@@ -2,6 +2,8 @@
 # Patterns work with both rsync --exclude-from and tar --exclude-from
 .venv
 .venv*
+venv
+venv*
 __pycache__
 *.pyc
 *.ipynb

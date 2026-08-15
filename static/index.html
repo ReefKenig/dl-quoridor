@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Quoridor AI</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="favicon.png" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="main-menu" class="container">
+      <h1>Quoridor AI</h1>
+
+      <div class="menu-options">
+        <div>
+          <label for="num-players">Number of Players</label>
+          <select id="num-players">
+            <option value="2">2 Players</option>
+            <option value="4" selected>4 Players</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="difficulty">Difficulty</label>
+          <select id="difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="board-size">Board Size</label>
+          <select id="board-size">
+            <option value="5">5 × 5</option>
+            <option value="9">9 × 9</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn-primary" onclick="startGame()">Start Game</button>
+      <button class="btn-secondary" onclick="showInstructions()">How to Play</button>
+    </div>
+
+    <div id="game-screen" class="container hidden">
+      <h2 id="game-status">Player 1's turn</h2>
+      <div class="difficulty-switcher">
+        <button class="diff-opt" data-diff="easy" onclick="switchDifficulty('easy')">Easy</button>
+        <button class="diff-opt" data-diff="medium" onclick="switchDifficulty('medium')">Medium</button>
+        <button class="diff-opt" data-diff="hard" onclick="switchDifficulty('hard')">Hard</button>
+      </div>
+
+      <div class="game-layout">
+        <canvas id="game-board"></canvas>
+
+        <div id="walls-panel" class="walls-panel"></div>
+      </div>
+
+      <div class="game-buttons">
+        <button onclick="quitToMenu()">Quit</button>
+        <button onclick="showInstructions()">Rules</button>
+        <button id="restart-btn" class="btn-hidden" onclick="restartGame()">
+          Play Again
+        </button>
+      </div>
+    </div>
+
+    <div id="instructions-modal" class="modal-overlay hidden" onclick="hideInstructions(event)">
+      <div class="modal-content">
+        <h2>How to Play Quoridor</h2>
+        <div class="instructions-body">
+          <p><strong>Goal:</strong> Move your pawn to the opposite side of the board.</p>
+          <p><strong>On your turn</strong>, do one of the following:</p>
+          <ul>
+            <li><strong>Move your pawn</strong> one square (up, down, left, or right). You can jump over an adjacent opponent.</li>
+            <li><strong>Place a wall</strong> to block your opponents' path. Walls span two squares.</li>
+          </ul>
+          <p><strong>Rules:</strong></p>
+          <ul>
+            <li>You cannot completely block any player from reaching their goal — at least one path must always remain.</li>
+            <li>Each player has a limited number of walls (shown in the side panel).</li>
+            <li>The first player to reach the opposite side wins!</li>
+          </ul>
+          <p><strong>Controls:</strong> Click a highlighted square to move, or click between squares to place a wall.</p>
+        </div>
+        <button onclick="hideInstructions(event)">Got it!</button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="js/constants.js"></script>
+    <script src="index.js"></script>
+    <script src="js/drawing.js"></script>
+    <script src="js/input.js"></script>
+    <script src="js/game.js"></script>
+  </body>
+</html>

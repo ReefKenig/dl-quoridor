@@ -1,0 +1,27 @@
+# What `pytest tests/` needs, and nothing else.
+#
+# Deliberately NOT `-r requirements.txt`: that also carries the UI stack
+# (gunicorn, pygame, wandb, shimmy), which no test imports, and an
+# unpinned `torch>=2.0.0` that resolves against PyPI rather than the CPU wheel
+# index. CI installs CPU torch first and then this file, so torch is absent here
+# on purpose — listing it would re-resolve it.
+#
+# gymnasium and stable-baselines3 are here for exactly one file,
+# tests/test_sb3.py, which imports them unguarded: without them that file errors
+# at collection and reds the whole run rather than skipping.
+numpy>=1.24.0
+matplotlib>=3.7.0
+psutil>=5.9.0
+pytest>=7.0.0
+# Five stochastic MCTS strength tests are ~75% of the suite's wall clock, so a
+# 2-core runner takes ~15.5 min serially and sits on the edge of being killed.
+pytest-xdist>=3.5.0
+# A hung test names itself instead of the job dying with no output.
+pytest-timeout>=2.2.0
+gymnasium>=1.0.0
+stable-baselines3>=2.4.0
+# Same reason, for tests/test_server_multi_session.py: it imports src.server.app,
+# which imports flask at module scope. Missing checkpoints are fine there --
+# load_variant returns an untrained model rather than raising.
+flask==3.0.2
+flask-cors

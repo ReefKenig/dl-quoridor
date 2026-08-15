@@ -1,0 +1,25 @@
+# Static deploy exclusions (shared between deploy.sh and deploy_win.sh)
+# Patterns work with both rsync --exclude-from and tar --exclude-from
+.venv
+.venv*
+venv
+venv*
+__pycache__
+*.pyc
+*.ipynb
+notebooks
+outputs
+docs
+.git
+
+# Heavy training artifacts inside run dirs (server only needs the shipped .pt)
+replay_buffer.npz
+*_artifacts.tar.gz
+latest.pt
+best.pt
+peaks
+*.log
+*.pid
+*.out
+training_curves.png
+figures

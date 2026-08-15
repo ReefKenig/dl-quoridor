@@ -1,0 +1,735 @@
+2026-08-04 08:14:58 ======================================================================
+2026-08-04 08:14:58 training_loop_mp launched | N=2 board=9x9 | sims=600 games/iter=40 | self_play=parallel workers=10 vec_games=0
+2026-08-04 08:14:58 checkpoint_dir=runs/n2_9x9_anchored | eval=40+20+40 greedy | accept_margin=0.08 | buffer=50000
+2026-08-04 08:14:58 train_steps=300 max_moves=160 explore_moves=20 warmup=1000 discount=0.99/round leaf_batch=1 vloss=1.0
+2026-08-04 08:14:58 resources: 15 usable cpus (host cores), 26 GB, no cgroup limit, gpu: no CUDA, rss=0.32 GB at launch
+2026-08-04 08:14:58 ======================================================================
+2026-08-04 08:14:58 Config frozen -> runs/n2_9x9_anchored/config.json
+2026-08-04 08:14:58 Champion initialised from the starting model -> runs/n2_9x9_anchored/best.pt
+2026-08-04 08:14:58 Starting N=2 training: 60 iterations, 40 games/iter, 600 sims
+2026-08-04 08:14:58 [iter 1/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 08:14:58 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 08:16:16   [GPU] 50,000 evals (5011 batches, avg 10/batch = 8% of 128, 639 evals/s, 639 msg/s, 1.0 leaves/msg, 78s)
+2026-08-04 08:17:33   [GPU] 100,008 evals (10020 batches, avg 10/batch = 8% of 128, 644 evals/s, 644 msg/s, 1.0 leaves/msg, 155s)
+2026-08-04 08:18:37 [iter 1/60] self-play: 5/40 games...
+2026-08-04 08:18:50   [GPU] 150,002 evals (15023 batches, avg 10/batch = 8% of 128, 646 evals/s, 646 msg/s, 1.0 leaves/msg, 232s)
+2026-08-04 08:20:08   [GPU] 200,007 evals (20026 batches, avg 10/batch = 8% of 128, 644 evals/s, 644 msg/s, 1.0 leaves/msg, 310s)
+2026-08-04 08:21:25   [GPU] 250,003 evals (25029 batches, avg 10/batch = 8% of 128, 646 evals/s, 646 msg/s, 1.0 leaves/msg, 387s)
+2026-08-04 08:22:43   [GPU] 300,005 evals (30032 batches, avg 10/batch = 8% of 128, 645 evals/s, 645 msg/s, 1.0 leaves/msg, 465s)
+2026-08-04 08:24:01   [GPU] 350,004 evals (35034 batches, avg 10/batch = 8% of 128, 644 evals/s, 644 msg/s, 1.0 leaves/msg, 544s)
+2026-08-04 08:25:19   [GPU] 400,004 evals (40036 batches, avg 10/batch = 8% of 128, 644 evals/s, 644 msg/s, 1.0 leaves/msg, 622s)
+2026-08-04 08:26:01 [iter 1/60] self-play: 10/40 games...
+2026-08-04 08:26:38   [GPU] 450,009 evals (45037 batches, avg 10/batch = 8% of 128, 643 evals/s, 643 msg/s, 1.0 leaves/msg, 700s)
+2026-08-04 08:27:57   [GPU] 500,008 evals (50039 batches, avg 10/batch = 8% of 128, 642 evals/s, 642 msg/s, 1.0 leaves/msg, 779s)
+2026-08-04 08:29:15   [GPU] 550,000 evals (55040 batches, avg 10/batch = 8% of 128, 641 evals/s, 641 msg/s, 1.0 leaves/msg, 858s)
+2026-08-04 08:30:34   [GPU] 600,002 evals (60041 batches, avg 10/batch = 8% of 128, 641 evals/s, 641 msg/s, 1.0 leaves/msg, 936s)
+2026-08-04 08:31:52   [GPU] 650,006 evals (65043 batches, avg 10/batch = 8% of 128, 641 evals/s, 641 msg/s, 1.0 leaves/msg, 1015s)
+2026-08-04 08:33:11   [GPU] 700,000 evals (70043 batches, avg 10/batch = 8% of 128, 640 evals/s, 640 msg/s, 1.0 leaves/msg, 1093s)
+2026-08-04 08:34:30   [GPU] 750,003 evals (75044 batches, avg 10/batch = 8% of 128, 640 evals/s, 640 msg/s, 1.0 leaves/msg, 1172s)
+2026-08-04 08:35:44 [iter 1/60] self-play: 15/40 games...
+2026-08-04 08:35:48   [GPU] 800,001 evals (80046 batches, avg 10/batch = 8% of 128, 640 evals/s, 640 msg/s, 1.0 leaves/msg, 1250s)
+2026-08-04 08:37:07   [GPU] 850,005 evals (85049 batches, avg 10/batch = 8% of 128, 640 evals/s, 640 msg/s, 1.0 leaves/msg, 1329s)
+2026-08-04 08:38:25   [GPU] 900,004 evals (90051 batches, avg 10/batch = 8% of 128, 640 evals/s, 640 msg/s, 1.0 leaves/msg, 1407s)
+2026-08-04 08:39:43   [GPU] 950,006 evals (95053 batches, avg 10/batch = 8% of 128, 640 evals/s, 640 msg/s, 1.0 leaves/msg, 1485s)
+2026-08-04 08:40:36 [iter 1/60] self-play: 20/40 games...
+2026-08-04 08:41:02   [GPU] 1,000,001 evals (100056 batches, avg 10/batch = 8% of 128, 639 evals/s, 639 msg/s, 1.0 leaves/msg, 1564s)
+2026-08-04 08:42:21   [GPU] 1,050,009 evals (105061 batches, avg 10/batch = 8% of 128, 639 evals/s, 639 msg/s, 1.0 leaves/msg, 1643s)
+2026-08-04 08:43:39   [GPU] 1,100,005 evals (110063 batches, avg 10/batch = 8% of 128, 639 evals/s, 639 msg/s, 1.0 leaves/msg, 1721s)
+2026-08-04 08:43:48 [iter 1/60] self-play: 25/40 games...
+2026-08-04 08:44:58   [GPU] 1,150,007 evals (115068 batches, avg 10/batch = 8% of 128, 639 evals/s, 639 msg/s, 1.0 leaves/msg, 1800s)
+2026-08-04 08:46:16   [GPU] 1,200,008 evals (120072 batches, avg 10/batch = 8% of 128, 639 evals/s, 639 msg/s, 1.0 leaves/msg, 1879s)
+2026-08-04 08:46:42 [iter 1/60] self-play: 30/40 games...
+2026-08-04 08:47:35   [GPU] 1,250,003 evals (125078 batches, avg 10/batch = 8% of 128, 639 evals/s, 639 msg/s, 1.0 leaves/msg, 1957s)
+2026-08-04 08:48:59   [GPU] 1,300,006 evals (130636 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 2042s)
+2026-08-04 08:50:24   [GPU] 1,350,004 evals (136192 batches, avg 10/batch = 8% of 128, 635 evals/s, 635 msg/s, 1.0 leaves/msg, 2126s)
+2026-08-04 08:51:50   [GPU] 1,400,000 evals (141888 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 2213s)
+2026-08-04 08:53:31   [GPU] 1,450,002 evals (148889 batches, avg 10/batch = 8% of 128, 627 evals/s, 627 msg/s, 1.0 leaves/msg, 2314s)
+2026-08-04 08:55:24   [GPU] 1,500,005 evals (156886 batches, avg 10/batch = 7% of 128, 618 evals/s, 618 msg/s, 1.0 leaves/msg, 2426s)
+2026-08-04 08:55:39 [iter 1/60] self-play: 35/40 games...
+2026-08-04 08:58:00   [GPU] 1,550,002 evals (170702 batches, avg 9/batch = 7% of 128, 600 evals/s, 600 msg/s, 1.0 leaves/msg, 2583s)
+2026-08-04 09:01:29 [iter 1/60] self-play: 40/40 games...
+2026-08-04 09:01:29 [iter 1/60] self-play done: 40 games (2791s) | wins: P0=15, P1=17, draw=8 | draw_rate=20% avg_len~37
+2026-08-04 09:01:29 [iter 1/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 09:03:56 [iter 1/60] training done: loss_p=1.852 loss_v=0.288 (146s)
+2026-08-04 09:03:57 [iter 1/60] data: policy_wall_mass=0.128 walled_states=49% walls_on_board=16.6 value_mae walled=0.096 free=0.399
+2026-08-04 09:03:57 [iter 1/60] eval skipped (eval_every=4)
+2026-08-04 09:03:57 >>> iter 1 | loss_p=1.852 loss_v=0.288 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=20% | buf=2974 | rss=0.47GB | sp=2791s train=146s eval_best=0s eval_rand=0s | total=2939s
+2026-08-04 09:03:57 [iter 2/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 09:03:57 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 09:05:16   [GPU] 50,004 evals (5009 batches, avg 10/batch = 8% of 128, 632 evals/s, 632 msg/s, 1.0 leaves/msg, 79s)
+2026-08-04 09:05:50 [iter 2/60] self-play: 5/40 games...
+2026-08-04 09:06:34   [GPU] 100,003 evals (10019 batches, avg 10/batch = 8% of 128, 635 evals/s, 635 msg/s, 1.0 leaves/msg, 158s)
+2026-08-04 09:07:53   [GPU] 150,002 evals (15026 batches, avg 10/batch = 8% of 128, 635 evals/s, 635 msg/s, 1.0 leaves/msg, 236s)
+2026-08-04 09:07:57 [iter 2/60] self-play: 10/40 games...
+2026-08-04 09:09:11   [GPU] 200,004 evals (20032 batches, avg 10/batch = 8% of 128, 636 evals/s, 636 msg/s, 1.0 leaves/msg, 314s)
+2026-08-04 09:10:29 [iter 2/60] self-play: 15/40 games...
+2026-08-04 09:10:29   [GPU] 250,005 evals (25037 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 393s)
+2026-08-04 09:11:48   [GPU] 300,008 evals (30041 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 471s)
+2026-08-04 09:12:47 [iter 2/60] self-play: 20/40 games...
+2026-08-04 09:13:06   [GPU] 350,002 evals (35046 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 549s)
+2026-08-04 09:13:50 [iter 2/60] self-play: 25/40 games...
+2026-08-04 09:14:24   [GPU] 400,000 evals (40052 batches, avg 10/batch = 8% of 128, 638 evals/s, 638 msg/s, 1.0 leaves/msg, 627s)
+2026-08-04 09:15:42   [GPU] 450,003 evals (45058 batches, avg 10/batch = 8% of 128, 638 evals/s, 638 msg/s, 1.0 leaves/msg, 706s)
+2026-08-04 09:17:01   [GPU] 500,001 evals (50063 batches, avg 10/batch = 8% of 128, 638 evals/s, 638 msg/s, 1.0 leaves/msg, 784s)
+2026-08-04 09:17:23 [iter 2/60] self-play: 30/40 games...
+2026-08-04 09:18:20   [GPU] 550,007 evals (55149 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 863s)
+2026-08-04 09:19:44   [GPU] 600,001 evals (60705 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 948s)
+2026-08-04 09:21:23   [GPU] 650,003 evals (67434 batches, avg 10/batch = 8% of 128, 621 evals/s, 621 msg/s, 1.0 leaves/msg, 1046s)
+2026-08-04 09:23:19   [GPU] 700,000 evals (75768 batches, avg 9/batch = 7% of 128, 602 evals/s, 602 msg/s, 1.0 leaves/msg, 1162s)
+2026-08-04 09:24:28 [iter 2/60] self-play: 35/40 games...
+2026-08-04 09:25:17   [GPU] 750,004 evals (84787 batches, avg 9/batch = 7% of 128, 586 evals/s, 586 msg/s, 1.0 leaves/msg, 1281s)
+2026-08-04 09:27:24   [GPU] 800,000 evals (95444 batches, avg 8/batch = 7% of 128, 568 evals/s, 568 msg/s, 1.0 leaves/msg, 1408s)
+2026-08-04 09:32:56   [GPU] 850,000 evals (130277 batches, avg 7/batch = 5% of 128, 489 evals/s, 489 msg/s, 1.0 leaves/msg, 1739s)
+2026-08-04 09:34:01 [iter 2/60] self-play: 40/40 games...
+2026-08-04 09:34:02 [iter 2/60] self-play done: 40 games (1805s) | wins: P0=7, P1=29, draw=4 | draw_rate=10% avg_len~24
+2026-08-04 09:34:02 [iter 2/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 09:36:28 [iter 2/60] training done: loss_p=1.685 loss_v=0.182 (147s)
+2026-08-04 09:36:29 [iter 2/60] data: policy_wall_mass=0.244 walled_states=66% walls_on_board=20.7 value_mae walled=0.073 free=0.408
+2026-08-04 09:36:29 [iter 2/60] eval skipped (eval_every=4)
+2026-08-04 09:36:29 >>> iter 2 | loss_p=1.685 loss_v=0.182 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=10% | buf=4908 | rss=0.49GB | sp=1805s train=147s eval_best=0s eval_rand=0s | total=1953s
+2026-08-04 09:36:29 [iter 3/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 09:36:29 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 09:37:48   [GPU] 50,001 evals (5009 batches, avg 10/batch = 8% of 128, 632 evals/s, 632 msg/s, 1.0 leaves/msg, 79s)
+2026-08-04 09:38:16 [iter 3/60] self-play: 5/40 games...
+2026-08-04 09:39:07   [GPU] 100,005 evals (10021 batches, avg 10/batch = 8% of 128, 634 evals/s, 634 msg/s, 1.0 leaves/msg, 158s)
+2026-08-04 09:39:41 [iter 3/60] self-play: 10/40 games...
+2026-08-04 09:40:26   [GPU] 150,003 evals (15029 batches, avg 10/batch = 8% of 128, 634 evals/s, 634 msg/s, 1.0 leaves/msg, 237s)
+2026-08-04 09:41:45   [GPU] 200,002 evals (20041 batches, avg 10/batch = 8% of 128, 634 evals/s, 634 msg/s, 1.0 leaves/msg, 315s)
+2026-08-04 09:41:55 [iter 3/60] self-play: 15/40 games...
+2026-08-04 09:43:03   [GPU] 250,006 evals (25049 batches, avg 10/batch = 8% of 128, 635 evals/s, 635 msg/s, 1.0 leaves/msg, 393s)
+2026-08-04 09:43:58 [iter 3/60] self-play: 20/40 games...
+2026-08-04 09:44:21   [GPU] 300,000 evals (30055 batches, avg 10/batch = 8% of 128, 636 evals/s, 636 msg/s, 1.0 leaves/msg, 472s)
+2026-08-04 09:45:31 [iter 3/60] self-play: 25/40 games...
+2026-08-04 09:45:39   [GPU] 350,008 evals (35065 batches, avg 10/batch = 8% of 128, 636 evals/s, 636 msg/s, 1.0 leaves/msg, 550s)
+2026-08-04 09:46:58   [GPU] 400,002 evals (40073 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 628s)
+2026-08-04 09:47:14 [iter 3/60] self-play: 30/40 games...
+2026-08-04 09:48:31   [GPU] 450,003 evals (46409 batches, avg 10/batch = 8% of 128, 623 evals/s, 623 msg/s, 1.0 leaves/msg, 722s)
+2026-08-04 09:50:14   [GPU] 500,006 evals (53561 batches, avg 9/batch = 7% of 128, 606 evals/s, 606 msg/s, 1.0 leaves/msg, 824s)
+2026-08-04 09:51:56   [GPU] 550,004 evals (60711 batches, avg 9/batch = 7% of 128, 594 evals/s, 594 msg/s, 1.0 leaves/msg, 926s)
+2026-08-04 09:53:14 [iter 3/60] self-play: 35/40 games...
+2026-08-04 09:53:50   [GPU] 600,001 evals (69196 batches, avg 9/batch = 7% of 128, 577 evals/s, 577 msg/s, 1.0 leaves/msg, 1040s)
+2026-08-04 09:55:54   [GPU] 650,002 evals (79268 batches, avg 8/batch = 6% of 128, 558 evals/s, 558 msg/s, 1.0 leaves/msg, 1165s)
+2026-08-04 09:58:26   [GPU] 700,002 evals (92094 batches, avg 8/batch = 6% of 128, 532 evals/s, 532 msg/s, 1.0 leaves/msg, 1317s)
+2026-08-04 10:01:31   [GPU] 750,002 evals (108773 batches, avg 7/batch = 5% of 128, 499 evals/s, 499 msg/s, 1.0 leaves/msg, 1502s)
+2026-08-04 10:04:31 [iter 3/60] self-play: 40/40 games...
+2026-08-04 10:04:31 [iter 3/60] self-play done: 40 games (1682s) | wins: P0=5, P1=32, draw=3 | draw_rate=8% avg_len~26
+2026-08-04 10:04:31 [iter 3/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 10:06:57 [iter 3/60] training done: loss_p=1.572 loss_v=0.150 (147s)
+2026-08-04 10:06:58 [iter 3/60] data: policy_wall_mass=0.253 walled_states=70% walls_on_board=20.4 value_mae walled=0.092 free=0.217
+2026-08-04 10:06:58 [iter 3/60] eval skipped (eval_every=4)
+2026-08-04 10:06:58 >>> iter 3 | loss_p=1.572 loss_v=0.150 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=8% | buf=7010 | rss=0.44GB | sp=1682s train=147s eval_best=0s eval_rand=0s | total=1829s
+2026-08-04 10:06:58 [iter 4/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 10:06:58 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 10:08:17   [GPU] 50,000 evals (5009 batches, avg 10/batch = 8% of 128, 635 evals/s, 635 msg/s, 1.0 leaves/msg, 79s)
+2026-08-04 10:08:36 [iter 4/60] self-play: 5/40 games...
+2026-08-04 10:09:36   [GPU] 100,007 evals (10021 batches, avg 10/batch = 8% of 128, 636 evals/s, 636 msg/s, 1.0 leaves/msg, 157s)
+2026-08-04 10:09:53 [iter 4/60] self-play: 10/40 games...
+2026-08-04 10:10:54   [GPU] 150,004 evals (15031 batches, avg 10/batch = 8% of 128, 636 evals/s, 636 msg/s, 1.0 leaves/msg, 236s)
+2026-08-04 10:11:50 [iter 4/60] self-play: 15/40 games...
+2026-08-04 10:12:13   [GPU] 200,009 evals (20038 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 314s)
+2026-08-04 10:13:31   [GPU] 250,008 evals (25045 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 392s)
+2026-08-04 10:14:32 [iter 4/60] self-play: 20/40 games...
+2026-08-04 10:14:49   [GPU] 300,004 evals (30053 batches, avg 10/batch = 8% of 128, 638 evals/s, 638 msg/s, 1.0 leaves/msg, 470s)
+2026-08-04 10:16:05 [iter 4/60] self-play: 25/40 games...
+2026-08-04 10:16:07   [GPU] 350,007 evals (35061 batches, avg 10/batch = 8% of 128, 638 evals/s, 638 msg/s, 1.0 leaves/msg, 548s)
+2026-08-04 10:17:25   [GPU] 400,002 evals (40069 batches, avg 10/batch = 8% of 128, 638 evals/s, 638 msg/s, 1.0 leaves/msg, 627s)
+2026-08-04 10:17:54 [iter 4/60] self-play: 30/40 games...
+2026-08-04 10:18:49   [GPU] 450,004 evals (45557 batches, avg 10/batch = 8% of 128, 634 evals/s, 634 msg/s, 1.0 leaves/msg, 710s)
+2026-08-04 10:20:21   [GPU] 500,000 evals (51816 batches, avg 10/batch = 8% of 128, 623 evals/s, 623 msg/s, 1.0 leaves/msg, 803s)
+2026-08-04 10:21:57   [GPU] 550,001 evals (58415 batches, avg 9/batch = 7% of 128, 612 evals/s, 612 msg/s, 1.0 leaves/msg, 898s)
+2026-08-04 10:23:48   [GPU] 600,000 evals (66438 batches, avg 9/batch = 7% of 128, 594 evals/s, 594 msg/s, 1.0 leaves/msg, 1010s)
+2026-08-04 10:25:43   [GPU] 650,002 evals (74783 batches, avg 9/batch = 7% of 128, 578 evals/s, 578 msg/s, 1.0 leaves/msg, 1125s)
+2026-08-04 10:27:39   [GPU] 700,001 evals (83127 batches, avg 8/batch = 7% of 128, 564 evals/s, 564 msg/s, 1.0 leaves/msg, 1241s)
+2026-08-04 10:27:54 [iter 4/60] self-play: 35/40 games...
+2026-08-04 10:29:41   [GPU] 750,000 evals (92930 batches, avg 8/batch = 6% of 128, 550 evals/s, 550 msg/s, 1.0 leaves/msg, 1363s)
+2026-08-04 10:34:39 [iter 4/60] self-play: 40/40 games...
+2026-08-04 10:34:39 [iter 4/60] self-play done: 40 games (1661s) | wins: P0=5, P1=32, draw=3 | draw_rate=8% avg_len~27
+2026-08-04 10:34:39 [iter 4/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 10:37:06 [iter 4/60] training done: loss_p=1.505 loss_v=0.131 (147s)
+2026-08-04 10:37:07 [iter 4/60] data: policy_wall_mass=0.249 walled_states=73% walls_on_board=22.3 value_mae walled=0.097 free=0.258
+2026-08-04 10:37:07 [iter 4/60] eval vs best (40 games, 100 sims)...
+2026-08-04 10:37:07 [EVAL-MP] 10 workers spawned (40 vs_best games, sims=100), GPU batcher starting...
+2026-08-04 10:38:40 [iter 4/60] eval vs best: 5/40 games (93s, cand 40%)
+2026-08-04 10:38:41   [GPU] 50,002 evals (5008 batches, avg 10/batch = 8% of 128, 530 evals/s, 530 msg/s, 1.0 leaves/msg, 94s)
+2026-08-04 10:40:16   [GPU] 100,000 evals (10055 batches, avg 10/batch = 8% of 128, 529 evals/s, 529 msg/s, 1.0 leaves/msg, 189s)
+2026-08-04 10:41:57   [GPU] 150,001 evals (15618 batches, avg 10/batch = 8% of 128, 517 evals/s, 517 msg/s, 1.0 leaves/msg, 290s)
+2026-08-04 10:42:05 [iter 4/60] eval vs best: 10/40 games (298s, cand 50%)
+2026-08-04 10:42:07 [iter 4/60] eval vs best: 15/40 games (300s, cand 50%)
+2026-08-04 10:43:39   [GPU] 200,000 evals (21200 batches, avg 9/batch = 7% of 128, 510 evals/s, 510 msg/s, 1.0 leaves/msg, 392s)
+2026-08-04 10:43:41 [iter 4/60] eval vs best: 20/40 games (394s, cand 55%)
+2026-08-04 10:45:25   [GPU] 250,006 evals (27460 batches, avg 9/batch = 7% of 128, 502 evals/s, 502 msg/s, 1.0 leaves/msg, 499s)
+2026-08-04 10:46:49 [iter 4/60] eval vs best: 25/40 games (582s, cand 55%)
+2026-08-04 10:47:14   [GPU] 300,006 evals (33719 batches, avg 9/batch = 7% of 128, 494 evals/s, 494 msg/s, 1.0 leaves/msg, 607s)
+2026-08-04 10:49:14   [GPU] 350,004 evals (41163 batches, avg 9/batch = 7% of 128, 482 evals/s, 482 msg/s, 1.0 leaves/msg, 727s)
+2026-08-04 10:51:03 [iter 4/60] eval vs best: 30/40 games (836s, cand 50%)
+2026-08-04 10:51:22   [GPU] 400,003 evals (49506 batches, avg 8/batch = 6% of 128, 468 evals/s, 468 msg/s, 1.0 leaves/msg, 855s)
+2026-08-04 10:51:47 [iter 4/60] eval vs best: 35/40 games (880s, cand 50%)
+2026-08-04 10:53:42   [GPU] 450,003 evals (59201 batches, avg 8/batch = 6% of 128, 452 evals/s, 452 msg/s, 1.0 leaves/msg, 995s)
+2026-08-04 10:54:58 [iter 4/60] eval vs best: 40/40 games (1071s, cand 50%)
+2026-08-04 10:54:58 [iter 4/60] eval vs best done: 50.0% of 12 decided reject (1071s)
+2026-08-04 10:54:58 [iter 4/60] eval vs random (20 games, 100 sims)...
+2026-08-04 10:54:58 [EVAL-MP] 10 workers spawned (20 vs_random games, sims=100), GPU batcher starting...
+2026-08-04 10:55:45 [iter 4/60] eval vs random: 5/20 games (47s, cand 100%)
+2026-08-04 10:56:24   [GPU] 50,001 evals (5510 batches, avg 9/batch = 7% of 128, 580 evals/s, 580 msg/s, 1.0 leaves/msg, 86s)
+2026-08-04 10:56:51 [iter 4/60] eval vs random: 10/20 games (113s, cand 100%)
+2026-08-04 10:57:35 [iter 4/60] eval vs random: 15/20 games (157s, cand 100%)
+2026-08-04 10:58:32 [iter 4/60] eval vs random: 20/20 games (214s, cand 92%)
+2026-08-04 10:58:32 [iter 4/60] eval vs random done: 91.7% (214s)
+2026-08-04 10:58:32 [iter 4/60] eval vs greedy (40 games, 100 sims)...
+2026-08-04 10:58:32 [EVAL-MP] 10 workers spawned (40 vs_greedy games, sims=100), GPU batcher starting...
+2026-08-04 10:58:46 [iter 4/60] eval vs greedy: 5/40 games (14s, cand 0%)
+2026-08-04 10:58:46 [iter 4/60] eval vs greedy: 10/40 games (14s, cand 0%)
+2026-08-04 10:58:58 [iter 4/60] eval vs greedy: 15/40 games (26s, cand 0%)
+2026-08-04 10:58:59 [iter 4/60] eval vs greedy: 20/40 games (27s, cand 0%)
+2026-08-04 10:59:11 [iter 4/60] eval vs greedy: 25/40 games (39s, cand 0%)
+2026-08-04 10:59:12 [iter 4/60] eval vs greedy: 30/40 games (40s, cand 0%)
+2026-08-04 10:59:24 [iter 4/60] eval vs greedy: 35/40 games (52s, cand 0%)
+2026-08-04 10:59:24 [iter 4/60] eval vs greedy: 40/40 games (52s, cand 0%)
+2026-08-04 10:59:25 [iter 4/60] eval vs greedy done: 0.0% of 40 decided [seat0:0/20 seat1:0/20] (53s)
+2026-08-04 10:59:25 [iter 4/60] eval vs minimax (depth 2, 40 games)...
+2026-08-04 10:59:25 [EVAL-MP] 10 workers spawned (40 vs_minimax games, sims=100), GPU batcher starting...
+2026-08-04 10:59:44 [iter 4/60] eval vs minimax: 5/40 games (0%)
+2026-08-04 10:59:59 [iter 4/60] eval vs minimax: 10/40 games (0%)
+2026-08-04 11:00:11 [iter 4/60] eval vs minimax: 15/40 games (0%)
+2026-08-04 11:00:31 [iter 4/60] eval vs minimax: 20/40 games (0%)
+2026-08-04 11:00:47 [iter 4/60] eval vs minimax: 25/40 games (0%)
+2026-08-04 11:00:48   [GPU] 50,000 evals (5129 batches, avg 10/batch = 8% of 128, 600 evals/s, 600 msg/s, 1.0 leaves/msg, 83s)
+2026-08-04 11:00:57 [iter 4/60] eval vs minimax: 30/40 games (0%)
+2026-08-04 11:01:35 [iter 4/60] eval vs minimax: 35/40 games (0%)
+2026-08-04 11:02:09 [iter 4/60] eval vs minimax: 40/40 games (0%)
+2026-08-04 11:02:09 [iter 4/60] eval vs minimax done: 0.0% of 38 decided [seat0:0/20 seat1:0/20] (164s)
+2026-08-04 11:02:09 >>> iter 4 | loss_p=1.505 loss_v=0.131 | vs_best=50.0% reject | vs_rand=91.7% | draw=8% | buf=9164 | rss=0.23GB | sp=1661s train=147s eval_best=1071s eval_rand=214s | total=3310s
+2026-08-04 11:02:09 [iter 5/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 11:02:09 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 11:03:28   [GPU] 50,008 evals (5010 batches, avg 10/batch = 8% of 128, 632 evals/s, 632 msg/s, 1.0 leaves/msg, 79s)
+2026-08-04 11:03:35 [iter 5/60] self-play: 5/40 games...
+2026-08-04 11:04:46   [GPU] 100,006 evals (10021 batches, avg 10/batch = 8% of 128, 636 evals/s, 636 msg/s, 1.0 leaves/msg, 157s)
+2026-08-04 11:04:51 [iter 5/60] self-play: 10/40 games...
+2026-08-04 11:06:05   [GPU] 150,002 evals (15031 batches, avg 10/batch = 8% of 128, 636 evals/s, 636 msg/s, 1.0 leaves/msg, 236s)
+2026-08-04 11:06:48 [iter 5/60] self-play: 15/40 games...
+2026-08-04 11:07:23   [GPU] 200,008 evals (20039 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 314s)
+2026-08-04 11:08:41   [GPU] 250,007 evals (25046 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 392s)
+2026-08-04 11:09:36 [iter 5/60] self-play: 20/40 games...
+2026-08-04 11:10:00   [GPU] 300,009 evals (30053 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 471s)
+2026-08-04 11:11:13 [iter 5/60] self-play: 25/40 games...
+2026-08-04 11:11:18   [GPU] 350,001 evals (35059 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 549s)
+2026-08-04 11:12:37   [GPU] 400,008 evals (40069 batches, avg 10/batch = 8% of 128, 637 evals/s, 637 msg/s, 1.0 leaves/msg, 628s)
+2026-08-04 11:12:42 [iter 5/60] self-play: 30/40 games...
+2026-08-04 11:14:07   [GPU] 450,003 evals (46186 batches, avg 10/batch = 8% of 128, 627 evals/s, 627 msg/s, 1.0 leaves/msg, 718s)
+2026-08-04 11:14:23 [iter 5/60] self-play: 35/40 games...
+2026-08-04 11:16:08   [GPU] 500,001 evals (55967 batches, avg 9/batch = 7% of 128, 596 evals/s, 596 msg/s, 1.0 leaves/msg, 839s)
+2026-08-04 11:18:31   [GPU] 550,001 evals (68275 batches, avg 8/batch = 6% of 128, 560 evals/s, 560 msg/s, 1.0 leaves/msg, 982s)
+2026-08-04 11:21:31   [GPU] 600,002 evals (84943 batches, avg 7/batch = 6% of 128, 516 evals/s, 516 msg/s, 1.0 leaves/msg, 1162s)
+2026-08-04 11:25:52   [GPU] 650,000 evals (110828 batches, avg 6/batch = 5% of 128, 457 evals/s, 457 msg/s, 1.0 leaves/msg, 1423s)
+2026-08-04 11:27:10 [iter 5/60] self-play: 40/40 games...
+2026-08-04 11:27:10 [iter 5/60] self-play done: 40 games (1501s) | wins: P0=3, P1=35, draw=2 | draw_rate=5% avg_len~25
+2026-08-04 11:27:10 [iter 5/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 11:29:37 [iter 5/60] training done: loss_p=1.496 loss_v=0.113 (146s)
+2026-08-04 11:29:38 [iter 5/60] data: policy_wall_mass=0.285 walled_states=71% walls_on_board=21.2 value_mae walled=0.082 free=0.239
+2026-08-04 11:29:38 [iter 5/60] eval skipped (eval_every=4)
+2026-08-04 11:29:38 >>> iter 5 | loss_p=1.496 loss_v=0.113 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=5% | buf=11144 | rss=0.49GB | sp=1501s train=146s eval_best=0s eval_rand=0s | total=1649s
+2026-08-04 11:29:38 [iter 6/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 11:29:38 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 11:30:57   [GPU] 50,002 evals (5009 batches, avg 10/batch = 8% of 128, 631 evals/s, 631 msg/s, 1.0 leaves/msg, 79s)
+2026-08-04 11:31:13 [iter 6/60] self-play: 5/40 games...
+2026-08-04 11:32:16   [GPU] 100,003 evals (10019 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 158s)
+2026-08-04 11:32:48 [iter 6/60] self-play: 10/40 games...
+2026-08-04 11:33:35   [GPU] 150,009 evals (15029 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 237s)
+2026-08-04 11:34:48 [iter 6/60] self-play: 15/40 games...
+2026-08-04 11:34:54   [GPU] 200,005 evals (20038 batches, avg 10/batch = 8% of 128, 632 evals/s, 632 msg/s, 1.0 leaves/msg, 316s)
+2026-08-04 11:36:13   [GPU] 250,007 evals (25045 batches, avg 10/batch = 8% of 128, 632 evals/s, 632 msg/s, 1.0 leaves/msg, 395s)
+2026-08-04 11:37:32   [GPU] 300,005 evals (30051 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 474s)
+2026-08-04 11:38:51   [GPU] 350,005 evals (35056 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 553s)
+2026-08-04 11:39:29 [iter 6/60] self-play: 20/40 games...
+2026-08-04 11:40:09   [GPU] 400,003 evals (40062 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 631s)
+2026-08-04 11:40:53 [iter 6/60] self-play: 25/40 games...
+2026-08-04 11:41:28   [GPU] 450,006 evals (45070 batches, avg 10/batch = 8% of 128, 634 evals/s, 634 msg/s, 1.0 leaves/msg, 710s)
+2026-08-04 11:42:31 [iter 6/60] self-play: 30/40 games...
+2026-08-04 11:42:47   [GPU] 500,007 evals (50079 batches, avg 10/batch = 8% of 128, 634 evals/s, 634 msg/s, 1.0 leaves/msg, 789s)
+2026-08-04 11:44:18   [GPU] 550,003 evals (56170 batches, avg 10/batch = 8% of 128, 625 evals/s, 625 msg/s, 1.0 leaves/msg, 880s)
+2026-08-04 11:45:57   [GPU] 600,003 evals (63008 batches, avg 10/batch = 7% of 128, 613 evals/s, 613 msg/s, 1.0 leaves/msg, 979s)
+2026-08-04 11:46:56 [iter 6/60] self-play: 35/40 games...
+2026-08-04 11:47:53   [GPU] 650,002 evals (71843 batches, avg 9/batch = 7% of 128, 593 evals/s, 593 msg/s, 1.0 leaves/msg, 1095s)
+2026-08-04 11:49:56   [GPU] 700,002 evals (81853 batches, avg 9/batch = 7% of 128, 575 evals/s, 575 msg/s, 1.0 leaves/msg, 1218s)
+2026-08-04 11:52:22   [GPU] 750,000 evals (94215 batches, avg 8/batch = 6% of 128, 550 evals/s, 550 msg/s, 1.0 leaves/msg, 1364s)
+2026-08-04 11:58:05   [GPU] 800,000 evals (127720 batches, avg 6/batch = 5% of 128, 469 evals/s, 469 msg/s, 1.0 leaves/msg, 1707s)
+2026-08-04 11:59:36 [iter 6/60] self-play: 40/40 games...
+2026-08-04 11:59:36 [iter 6/60] self-play done: 40 games (1798s) | wins: P0=9, P1=27, draw=4 | draw_rate=10% avg_len~23
+2026-08-04 11:59:36 [iter 6/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 12:02:03 [iter 6/60] training done: loss_p=1.451 loss_v=0.114 (146s)
+2026-08-04 12:02:04 [iter 6/60] data: policy_wall_mass=0.260 walled_states=69% walls_on_board=20.4 value_mae walled=0.103 free=0.303
+2026-08-04 12:02:04 [iter 6/60] eval skipped (eval_every=4)
+2026-08-04 12:02:04 >>> iter 6 | loss_p=1.451 loss_v=0.114 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=10% | buf=13018 | rss=0.50GB | sp=1798s train=146s eval_best=0s eval_rand=0s | total=1946s
+2026-08-04 12:02:04 [iter 7/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 12:02:04 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 12:03:23   [GPU] 50,002 evals (5009 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 79s)
+2026-08-04 12:03:35 [iter 7/60] self-play: 5/40 games...
+2026-08-04 12:04:42   [GPU] 100,006 evals (10021 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 158s)
+2026-08-04 12:05:00 [iter 7/60] self-play: 10/40 games...
+2026-08-04 12:06:00   [GPU] 150,007 evals (15030 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 237s)
+2026-08-04 12:07:05 [iter 7/60] self-play: 15/40 games...
+2026-08-04 12:07:19   [GPU] 200,009 evals (20038 batches, avg 10/batch = 8% of 128, 634 evals/s, 634 msg/s, 1.0 leaves/msg, 316s)
+2026-08-04 12:08:17 [iter 7/60] self-play: 20/40 games...
+2026-08-04 12:08:37   [GPU] 250,009 evals (25044 batches, avg 10/batch = 8% of 128, 635 evals/s, 635 msg/s, 1.0 leaves/msg, 394s)
+2026-08-04 12:09:48 [iter 7/60] self-play: 25/40 games...
+2026-08-04 12:09:55   [GPU] 300,005 evals (30056 batches, avg 10/batch = 8% of 128, 636 evals/s, 636 msg/s, 1.0 leaves/msg, 472s)
+2026-08-04 12:11:14   [GPU] 350,001 evals (35072 batches, avg 10/batch = 8% of 128, 636 evals/s, 636 msg/s, 1.0 leaves/msg, 550s)
+2026-08-04 12:11:20 [iter 7/60] self-play: 30/40 games...
+2026-08-04 12:13:00   [GPU] 400,002 evals (42495 batches, avg 9/batch = 7% of 128, 609 evals/s, 609 msg/s, 1.0 leaves/msg, 656s)
+2026-08-04 12:13:02 [iter 7/60] self-play: 35/40 games...
+2026-08-04 12:15:08   [GPU] 450,003 evals (53093 batches, avg 8/batch = 7% of 128, 573 evals/s, 573 msg/s, 1.0 leaves/msg, 785s)
+2026-08-04 12:20:53   [GPU] 500,000 evals (88065 batches, avg 6/batch = 4% of 128, 443 evals/s, 443 msg/s, 1.0 leaves/msg, 1130s)
+2026-08-04 12:24:57 [iter 7/60] self-play: 40/40 games...
+2026-08-04 12:24:57 [iter 7/60] self-play done: 40 games (1373s) | wins: P0=3, P1=37 | draw_rate=0% avg_len~27
+2026-08-04 12:24:57 [iter 7/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 12:27:24 [iter 7/60] training done: loss_p=1.456 loss_v=0.102 (147s)
+2026-08-04 12:27:25 [iter 7/60] data: policy_wall_mass=0.287 walled_states=74% walls_on_board=21.2 value_mae walled=0.089 free=0.243
+2026-08-04 12:27:25 [iter 7/60] eval skipped (eval_every=4)
+2026-08-04 12:27:25 >>> iter 7 | loss_p=1.456 loss_v=0.102 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=0% | buf=15212 | rss=0.52GB | sp=1373s train=147s eval_best=0s eval_rand=0s | total=1521s
+2026-08-04 12:27:25 [iter 8/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 12:27:25 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 12:28:44   [GPU] 50,006 evals (5010 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 79s)
+2026-08-04 12:28:59 [iter 8/60] self-play: 5/40 games...
+2026-08-04 12:30:02   [GPU] 100,001 evals (10021 batches, avg 10/batch = 8% of 128, 634 evals/s, 634 msg/s, 1.0 leaves/msg, 158s)
+2026-08-04 12:30:21 [iter 8/60] self-play: 10/40 games...
+2026-08-04 12:31:22   [GPU] 150,001 evals (15031 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 237s)
+2026-08-04 12:32:41   [GPU] 200,009 evals (20042 batches, avg 10/batch = 8% of 128, 632 evals/s, 632 msg/s, 1.0 leaves/msg, 316s)
+2026-08-04 12:32:48 [iter 8/60] self-play: 15/40 games...
+2026-08-04 12:34:00   [GPU] 250,000 evals (25052 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 395s)
+2026-08-04 12:35:14 [iter 8/60] self-play: 20/40 games...
+2026-08-04 12:35:19   [GPU] 300,009 evals (30063 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 474s)
+2026-08-04 12:36:38   [GPU] 350,005 evals (35074 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 553s)
+2026-08-04 12:37:41 [iter 8/60] self-play: 25/40 games...
+2026-08-04 12:37:57   [GPU] 400,001 evals (40084 batches, avg 10/batch = 8% of 128, 633 evals/s, 633 msg/s, 1.0 leaves/msg, 632s)
+2026-08-04 12:39:18   [GPU] 450,003 evals (45095 batches, avg 10/batch = 8% of 128, 631 evals/s, 631 msg/s, 1.0 leaves/msg, 713s)
+2026-08-04 12:41:16   [GPU] 500,003 evals (50109 batches, avg 10/batch = 8% of 128, 602 evals/s, 602 msg/s, 1.0 leaves/msg, 831s)
+2026-08-04 12:41:30 [iter 8/60] self-play: 30/40 games...
+2026-08-04 12:43:16   [GPU] 550,005 evals (55404 batches, avg 10/batch = 8% of 128, 578 evals/s, 578 msg/s, 1.0 leaves/msg, 951s)
+2026-08-04 12:45:23   [GPU] 600,005 evals (61622 batches, avg 10/batch = 8% of 128, 556 evals/s, 556 msg/s, 1.0 leaves/msg, 1078s)
+2026-08-04 12:47:26   [GPU] 650,003 evals (68330 batches, avg 10/batch = 7% of 128, 541 evals/s, 541 msg/s, 1.0 leaves/msg, 1201s)
+2026-08-04 12:49:25   [GPU] 700,004 evals (75745 batches, avg 9/batch = 7% of 128, 530 evals/s, 530 msg/s, 1.0 leaves/msg, 1320s)
+2026-08-04 12:50:38 [iter 8/60] self-play: 35/40 games...
+2026-08-04 12:51:33   [GPU] 750,000 evals (84789 batches, avg 9/batch = 7% of 128, 518 evals/s, 518 msg/s, 1.0 leaves/msg, 1449s)
+2026-08-04 21:00:56   [GPU] 800,003 evals (95252 batches, avg 8/batch = 7% of 128, 26 evals/s, 26 msg/s, 1.0 leaves/msg, 30812s)
+2026-08-04 21:04:10 ======================================================================
+2026-08-04 21:04:10 training_loop_mp launched | N=2 board=9x9 | sims=600 games/iter=40 | self_play=parallel workers=10 vec_games=0
+2026-08-04 21:04:10 checkpoint_dir=runs/n2_9x9_anchored | eval=40+20+40 greedy | accept_margin=0.08 | buffer=50000
+2026-08-04 21:04:10 train_steps=300 max_moves=160 explore_moves=20 warmup=1000 discount=0.99/round leaf_batch=1 vloss=1.0
+2026-08-04 21:04:10 resources: 15 usable cpus (host cores), 26 GB, no cgroup limit, gpu: no CUDA, rss=0.32 GB at launch
+2026-08-04 21:04:10 ======================================================================
+2026-08-04 21:04:10 Config matches the frozen copy -> runs/n2_9x9_anchored/config.json
+2026-08-04 21:04:10 Resumed from iteration 7 (checkpoint: runs/n2_9x9_anchored)
+2026-08-04 21:04:10 Replay buffer restored: 15212 samples
+2026-08-04 21:04:10 [iter 8/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 21:04:10 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 21:05:28   [GPU] 50,007 evals (5014 batches, avg 10/batch = 8% of 128, 640 evals/s, 640 msg/s, 1.0 leaves/msg, 78s)
+2026-08-04 21:05:43 [iter 8/60] self-play: 5/40 games...
+2026-08-04 21:06:39   [GPU] 100,004 evals (10024 batches, avg 10/batch = 8% of 128, 672 evals/s, 672 msg/s, 1.0 leaves/msg, 149s)
+2026-08-04 21:06:54 [iter 8/60] self-play: 10/40 games...
+2026-08-04 21:07:42   [GPU] 150,003 evals (15032 batches, avg 10/batch = 8% of 128, 706 evals/s, 706 msg/s, 1.0 leaves/msg, 212s)
+2026-08-04 21:08:46   [GPU] 200,006 evals (20041 batches, avg 10/batch = 8% of 128, 725 evals/s, 725 msg/s, 1.0 leaves/msg, 276s)
+2026-08-04 21:08:51 [iter 8/60] self-play: 15/40 games...
+2026-08-04 21:09:50   [GPU] 250,004 evals (25050 batches, avg 10/batch = 8% of 128, 735 evals/s, 735 msg/s, 1.0 leaves/msg, 340s)
+2026-08-04 21:10:50 [iter 8/60] self-play: 20/40 games...
+2026-08-04 21:10:54   [GPU] 300,001 evals (30060 batches, avg 10/batch = 8% of 128, 742 evals/s, 742 msg/s, 1.0 leaves/msg, 404s)
+2026-08-04 21:11:58   [GPU] 350,006 evals (35070 batches, avg 10/batch = 8% of 128, 747 evals/s, 747 msg/s, 1.0 leaves/msg, 468s)
+2026-08-04 21:12:50 [iter 8/60] self-play: 25/40 games...
+2026-08-04 21:13:03   [GPU] 400,002 evals (40079 batches, avg 10/batch = 8% of 128, 750 evals/s, 750 msg/s, 1.0 leaves/msg, 533s)
+2026-08-04 21:14:10   [GPU] 450,004 evals (45090 batches, avg 10/batch = 8% of 128, 750 evals/s, 750 msg/s, 1.0 leaves/msg, 600s)
+2026-08-04 21:15:14   [GPU] 500,001 evals (50099 batches, avg 10/batch = 8% of 128, 752 evals/s, 752 msg/s, 1.0 leaves/msg, 665s)
+2026-08-04 21:15:23 [iter 8/60] self-play: 30/40 games...
+2026-08-04 21:16:21   [GPU] 550,006 evals (55392 batches, avg 10/batch = 8% of 128, 752 evals/s, 752 msg/s, 1.0 leaves/msg, 731s)
+2026-08-04 21:17:38   [GPU] 600,002 evals (61607 batches, avg 10/batch = 8% of 128, 742 evals/s, 742 msg/s, 1.0 leaves/msg, 809s)
+2026-08-04 21:19:00   [GPU] 650,003 evals (68312 batches, avg 10/batch = 7% of 128, 730 evals/s, 730 msg/s, 1.0 leaves/msg, 890s)
+2026-08-04 21:20:30   [GPU] 700,000 evals (75726 batches, avg 9/batch = 7% of 128, 714 evals/s, 714 msg/s, 1.0 leaves/msg, 980s)
+2026-08-04 21:21:28 [iter 8/60] self-play: 35/40 games...
+2026-08-04 21:22:14   [GPU] 750,003 evals (84772 batches, avg 9/batch = 7% of 128, 692 evals/s, 692 msg/s, 1.0 leaves/msg, 1084s)
+2026-08-04 21:24:07   [GPU] 800,002 evals (95210 batches, avg 8/batch = 7% of 128, 669 evals/s, 669 msg/s, 1.0 leaves/msg, 1197s)
+2026-08-04 21:27:45 [iter 8/60] self-play: 40/40 games...
+2026-08-04 21:27:46 [iter 8/60] self-play done: 40 games (1416s) | wins: P0=4, P1=31, draw=5 | draw_rate=12% avg_len~22
+2026-08-04 21:27:46 [iter 8/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 21:29:34 [iter 8/60] training done: loss_p=1.421 loss_v=0.104 (109s)
+2026-08-04 21:29:35 [iter 8/60] data: policy_wall_mass=0.249 walled_states=64% walls_on_board=16.6 value_mae walled=0.110 free=0.213
+2026-08-04 21:29:35 [iter 8/60] eval vs best (40 games, 100 sims)...
+2026-08-04 21:29:35 [EVAL-MP] 10 workers spawned (40 vs_best games, sims=100), GPU batcher starting...
+2026-08-04 21:30:44 [iter 8/60] eval vs best: 5/40 games (69s, cand 100%)
+2026-08-04 21:30:52   [GPU] 50,001 evals (5010 batches, avg 10/batch = 8% of 128, 648 evals/s, 648 msg/s, 1.0 leaves/msg, 77s)
+2026-08-04 21:32:00 [iter 8/60] eval vs best: 10/40 games (144s, cand 80%)
+2026-08-04 21:32:08   [GPU] 100,005 evals (10216 batches, avg 10/batch = 8% of 128, 655 evals/s, 655 msg/s, 1.0 leaves/msg, 153s)
+2026-08-04 21:33:29 [iter 8/60] eval vs best: 15/40 games (234s, cand 80%)
+2026-08-04 21:33:34   [GPU] 150,002 evals (16473 batches, avg 9/batch = 7% of 128, 628 evals/s, 628 msg/s, 1.0 leaves/msg, 239s)
+2026-08-04 21:34:36 [iter 8/60] eval vs best: 20/40 games (301s, cand 83%)
+2026-08-04 21:34:59   [GPU] 200,007 evals (22732 batches, avg 9/batch = 7% of 128, 618 evals/s, 618 msg/s, 1.0 leaves/msg, 324s)
+2026-08-04 21:36:32   [GPU] 250,006 evals (29874 batches, avg 8/batch = 7% of 128, 600 evals/s, 600 msg/s, 1.0 leaves/msg, 417s)
+2026-08-04 21:37:03 [iter 8/60] eval vs best: 25/40 games (448s, cand 77%)
+2026-08-04 21:38:10   [GPU] 300,005 evals (37183 batches, avg 8/batch = 6% of 128, 583 evals/s, 583 msg/s, 1.0 leaves/msg, 515s)
+2026-08-04 21:40:00   [GPU] 350,005 evals (45525 batches, avg 8/batch = 6% of 128, 560 evals/s, 560 msg/s, 1.0 leaves/msg, 625s)
+2026-08-04 21:40:36 [iter 8/60] eval vs best: 30/40 games (661s, cand 79%)
+2026-08-04 21:41:01 [iter 8/60] eval vs best: 35/40 games (686s, cand 79%)
+2026-08-04 21:42:20   [GPU] 400,000 evals (56666 batches, avg 7/batch = 6% of 128, 523 evals/s, 523 msg/s, 1.0 leaves/msg, 765s)
+2026-08-04 21:43:51 [iter 8/60] eval vs best: 40/40 games (856s, cand 81%)
+2026-08-04 21:43:51 [iter 8/60] eval vs best done: 81.2% of 16 decided ACCEPT (856s)
+2026-08-04 21:43:51 [iter 8/60] eval vs random (20 games, 100 sims)...
+2026-08-04 21:43:51 [EVAL-MP] 10 workers spawned (20 vs_random games, sims=100), GPU batcher starting...
+2026-08-04 21:44:59   [GPU] 50,009 evals (5007 batches, avg 10/batch = 8% of 128, 738 evals/s, 738 msg/s, 1.0 leaves/msg, 68s)
+2026-08-04 21:45:08 [iter 8/60] eval vs random: 5/20 games (77s, cand 100%)
+2026-08-04 21:45:35 [iter 8/60] eval vs random: 10/20 games (104s, cand 88%)
+2026-08-04 21:46:08   [GPU] 100,004 evals (10376 batches, avg 10/batch = 8% of 128, 728 evals/s, 728 msg/s, 1.0 leaves/msg, 137s)
+2026-08-04 21:46:14 [iter 8/60] eval vs random: 15/20 games (143s, cand 90%)
+2026-08-04 21:47:04 [iter 8/60] eval vs random: 20/20 games (193s, cand 91%)
+2026-08-04 21:47:04 [iter 8/60] eval vs random done: 90.9% (194s)
+2026-08-04 21:47:04 [iter 8/60] eval vs greedy (40 games, 100 sims)...
+2026-08-04 21:47:04 [EVAL-MP] 10 workers spawned (40 vs_greedy games, sims=100), GPU batcher starting...
+2026-08-04 21:47:15 [iter 8/60] eval vs greedy: 5/40 games (11s, cand 80%)
+2026-08-04 21:47:21 [iter 8/60] eval vs greedy: 10/40 games (16s, cand 40%)
+2026-08-04 21:47:24 [iter 8/60] eval vs greedy: 15/40 games (19s, cand 60%)
+2026-08-04 21:47:31 [iter 8/60] eval vs greedy: 20/40 games (26s, cand 50%)
+2026-08-04 21:47:32 [iter 8/60] eval vs greedy: 25/40 games (28s, cand 56%)
+2026-08-04 21:47:40 [iter 8/60] eval vs greedy: 30/40 games (36s, cand 53%)
+2026-08-04 21:47:43 [iter 8/60] eval vs greedy: 35/40 games (38s, cand 49%)
+2026-08-04 21:47:52 [iter 8/60] eval vs greedy: 40/40 games (47s, cand 42%)
+2026-08-04 21:47:52 [iter 8/60] eval vs greedy done: 42.5% of 40 decided [seat0:0/20 seat1:17/20] (47s)
+2026-08-04 21:47:52 [iter 8/60] eval vs minimax (depth 2, 40 games)...
+2026-08-04 21:47:52 [EVAL-MP] 10 workers spawned (40 vs_minimax games, sims=100), GPU batcher starting...
+2026-08-04 21:48:12 [iter 8/60] eval vs minimax: 5/40 games (0%)
+2026-08-04 21:48:26 [iter 8/60] eval vs minimax: 10/40 games (0%)
+2026-08-04 21:48:34 [iter 8/60] eval vs minimax: 15/40 games (0%)
+2026-08-04 21:48:49 [iter 8/60] eval vs minimax: 20/40 games (0%)
+2026-08-04 21:48:59 [iter 8/60] eval vs minimax: 25/40 games (0%)
+2026-08-04 21:49:03   [GPU] 50,005 evals (5104 batches, avg 10/batch = 8% of 128, 703 evals/s, 703 msg/s, 1.0 leaves/msg, 71s)
+2026-08-04 21:49:12 [iter 8/60] eval vs minimax: 30/40 games (0%)
+2026-08-04 21:49:28 [iter 8/60] eval vs minimax: 35/40 games (0%)
+2026-08-04 21:50:41 [iter 8/60] eval vs minimax: 40/40 games (0%)
+2026-08-04 21:50:41 [iter 8/60] eval vs minimax done: 0.0% of 38 decided [seat0:0/20 seat1:0/20] (169s)
+2026-08-04 21:50:41 >>> iter 8 | loss_p=1.421 loss_v=0.104 | vs_best=81.2% ACCEPT | vs_rand=90.9% | draw=12% | buf=16954 | rss=0.29GB | sp=1416s train=109s eval_best=856s eval_rand=194s | total=2791s
+2026-08-04 21:50:41 [iter 9/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 21:50:41 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 21:51:49   [GPU] 50,004 evals (5008 batches, avg 10/batch = 8% of 128, 741 evals/s, 741 msg/s, 1.0 leaves/msg, 68s)
+2026-08-04 21:52:06 [iter 9/60] self-play: 5/40 games...
+2026-08-04 21:52:56   [GPU] 100,008 evals (10017 batches, avg 10/batch = 8% of 128, 743 evals/s, 743 msg/s, 1.0 leaves/msg, 135s)
+2026-08-04 21:53:10 [iter 9/60] self-play: 10/40 games...
+2026-08-04 21:54:02   [GPU] 150,000 evals (15023 batches, avg 10/batch = 8% of 128, 747 evals/s, 747 msg/s, 1.0 leaves/msg, 201s)
+2026-08-04 21:54:56 [iter 9/60] self-play: 15/40 games...
+2026-08-04 21:55:08   [GPU] 200,007 evals (20031 batches, avg 10/batch = 8% of 128, 749 evals/s, 749 msg/s, 1.0 leaves/msg, 267s)
+2026-08-04 21:56:14   [GPU] 250,007 evals (25038 batches, avg 10/batch = 8% of 128, 751 evals/s, 751 msg/s, 1.0 leaves/msg, 333s)
+2026-08-04 21:57:20   [GPU] 300,008 evals (30044 batches, avg 10/batch = 8% of 128, 752 evals/s, 752 msg/s, 1.0 leaves/msg, 399s)
+2026-08-04 21:58:02 [iter 9/60] self-play: 20/40 games...
+2026-08-04 21:58:26   [GPU] 350,002 evals (35049 batches, avg 10/batch = 8% of 128, 753 evals/s, 753 msg/s, 1.0 leaves/msg, 465s)
+2026-08-04 21:59:31   [GPU] 400,008 evals (40056 batches, avg 10/batch = 8% of 128, 755 evals/s, 755 msg/s, 1.0 leaves/msg, 530s)
+2026-08-04 21:59:37 [iter 9/60] self-play: 25/40 games...
+2026-08-04 22:00:36   [GPU] 450,004 evals (45063 batches, avg 10/batch = 8% of 128, 757 evals/s, 757 msg/s, 1.0 leaves/msg, 595s)
+2026-08-04 22:01:10 [iter 9/60] self-play: 30/40 games...
+2026-08-04 22:01:47   [GPU] 500,005 evals (50632 batches, avg 10/batch = 8% of 128, 751 evals/s, 751 msg/s, 1.0 leaves/msg, 666s)
+2026-08-04 22:03:03 [iter 9/60] self-play: 35/40 games...
+2026-08-04 22:03:29   [GPU] 550,003 evals (59364 batches, avg 9/batch = 7% of 128, 716 evals/s, 716 msg/s, 1.0 leaves/msg, 768s)
+2026-08-04 22:05:30   [GPU] 600,001 evals (70576 batches, avg 9/batch = 7% of 128, 675 evals/s, 675 msg/s, 1.0 leaves/msg, 889s)
+2026-08-04 22:07:54   [GPU] 650,000 evals (84743 batches, avg 8/batch = 6% of 128, 629 evals/s, 629 msg/s, 1.0 leaves/msg, 1033s)
+2026-08-04 22:11:34   [GPU] 700,001 evals (108473 batches, avg 6/batch = 5% of 128, 559 evals/s, 559 msg/s, 1.0 leaves/msg, 1253s)
+2026-08-04 22:15:14 [iter 9/60] self-play: 40/40 games...
+2026-08-04 22:15:15 [iter 9/60] self-play done: 40 games (1473s) | wins: P0=5, P1=32, draw=3 | draw_rate=8% avg_len~24
+2026-08-04 22:15:15 [iter 9/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 22:17:40 [iter 9/60] training done: loss_p=1.431 loss_v=0.102 (145s)
+2026-08-04 22:17:41 [iter 9/60] data: policy_wall_mass=0.267 walled_states=68% walls_on_board=19.0 value_mae walled=0.083 free=0.185
+2026-08-04 22:17:41 [iter 9/60] eval skipped (eval_every=4)
+2026-08-04 22:17:41 >>> iter 9 | loss_p=1.431 loss_v=0.102 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=8% | buf=18886 | rss=0.68GB | sp=1473s train=145s eval_best=0s eval_rand=0s | total=1620s
+2026-08-04 22:17:41 [iter 10/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 22:17:41 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 22:19:05   [GPU] 50,000 evals (5009 batches, avg 10/batch = 8% of 128, 598 evals/s, 598 msg/s, 1.0 leaves/msg, 84s)
+2026-08-04 22:19:34 [iter 10/60] self-play: 5/40 games...
+2026-08-04 22:20:31   [GPU] 100,000 evals (10023 batches, avg 10/batch = 8% of 128, 588 evals/s, 588 msg/s, 1.0 leaves/msg, 170s)
+2026-08-04 22:21:14 [iter 10/60] self-play: 10/40 games...
+2026-08-04 22:21:59   [GPU] 150,008 evals (15038 batches, avg 10/batch = 8% of 128, 582 evals/s, 582 msg/s, 1.0 leaves/msg, 258s)
+2026-08-04 22:23:22 [iter 10/60] self-play: 15/40 games...
+2026-08-04 22:23:24   [GPU] 200,004 evals (20050 batches, avg 10/batch = 8% of 128, 584 evals/s, 584 msg/s, 1.0 leaves/msg, 343s)
+2026-08-04 22:24:48   [GPU] 250,002 evals (25063 batches, avg 10/batch = 8% of 128, 585 evals/s, 585 msg/s, 1.0 leaves/msg, 427s)
+2026-08-04 22:25:09 [iter 10/60] self-play: 20/40 games...
+2026-08-04 22:26:12   [GPU] 300,004 evals (30075 batches, avg 10/batch = 8% of 128, 587 evals/s, 587 msg/s, 1.0 leaves/msg, 511s)
+2026-08-04 22:27:35   [GPU] 350,009 evals (35086 batches, avg 10/batch = 8% of 128, 589 evals/s, 589 msg/s, 1.0 leaves/msg, 594s)
+2026-08-04 22:28:57 [iter 10/60] self-play: 25/40 games...
+2026-08-04 22:28:59   [GPU] 400,004 evals (40095 batches, avg 10/batch = 8% of 128, 590 evals/s, 590 msg/s, 1.0 leaves/msg, 678s)
+2026-08-04 22:30:24   [GPU] 450,002 evals (45107 batches, avg 10/batch = 8% of 128, 590 evals/s, 590 msg/s, 1.0 leaves/msg, 763s)
+2026-08-04 22:31:22 [iter 10/60] self-play: 30/40 games...
+2026-08-04 22:31:49   [GPU] 500,003 evals (50115 batches, avg 10/batch = 8% of 128, 590 evals/s, 590 msg/s, 1.0 leaves/msg, 847s)
+2026-08-04 22:33:19   [GPU] 550,001 evals (55644 batches, avg 10/batch = 8% of 128, 587 evals/s, 587 msg/s, 1.0 leaves/msg, 937s)
+2026-08-04 22:35:04   [GPU] 600,005 evals (62399 batches, avg 10/batch = 8% of 128, 575 evals/s, 575 msg/s, 1.0 leaves/msg, 1043s)
+2026-08-04 22:35:39 [iter 10/60] self-play: 35/40 games...
+2026-08-04 22:37:16   [GPU] 650,000 evals (71871 batches, avg 9/batch = 7% of 128, 553 evals/s, 553 msg/s, 1.0 leaves/msg, 1175s)
+2026-08-04 22:39:51   [GPU] 700,001 evals (83493 batches, avg 8/batch = 7% of 128, 526 evals/s, 526 msg/s, 1.0 leaves/msg, 1330s)
+2026-08-04 22:45:22 [iter 10/60] self-play: 40/40 games...
+2026-08-04 22:45:22 [iter 10/60] self-play done: 40 games (1661s) | wins: P0=4, P1=34, draw=2 | draw_rate=5% avg_len~29
+2026-08-04 22:45:22 [iter 10/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 22:48:39 [iter 10/60] training done: loss_p=1.435 loss_v=0.099 (197s)
+2026-08-04 22:48:40 [iter 10/60] data: policy_wall_mass=0.237 walled_states=73% walls_on_board=20.9 value_mae walled=0.123 free=0.150
+2026-08-04 22:48:40 [iter 10/60] eval skipped (eval_every=4)
+2026-08-04 22:48:40 >>> iter 10 | loss_p=1.435 loss_v=0.099 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=5% | buf=21200 | rss=0.71GB | sp=1661s train=197s eval_best=0s eval_rand=0s | total=1859s
+2026-08-04 22:48:40 [iter 11/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 22:48:40 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 22:50:12   [GPU] 50,001 evals (5011 batches, avg 10/batch = 8% of 128, 542 evals/s, 542 msg/s, 1.0 leaves/msg, 92s)
+2026-08-04 22:50:41 [iter 11/60] self-play: 5/40 games...
+2026-08-04 22:51:37   [GPU] 100,004 evals (10023 batches, avg 10/batch = 8% of 128, 566 evals/s, 566 msg/s, 1.0 leaves/msg, 177s)
+2026-08-04 22:51:59 [iter 11/60] self-play: 10/40 games...
+2026-08-04 22:52:59   [GPU] 150,005 evals (15035 batches, avg 10/batch = 8% of 128, 581 evals/s, 581 msg/s, 1.0 leaves/msg, 258s)
+2026-08-04 22:54:17 [iter 11/60] self-play: 15/40 games...
+2026-08-04 22:54:17   [GPU] 200,003 evals (20044 batches, avg 10/batch = 8% of 128, 593 evals/s, 593 msg/s, 1.0 leaves/msg, 337s)
+2026-08-04 22:55:35   [GPU] 250,007 evals (25054 batches, avg 10/batch = 8% of 128, 603 evals/s, 603 msg/s, 1.0 leaves/msg, 415s)
+2026-08-04 22:56:35 [iter 11/60] self-play: 20/40 games...
+2026-08-04 22:56:53   [GPU] 300,005 evals (30062 batches, avg 10/batch = 8% of 128, 608 evals/s, 608 msg/s, 1.0 leaves/msg, 493s)
+2026-08-04 22:57:48 [iter 11/60] self-play: 25/40 games...
+2026-08-04 22:58:12   [GPU] 350,007 evals (35071 batches, avg 10/batch = 8% of 128, 612 evals/s, 612 msg/s, 1.0 leaves/msg, 571s)
+2026-08-04 22:59:20 [iter 11/60] self-play: 30/40 games...
+2026-08-04 22:59:30   [GPU] 400,008 evals (40107 batches, avg 10/batch = 8% of 128, 615 evals/s, 615 msg/s, 1.0 leaves/msg, 650s)
+2026-08-04 23:00:29 [iter 11/60] self-play: 35/40 games...
+2026-08-04 23:01:31   [GPU] 450,001 evals (49408 batches, avg 9/batch = 7% of 128, 584 evals/s, 584 msg/s, 1.0 leaves/msg, 771s)
+2026-08-04 23:03:59   [GPU] 500,001 evals (61920 batches, avg 8/batch = 6% of 128, 544 evals/s, 544 msg/s, 1.0 leaves/msg, 919s)
+2026-08-04 23:06:52   [GPU] 550,000 evals (77769 batches, avg 7/batch = 6% of 128, 504 evals/s, 504 msg/s, 1.0 leaves/msg, 1092s)
+2026-08-04 23:26:46   [GPU] 600,000 evals (96807 batches, avg 6/batch = 5% of 128, 263 evals/s, 263 msg/s, 1.0 leaves/msg, 2285s)
+2026-08-04 23:36:37 [iter 11/60] self-play: 40/40 games...
+2026-08-04 23:36:37 [iter 11/60] self-play done: 40 games (2877s) | wins: P0=2, P1=37, draw=1 | draw_rate=2% avg_len~29
+2026-08-04 23:36:37 [iter 11/60] training (300 steps, lr=1.00e-03)...
+2026-08-04 23:40:18 [iter 11/60] training done: loss_p=1.418 loss_v=0.094 (221s)
+2026-08-04 23:40:20 [iter 11/60] data: policy_wall_mass=0.250 walled_states=74% walls_on_board=22.4 value_mae walled=0.102 free=0.126
+2026-08-04 23:40:20 [iter 11/60] eval skipped (eval_every=4)
+2026-08-04 23:40:20 >>> iter 11 | loss_p=1.418 loss_v=0.094 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=2% | buf=23508 | rss=0.58GB | sp=2877s train=221s eval_best=0s eval_rand=0s | total=3100s
+2026-08-04 23:40:20 [iter 12/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-04 23:40:20 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-04 23:43:21   [GPU] 50,005 evals (5011 batches, avg 10/batch = 8% of 128, 276 evals/s, 276 msg/s, 1.0 leaves/msg, 181s)
+2026-08-04 23:44:03 [iter 12/60] self-play: 5/40 games...
+2026-08-04 23:46:23   [GPU] 100,009 evals (10024 batches, avg 10/batch = 8% of 128, 275 evals/s, 275 msg/s, 1.0 leaves/msg, 363s)
+2026-08-04 23:47:29 [iter 12/60] self-play: 10/40 games...
+2026-08-04 23:48:40   [GPU] 150,006 evals (15033 batches, avg 10/batch = 8% of 128, 300 evals/s, 300 msg/s, 1.0 leaves/msg, 501s)
+2026-08-04 23:49:17 [iter 12/60] self-play: 15/40 games...
+2026-08-04 23:49:57   [GPU] 200,008 evals (20043 batches, avg 10/batch = 8% of 128, 347 evals/s, 347 msg/s, 1.0 leaves/msg, 577s)
+2026-08-04 23:51:08   [GPU] 250,004 evals (25051 batches, avg 10/batch = 8% of 128, 386 evals/s, 386 msg/s, 1.0 leaves/msg, 648s)
+2026-08-04 23:51:13 [iter 12/60] self-play: 20/40 games...
+2026-08-04 23:52:18   [GPU] 300,009 evals (30061 batches, avg 10/batch = 8% of 128, 418 evals/s, 418 msg/s, 1.0 leaves/msg, 718s)
+2026-08-04 23:53:10 [iter 12/60] self-play: 25/40 games...
+2026-08-04 23:53:28   [GPU] 350,003 evals (35076 batches, avg 10/batch = 8% of 128, 444 evals/s, 444 msg/s, 1.0 leaves/msg, 789s)
+2026-08-04 23:54:38   [GPU] 400,005 evals (40084 batches, avg 10/batch = 8% of 128, 466 evals/s, 466 msg/s, 1.0 leaves/msg, 858s)
+2026-08-04 23:54:55 [iter 12/60] self-play: 30/40 games...
+2026-08-04 23:55:59   [GPU] 450,003 evals (46166 batches, avg 10/batch = 8% of 128, 479 evals/s, 479 msg/s, 1.0 leaves/msg, 939s)
+2026-08-04 23:56:26 [iter 12/60] self-play: 35/40 games...
+2026-08-04 23:58:06   [GPU] 500,000 evals (56951 batches, avg 9/batch = 7% of 128, 469 evals/s, 469 msg/s, 1.0 leaves/msg, 1066s)
+2026-08-05 00:01:34 [iter 12/60] self-play: 40/40 games...
+2026-08-05 00:01:34 [iter 12/60] self-play done: 40 games (1274s) | wins: P0=5, P1=35 | draw_rate=0% avg_len~28
+2026-08-05 00:01:34 [iter 12/60] training (300 steps, lr=1.00e-03)...
+2026-08-05 00:03:36 [iter 12/60] training done: loss_p=1.436 loss_v=0.093 (122s)
+2026-08-05 00:03:37 [iter 12/60] data: policy_wall_mass=0.267 walled_states=72% walls_on_board=19.5 value_mae walled=0.133 free=0.146
+2026-08-05 00:03:37 [iter 12/60] eval vs best (40 games, 100 sims)...
+2026-08-05 00:03:37 [EVAL-MP] 10 workers spawned (40 vs_best games, sims=100), GPU batcher starting...
+2026-08-05 00:04:33 [iter 12/60] eval vs best: 5/40 games (56s, cand 100%)
+2026-08-05 00:05:03   [GPU] 50,007 evals (5008 batches, avg 10/batch = 8% of 128, 579 evals/s, 579 msg/s, 1.0 leaves/msg, 86s)
+2026-08-05 00:05:48 [iter 12/60] eval vs best: 10/40 games (131s, cand 90%)
+2026-08-05 00:06:35   [GPU] 100,000 evals (10290 batches, avg 10/batch = 8% of 128, 562 evals/s, 562 msg/s, 1.0 leaves/msg, 178s)
+2026-08-05 00:08:09   [GPU] 150,002 evals (15854 batches, avg 9/batch = 7% of 128, 551 evals/s, 551 msg/s, 1.0 leaves/msg, 272s)
+2026-08-05 00:08:13 [iter 12/60] eval vs best: 15/40 games (276s, cand 90%)
+2026-08-05 00:09:15 [iter 12/60] eval vs best: 20/40 games (338s, cand 85%)
+2026-08-05 00:09:42   [GPU] 200,003 evals (21435 batches, avg 9/batch = 7% of 128, 547 evals/s, 547 msg/s, 1.0 leaves/msg, 365s)
+2026-08-05 00:09:51 [iter 12/60] eval vs best: 25/40 games (374s, cand 76%)
+2026-08-05 00:11:44   [GPU] 250,003 evals (29286 batches, avg 9/batch = 7% of 128, 514 evals/s, 514 msg/s, 1.0 leaves/msg, 487s)
+2026-08-05 00:12:23 [iter 12/60] eval vs best: 30/40 games (525s, cand 70%)
+2026-08-05 00:13:55   [GPU] 300,002 evals (37902 batches, avg 8/batch = 6% of 128, 486 evals/s, 486 msg/s, 1.0 leaves/msg, 618s)
+2026-08-05 00:14:09 [iter 12/60] eval vs best: 35/40 games (632s, cand 71%)
+2026-08-05 00:17:02 [iter 12/60] eval vs best: 40/40 games (805s, cand 73%)
+2026-08-05 00:17:02 [iter 12/60] eval vs best done: 72.7% of 22 decided ACCEPT (805s)
+2026-08-05 00:17:02 [iter 12/60] eval vs random (20 games, 100 sims)...
+2026-08-05 00:17:02 [EVAL-MP] 10 workers spawned (20 vs_random games, sims=100), GPU batcher starting...
+2026-08-05 00:17:38 [iter 12/60] eval vs random: 5/20 games (36s, cand 100%)
+2026-08-05 00:18:13   [GPU] 50,004 evals (5617 batches, avg 9/batch = 7% of 128, 698 evals/s, 698 msg/s, 1.0 leaves/msg, 72s)
+2026-08-05 00:18:15 [iter 12/60] eval vs random: 10/20 games (73s, cand 100%)
+2026-08-05 00:18:39 [iter 12/60] eval vs random: 15/20 games (97s, cand 100%)
+2026-08-05 00:19:56 [iter 12/60] eval vs random: 20/20 games (175s, cand 94%)
+2026-08-05 00:19:56 [iter 12/60] eval vs random done: 94.1% (175s)
+2026-08-05 00:19:56 [iter 12/60] eval vs greedy (40 games, 100 sims)...
+2026-08-05 00:19:56 [EVAL-MP] 10 workers spawned (40 vs_greedy games, sims=100), GPU batcher starting...
+2026-08-05 00:20:07 [iter 12/60] eval vs greedy: 5/40 games (10s, cand 0%)
+2026-08-05 00:20:14 [iter 12/60] eval vs greedy: 10/40 games (17s, cand 0%)
+2026-08-05 00:20:16 [iter 12/60] eval vs greedy: 15/40 games (20s, cand 0%)
+2026-08-05 00:20:25 [iter 12/60] eval vs greedy: 20/40 games (29s, cand 0%)
+2026-08-05 00:20:27 [iter 12/60] eval vs greedy: 25/40 games (31s, cand 0%)
+2026-08-05 00:20:35 [iter 12/60] eval vs greedy: 30/40 games (38s, cand 0%)
+2026-08-05 00:20:37 [iter 12/60] eval vs greedy: 35/40 games (41s, cand 0%)
+2026-08-05 00:20:47 [iter 12/60] eval vs greedy: 40/40 games (51s, cand 0%)
+2026-08-05 00:20:47 [iter 12/60] eval vs greedy done: 0.0% of 40 decided [seat0:0/20 seat1:0/20] (51s)
+2026-08-05 00:20:47 [iter 12/60] eval vs minimax (depth 2, 40 games)...
+2026-08-05 00:20:47 [EVAL-MP] 10 workers spawned (40 vs_minimax games, sims=100), GPU batcher starting...
+2026-08-05 00:21:10 [iter 12/60] eval vs minimax: 5/40 games (0%)
+2026-08-05 00:21:18 [iter 12/60] eval vs minimax: 10/40 games (0%)
+2026-08-05 00:21:31 [iter 12/60] eval vs minimax: 15/40 games (0%)
+2026-08-05 00:21:39 [iter 12/60] eval vs minimax: 20/40 games (0%)
+2026-08-05 00:21:52 [iter 12/60] eval vs minimax: 25/40 games (0%)
+2026-08-05 00:21:54   [GPU] 50,002 evals (5206 batches, avg 10/batch = 8% of 128, 751 evals/s, 751 msg/s, 1.0 leaves/msg, 67s)
+2026-08-05 00:22:09 [iter 12/60] eval vs minimax: 30/40 games (0%)
+2026-08-05 00:22:42 [iter 12/60] eval vs minimax: 35/40 games (0%)
+2026-08-05 00:23:17 [iter 12/60] eval vs minimax: 40/40 games (0%)
+2026-08-05 00:23:17 [iter 12/60] eval vs minimax done: 0.0% of 37 decided [seat0:0/20 seat1:0/20] (150s)
+2026-08-05 00:23:17 [iter 12/60] WARNING: racing decay — best seat 0% is 85 pts below the peak 85% (1/2 evals)
+2026-08-05 00:23:17 >>> iter 12 | loss_p=1.436 loss_v=0.093 | vs_best=72.7% ACCEPT | vs_rand=94.1% | draw=0% | buf=25744 | rss=0.30GB | sp=1274s train=122s eval_best=805s eval_rand=175s | total=2577s
+2026-08-05 00:23:17 [iter 13/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-05 00:23:17 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-05 00:24:22   [GPU] 50,005 evals (5006 batches, avg 10/batch = 8% of 128, 777 evals/s, 777 msg/s, 1.0 leaves/msg, 64s)
+2026-08-05 00:24:35 [iter 13/60] self-play: 5/40 games...
+2026-08-05 00:25:27   [GPU] 100,001 evals (10013 batches, avg 10/batch = 8% of 128, 770 evals/s, 770 msg/s, 1.0 leaves/msg, 130s)
+2026-08-05 00:25:38 [iter 13/60] self-play: 10/40 games...
+2026-08-05 00:26:32   [GPU] 150,002 evals (15020 batches, avg 10/batch = 8% of 128, 768 evals/s, 768 msg/s, 1.0 leaves/msg, 195s)
+2026-08-05 00:27:14 [iter 13/60] self-play: 15/40 games...
+2026-08-05 00:27:36   [GPU] 200,006 evals (20030 batches, avg 10/batch = 8% of 128, 773 evals/s, 773 msg/s, 1.0 leaves/msg, 259s)
+2026-08-05 00:28:39   [GPU] 250,002 evals (25038 batches, avg 10/batch = 8% of 128, 778 evals/s, 778 msg/s, 1.0 leaves/msg, 321s)
+2026-08-05 00:29:06 [iter 13/60] self-play: 20/40 games...
+2026-08-05 00:29:42   [GPU] 300,001 evals (30045 batches, avg 10/batch = 8% of 128, 780 evals/s, 780 msg/s, 1.0 leaves/msg, 384s)
+2026-08-05 00:29:49 [iter 13/60] self-play: 25/40 games...
+2026-08-05 00:30:45   [GPU] 350,000 evals (35052 batches, avg 10/batch = 8% of 128, 782 evals/s, 782 msg/s, 1.0 leaves/msg, 448s)
+2026-08-05 00:31:48   [GPU] 400,003 evals (40059 batches, avg 10/batch = 8% of 128, 783 evals/s, 783 msg/s, 1.0 leaves/msg, 511s)
+2026-08-05 00:32:06 [iter 13/60] self-play: 30/40 games...
+2026-08-05 00:32:45 [iter 13/60] self-play: 35/40 games...
+2026-08-05 00:33:09   [GPU] 450,002 evals (46875 batches, avg 10/batch = 8% of 128, 760 evals/s, 760 msg/s, 1.0 leaves/msg, 592s)
+2026-08-05 00:35:27   [GPU] 500,001 evals (60134 batches, avg 8/batch = 6% of 128, 685 evals/s, 685 msg/s, 1.0 leaves/msg, 729s)
+2026-08-05 00:38:53   [GPU] 550,001 evals (81676 batches, avg 7/batch = 5% of 128, 588 evals/s, 588 msg/s, 1.0 leaves/msg, 936s)
+2026-08-05 00:44:54   [GPU] 600,000 evals (123440 batches, avg 5/batch = 4% of 128, 463 evals/s, 463 msg/s, 1.0 leaves/msg, 1297s)
+2026-08-05 00:44:57 [iter 13/60] self-play: 40/40 games...
+2026-08-05 00:44:57 [iter 13/60] self-play done: 40 games (1300s) | wins: P1=38, draw=2 | draw_rate=5% avg_len~24
+2026-08-05 00:44:57 [iter 13/60] training (300 steps, lr=1.00e-03)...
+2026-08-05 00:46:44 [iter 13/60] training done: loss_p=1.430 loss_v=0.079 (107s)
+2026-08-05 00:46:44 [iter 13/60] data: policy_wall_mass=0.274 walled_states=67% walls_on_board=17.5 value_mae walled=0.091 free=0.146
+2026-08-05 00:46:44 [iter 13/60] eval skipped (eval_every=4)
+2026-08-05 00:46:44 >>> iter 13 | loss_p=1.430 loss_v=0.079 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=5% | buf=27632 | rss=0.61GB | sp=1300s train=107s eval_best=0s eval_rand=0s | total=1407s
+2026-08-05 00:46:44 [iter 14/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-05 00:46:44 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-05 00:47:49   [GPU] 50,003 evals (5008 batches, avg 10/batch = 8% of 128, 777 evals/s, 777 msg/s, 1.0 leaves/msg, 64s)
+2026-08-05 00:48:08 [iter 14/60] self-play: 5/40 games...
+2026-08-05 00:48:54   [GPU] 100,004 evals (10016 batches, avg 10/batch = 8% of 128, 773 evals/s, 773 msg/s, 1.0 leaves/msg, 129s)
+2026-08-05 00:49:13 [iter 14/60] self-play: 10/40 games...
+2026-08-05 00:50:05   [GPU] 150,005 evals (15024 batches, avg 10/batch = 8% of 128, 749 evals/s, 749 msg/s, 1.0 leaves/msg, 200s)
+2026-08-05 00:50:58 [iter 14/60] self-play: 15/40 games...
+2026-08-05 00:51:14   [GPU] 200,001 evals (20032 batches, avg 10/batch = 8% of 128, 743 evals/s, 743 msg/s, 1.0 leaves/msg, 269s)
+2026-08-05 00:52:23   [GPU] 250,008 evals (25049 batches, avg 10/batch = 8% of 128, 738 evals/s, 738 msg/s, 1.0 leaves/msg, 339s)
+2026-08-05 00:53:33   [GPU] 300,003 evals (30072 batches, avg 10/batch = 8% of 128, 734 evals/s, 734 msg/s, 1.0 leaves/msg, 409s)
+2026-08-05 00:53:52 [iter 14/60] self-play: 20/40 games...
+2026-08-05 00:54:42   [GPU] 350,001 evals (35083 batches, avg 10/batch = 8% of 128, 734 evals/s, 734 msg/s, 1.0 leaves/msg, 477s)
+2026-08-05 00:55:50   [GPU] 400,007 evals (40091 batches, avg 10/batch = 8% of 128, 733 evals/s, 733 msg/s, 1.0 leaves/msg, 546s)
+2026-08-05 00:56:10 [iter 14/60] self-play: 25/40 games...
+2026-08-05 00:56:58   [GPU] 450,009 evals (45097 batches, avg 10/batch = 8% of 128, 733 evals/s, 733 msg/s, 1.0 leaves/msg, 614s)
+2026-08-05 00:57:43 [iter 14/60] self-play: 30/40 games...
+2026-08-05 00:58:07   [GPU] 500,001 evals (50103 batches, avg 10/batch = 8% of 128, 733 evals/s, 733 msg/s, 1.0 leaves/msg, 682s)
+2026-08-05 00:59:30   [GPU] 550,001 evals (56418 batches, avg 10/batch = 8% of 128, 718 evals/s, 718 msg/s, 1.0 leaves/msg, 766s)
+2026-08-05 01:00:49 [iter 14/60] self-play: 35/40 games...
+2026-08-05 01:01:29   [GPU] 600,003 evals (65588 batches, avg 9/batch = 7% of 128, 678 evals/s, 678 msg/s, 1.0 leaves/msg, 885s)
+2026-08-05 01:04:36   [GPU] 650,001 evals (82052 batches, avg 8/batch = 6% of 128, 606 evals/s, 606 msg/s, 1.0 leaves/msg, 1072s)
+2026-08-05 01:08:51   [GPU] 700,000 evals (104213 batches, avg 7/batch = 5% of 128, 528 evals/s, 528 msg/s, 1.0 leaves/msg, 1326s)
+2026-08-05 01:14:05 [iter 14/60] self-play: 40/40 games...
+2026-08-05 01:14:05 [iter 14/60] self-play done: 40 games (1641s) | wins: P0=5, P1=32, draw=3 | draw_rate=8% avg_len~24
+2026-08-05 01:14:05 [iter 14/60] training (300 steps, lr=1.00e-03)...
+2026-08-05 01:15:47 [iter 14/60] training done: loss_p=1.437 loss_v=0.084 (102s)
+2026-08-05 01:15:48 [iter 14/60] data: policy_wall_mass=0.252 walled_states=67% walls_on_board=18.6 value_mae walled=0.103 free=0.159
+2026-08-05 01:15:48 [iter 14/60] eval skipped (eval_every=4)
+2026-08-05 01:15:48 >>> iter 14 | loss_p=1.437 loss_v=0.084 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=8% | buf=29568 | rss=0.63GB | sp=1641s train=102s eval_best=0s eval_rand=0s | total=1744s
+2026-08-05 01:15:48 [iter 15/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-05 01:15:48 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-05 01:16:54   [GPU] 50,002 evals (5006 batches, avg 10/batch = 8% of 128, 758 evals/s, 758 msg/s, 1.0 leaves/msg, 66s)
+2026-08-05 01:17:18 [iter 15/60] self-play: 5/40 games...
+2026-08-05 01:18:03   [GPU] 100,002 evals (10013 batches, avg 10/batch = 8% of 128, 745 evals/s, 745 msg/s, 1.0 leaves/msg, 134s)
+2026-08-05 01:18:18 [iter 15/60] self-play: 10/40 games...
+2026-08-05 01:19:13   [GPU] 150,004 evals (15021 batches, avg 10/batch = 8% of 128, 732 evals/s, 732 msg/s, 1.0 leaves/msg, 205s)
+2026-08-05 01:20:13 [iter 15/60] self-play: 15/40 games...
+2026-08-05 01:20:24   [GPU] 200,003 evals (20029 batches, avg 10/batch = 8% of 128, 726 evals/s, 726 msg/s, 1.0 leaves/msg, 275s)
+2026-08-05 01:21:17 [iter 15/60] self-play: 20/40 games...
+2026-08-05 01:21:34   [GPU] 250,009 evals (25043 batches, avg 10/batch = 8% of 128, 723 evals/s, 723 msg/s, 1.0 leaves/msg, 346s)
+2026-08-05 01:22:44   [GPU] 300,002 evals (30051 batches, avg 10/batch = 8% of 128, 722 evals/s, 722 msg/s, 1.0 leaves/msg, 416s)
+2026-08-05 01:22:52 [iter 15/60] self-play: 25/40 games...
+2026-08-05 01:23:54   [GPU] 350,009 evals (35060 batches, avg 10/batch = 8% of 128, 720 evals/s, 720 msg/s, 1.0 leaves/msg, 486s)
+2026-08-05 01:24:17 [iter 15/60] self-play: 30/40 games...
+2026-08-05 01:25:06   [GPU] 400,005 evals (40235 batches, avg 10/batch = 8% of 128, 717 evals/s, 717 msg/s, 1.0 leaves/msg, 558s)
+2026-08-05 01:26:42   [GPU] 450,002 evals (46904 batches, avg 10/batch = 7% of 128, 689 evals/s, 689 msg/s, 1.0 leaves/msg, 653s)
+2026-08-05 01:28:38   [GPU] 500,002 evals (55250 batches, avg 9/batch = 7% of 128, 649 evals/s, 649 msg/s, 1.0 leaves/msg, 770s)
+2026-08-05 01:29:38 [iter 15/60] self-play: 35/40 games...
+2026-08-05 01:30:37   [GPU] 550,004 evals (64389 batches, avg 9/batch = 7% of 128, 619 evals/s, 619 msg/s, 1.0 leaves/msg, 888s)
+2026-08-05 01:32:40   [GPU] 600,002 evals (74400 batches, avg 8/batch = 6% of 128, 593 evals/s, 593 msg/s, 1.0 leaves/msg, 1011s)
+2026-08-05 01:34:43   [GPU] 650,002 evals (84412 batches, avg 8/batch = 6% of 128, 573 evals/s, 573 msg/s, 1.0 leaves/msg, 1135s)
+2026-08-05 01:36:47   [GPU] 700,003 evals (94427 batches, avg 7/batch = 6% of 128, 556 evals/s, 556 msg/s, 1.0 leaves/msg, 1259s)
+2026-08-05 01:39:21   [GPU] 750,001 evals (106568 batches, avg 7/batch = 5% of 128, 531 evals/s, 531 msg/s, 1.0 leaves/msg, 1413s)
+2026-08-05 01:43:20 [iter 15/60] self-play: 40/40 games...
+2026-08-05 01:43:20 [iter 15/60] self-play done: 40 games (1652s) | wins: P0=2, P1=34, draw=4 | draw_rate=10% avg_len~23
+2026-08-05 01:43:20 [iter 15/60] training (300 steps, lr=1.00e-03)...
+2026-08-05 01:45:02 [iter 15/60] training done: loss_p=1.424 loss_v=0.083 (102s)
+2026-08-05 01:45:03 [iter 15/60] data: policy_wall_mass=0.237 walled_states=66% walls_on_board=15.4 value_mae walled=0.127 free=0.146
+2026-08-05 01:45:03 [iter 15/60] eval skipped (eval_every=4)
+2026-08-05 01:45:03 >>> iter 15 | loss_p=1.424 loss_v=0.083 | vs_best=n/a (not evaluated) | vs_rand=n/a | draw=10% | buf=31374 | rss=0.65GB | sp=1652s train=102s eval_best=0s eval_rand=0s | total=1755s
+2026-08-05 01:45:03 [iter 16/60] self-play starting (40 games, 600 sims, MIXED 20/40 race-only)...
+2026-08-05 01:45:03 [PARALLEL-MP] 10 workers spawned (40 games, sims=600), GPU batcher starting...
+2026-08-05 01:46:09   [GPU] 50,005 evals (5006 batches, avg 10/batch = 8% of 128, 759 evals/s, 759 msg/s, 1.0 leaves/msg, 66s)
+2026-08-05 01:46:32 [iter 16/60] self-play: 5/40 games...
+2026-08-05 01:47:19   [GPU] 100,007 evals (10013 batches, avg 10/batch = 8% of 128, 738 evals/s, 738 msg/s, 1.0 leaves/msg, 136s)
+2026-08-05 01:47:45 [iter 16/60] self-play: 10/40 games...
+2026-08-05 01:48:30   [GPU] 150,003 evals (15020 batches, avg 10/batch = 8% of 128, 726 evals/s, 726 msg/s, 1.0 leaves/msg, 207s)
+2026-08-05 01:49:25 [iter 16/60] self-play: 15/40 games...
+2026-08-05 01:49:40   [GPU] 200,005 evals (20028 batches, avg 10/batch = 8% of 128, 721 evals/s, 721 msg/s, 1.0 leaves/msg, 277s)
+2026-08-05 01:50:51   [GPU] 250,003 evals (25034 batches, avg 10/batch = 8% of 128, 719 evals/s, 719 msg/s, 1.0 leaves/msg, 348s)
+2026-08-05 01:52:00   [GPU] 300,008 evals (30039 batches, avg 10/batch = 8% of 128, 719 evals/s, 719 msg/s, 1.0 leaves/msg, 417s)
+2026-08-05 01:52:26 [iter 16/60] self-play: 20/40 games...
+2026-08-05 01:53:10   [GPU] 350,001 evals (35044 batches, avg 10/batch = 8% of 128, 718 evals/s, 718 msg/s, 1.0 leaves/msg, 487s)
+2026-08-05 01:53:34 [iter 16/60] self-play: 25/40 games...
+2026-08-05 01:54:21   [GPU] 400,004 evals (40052 batches, avg 10/batch = 8% of 128, 718 evals/s, 718 msg/s, 1.0 leaves/msg, 557s)
+2026-08-05 01:55:31   [GPU] 450,007 evals (45059 batches, avg 10/batch = 8% of 128, 717 evals/s, 717 msg/s, 1.0 leaves/msg, 628s)
+2026-08-05 01:56:16 [iter 16/60] self-play: 30/40 games...
+2026-08-05 01:56:41   [GPU] 500,003 evals (50066 batches, avg 10/batch = 8% of 128, 717 evals/s, 717 msg/s, 1.0 leaves/msg, 698s)
+2026-08-05 01:58:12   [GPU] 550,002 evals (56659 batches, avg 10/batch = 8% of 128, 697 evals/s, 697 msg/s, 1.0 leaves/msg, 789s)
+2026-08-05 01:59:26 [iter 16/60] self-play: 35/40 games...
+2026-08-05 02:00:03   [GPU] 600,003 evals (64897 batches, avg 9/batch = 7% of 128, 667 evals/s, 667 msg/s, 1.0 leaves/msg, 900s)
+2026-08-05 02:03:44   [GPU] 650,001 evals (83357 batches, avg 8/batch = 6% of 128, 580 evals/s, 580 msg/s, 1.0 leaves/msg, 1121s)
+2026-08-05 02:11:58   [GPU] 700,000 evals (128556 batches, avg 5/batch = 4% of 128, 434 evals/s, 434 msg/s, 1.0 leaves/msg, 1615s)
+2026-08-05 02:14:03 [iter 16/60] self-play: 40/40 games...
+2026-08-05 02:14:03 [iter 16/60] self-play done: 40 games (1740s) | wins: P0=7, P1=32, draw=1 | draw_rate=2% avg_len~33
+2026-08-05 02:14:03 [iter 16/60] training (300 steps, lr=1.00e-03)...
+2026-08-05 02:15:45 [iter 16/60] training done: loss_p=1.438 loss_v=0.080 (102s)
+2026-08-05 02:15:45 [iter 16/60] data: policy_wall_mass=0.231 walled_states=78% walls_on_board=23.6 value_mae walled=0.148 free=0.198
+2026-08-05 02:15:45 [iter 16/60] eval vs best (40 games, 100 sims)...
+2026-08-05 02:15:46 [EVAL-MP] 10 workers spawned (40 vs_best games, sims=100), GPU batcher starting...
+2026-08-05 02:16:59 [iter 16/60] eval vs best: 5/40 games (73s, cand 80%)
+2026-08-05 02:17:10   [GPU] 50,002 evals (5007 batches, avg 10/batch = 8% of 128, 595 evals/s, 595 msg/s, 1.0 leaves/msg, 84s)
+2026-08-05 02:18:29 [iter 16/60] eval vs best: 10/40 games (164s, cand 80%)
+2026-08-05 02:18:38   [GPU] 100,000 evals (10013 batches, avg 10/batch = 8% of 128, 580 evals/s, 580 msg/s, 1.0 leaves/msg, 172s)
+2026-08-05 02:20:12   [GPU] 150,001 evals (15435 batches, avg 10/batch = 8% of 128, 562 evals/s, 562 msg/s, 1.0 leaves/msg, 267s)
+2026-08-05 02:20:24 [iter 16/60] eval vs best: 15/40 games (278s, cand 82%)
+2026-08-05 02:21:33 [iter 16/60] eval vs best: 20/40 games (348s, cand 71%)
+2026-08-05 02:21:47   [GPU] 200,008 evals (20998 batches, avg 10/batch = 7% of 128, 553 evals/s, 553 msg/s, 1.0 leaves/msg, 362s)
+2026-08-05 02:22:41 [iter 16/60] eval vs best: 25/40 games (415s, cand 72%)
+2026-08-05 02:23:33   [GPU] 250,006 evals (27475 batches, avg 9/batch = 7% of 128, 535 evals/s, 535 msg/s, 1.0 leaves/msg, 467s)
+2026-08-05 02:25:28   [GPU] 300,001 evals (34623 batches, avg 9/batch = 7% of 128, 515 evals/s, 515 msg/s, 1.0 leaves/msg, 583s)
+2026-08-05 02:25:38 [iter 16/60] eval vs best: 30/40 games (592s, cand 72%)
+2026-08-05 02:28:01   [GPU] 350,003 evals (44379 batches, avg 8/batch = 6% of 128, 476 evals/s, 476 msg/s, 1.0 leaves/msg, 736s)
+2026-08-05 02:28:45 [iter 16/60] eval vs best: 35/40 games (780s, cand 68%)
+2026-08-05 02:32:04 [iter 16/60] eval vs best: 40/40 games (978s, cand 68%)
+2026-08-05 02:32:04 [iter 16/60] eval vs best done: 68.4% of 19 decided ACCEPT (978s)
+2026-08-05 02:32:04 [iter 16/60] eval vs random (20 games, 100 sims)...
+2026-08-05 02:32:04 [EVAL-MP] 10 workers spawned (20 vs_random games, sims=100), GPU batcher starting...
+2026-08-05 02:32:48 [iter 16/60] eval vs random: 5/20 games (44s, cand 100%)
+2026-08-05 02:33:13   [GPU] 50,003 evals (5247 batches, avg 10/batch = 7% of 128, 722 evals/s, 722 msg/s, 1.0 leaves/msg, 69s)
+2026-08-05 02:33:21 [iter 16/60] eval vs random: 10/20 games (77s, cand 90%)
+2026-08-05 02:33:49 [iter 16/60] eval vs random: 15/20 games (105s, cand 85%)
+2026-08-05 02:35:05 [iter 16/60] eval vs random: 20/20 games (181s, cand 73%)
+2026-08-05 02:35:05 [iter 16/60] eval vs random done: 73.3% (181s)
+2026-08-05 02:35:05 [iter 16/60] eval vs greedy (40 games, 100 sims)...
+2026-08-05 02:35:05 [EVAL-MP] 10 workers spawned (40 vs_greedy games, sims=100), GPU batcher starting...
+2026-08-05 02:35:16 [iter 16/60] eval vs greedy: 5/40 games (11s, cand 0%)
+2026-08-05 02:35:18 [iter 16/60] eval vs greedy: 10/40 games (13s, cand 0%)
+2026-08-05 02:35:25 [iter 16/60] eval vs greedy: 15/40 games (20s, cand 0%)
+2026-08-05 02:35:32 [iter 16/60] eval vs greedy: 20/40 games (27s, cand 0%)
+2026-08-05 02:35:35 [iter 16/60] eval vs greedy: 25/40 games (30s, cand 0%)
+2026-08-05 02:35:44 [iter 16/60] eval vs greedy: 30/40 games (39s, cand 0%)
+2026-08-05 02:35:45 [iter 16/60] eval vs greedy: 35/40 games (40s, cand 0%)
+2026-08-05 02:35:54 [iter 16/60] eval vs greedy: 40/40 games (49s, cand 0%)
+2026-08-05 02:35:54 [iter 16/60] eval vs greedy done: 0.0% of 40 decided [seat0:0/20 seat1:0/20] (49s)
+2026-08-05 02:35:54 [iter 16/60] eval vs minimax (depth 2, 40 games)...
+2026-08-05 02:35:54 [EVAL-MP] 10 workers spawned (40 vs_minimax games, sims=100), GPU batcher starting...
+2026-08-05 02:36:21 [iter 16/60] eval vs minimax: 5/40 games (0%)
+2026-08-05 02:36:37 [iter 16/60] eval vs minimax: 10/40 games (0%)
+2026-08-05 02:36:49 [iter 16/60] eval vs minimax: 15/40 games (0%)
+2026-08-05 02:37:02   [GPU] 50,001 evals (5099 batches, avg 10/batch = 8% of 128, 743 evals/s, 743 msg/s, 1.0 leaves/msg, 67s)
+2026-08-05 02:37:10 [iter 16/60] eval vs minimax: 20/40 games (0%)
+2026-08-05 02:37:35 [iter 16/60] eval vs minimax: 25/40 games (0%)
+2026-08-05 02:38:00 [iter 16/60] eval vs minimax: 30/40 games (0%)
+2026-08-05 02:38:22 [iter 16/60] eval vs minimax: 35/40 games (0%)
+2026-08-05 02:38:48 [iter 16/60] eval vs minimax: 40/40 games (0%)
+2026-08-05 02:38:48 [iter 16/60] eval vs minimax done: 0.0% of 35 decided [seat0:0/20 seat1:0/20] (174s)
+2026-08-05 02:38:48 [iter 16/60] WARNING: racing decay — best seat 0% is 85 pts below the peak 85% (2/2 evals)
+2026-08-05 02:38:48 >>> iter 16 | loss_p=1.438 loss_v=0.080 | vs_best=68.4% ACCEPT | vs_rand=73.3% | draw=2% | buf=33998 | rss=0.37GB | sp=1740s train=102s eval_best=978s eval_rand=181s | total=3225s
+2026-08-05 02:38:48 STOPPING EARLY at iteration 16/60 — racing decay: best per-seat greedy rate 0% stayed >=20 pts below its peak 85% for 2 consecutive evals. best.pt holds the peak; resume by raising greedy_stop_patience if this was noise.

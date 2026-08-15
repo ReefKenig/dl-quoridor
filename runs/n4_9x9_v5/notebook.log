@@ -1,0 +1,132 @@
+=== run started 2026-07-30T20:06:28+00:00 | host nb-cs501b-0-0 | notebook notebooks/train_9x9_n4.ipynb ===
+=== attempt 1/5 started 2026-07-30T20:06:28+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+[IPKernelApp] WARNING | Parent appears to have exited, shutting down.
+=== run started 2026-07-30T20:45:49+00:00 | host nb-cs501b-0-0 | notebook notebooks/train_9x9_n4.ipynb ===
+=== attempt 1/5 started 2026-07-30T20:45:49+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+=== run started 2026-07-31T09:07:19+00:00 | host nb-cs501b-0-0 | notebook notebooks/train_9x9_n4.ipynb ===
+=== attempt 1/5 started 2026-07-31T09:07:19+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+=== run started 2026-07-31T09:07:52+00:00 | host nb-cs501b-0-0 | notebook notebooks/train_9x9_n4.ipynb ===
+=== attempt 1/5 started 2026-07-31T09:07:52+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+=== run started 2026-07-31T09:44:40+00:00 | host nb-cs501b-0-0 | notebook notebooks/train_9x9_n4.ipynb ===
+=== attempt 1/5 started 2026-07-31T09:44:40+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+=== run started 2026-07-31T09:44:40+00:00 | host nb-cs501b-0-0 | notebook notebooks/train_9x9_n4.ipynb ===
+=== attempt 1/5 started 2026-07-31T09:44:40+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+=== run started 2026-07-31T10:08:10+00:00 | host nb-cs501b-0-0 | notebook notebooks/train_9x9_n4.ipynb ===
+=== attempt 1/5 started 2026-07-31T10:08:10+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+=== run started 2026-07-31T13:37:09+00:00 | host nb-cs501b-0-0 | notebook notebooks/train_9x9_n4.ipynb ===
+=== attempt 1/5 started 2026-07-31T13:37:09+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+=== run started 2026-07-31T16:53:24+00:00 | host nb-cs501b-0-0 | notebook notebooks/train_9x9_n4.ipynb ===
+=== attempt 1/5 started 2026-07-31T16:53:24+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+[NbConvertApp] Writing 1502826 bytes to notebooks/runs/n4_9x9_v5/n4_9x9_v5.executed.ipynb
+Traceback (most recent call last):
+  File "/usr/local/bin/jupyter-nbconvert", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/jupyter_core/application.py", line 284, in launch_instance
+    super().launch_instance(argv=argv, **kwargs)
+  File "/usr/local/lib/python3.11/dist-packages/traitlets/config/application.py", line 1075, in launch_instance
+    app.start()
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 420, in start
+    self.convert_notebooks()
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 597, in convert_notebooks
+    self.convert_single_notebook(notebook_filename)
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 566, in convert_single_notebook
+    write_results = self.write_single_notebook(output, resources)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 526, in write_single_notebook
+    return self.writer.write(output, resources, notebook_name=notebook_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/writers/files.py", line 152, in write
+    with open(dest_path, "w", encoding="utf-8") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'notebooks/runs/n4_9x9_v5/n4_9x9_v5.executed.ipynb'
+=== attempt 1 failed at 2026-08-01T01:59:37+00:00 (killed kernel?) — retrying in 60s ===
+=== attempt 2/5 started 2026-08-01T02:00:37+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+[NbConvertApp] Writing 719725 bytes to notebooks/runs/n4_9x9_v5/n4_9x9_v5.executed.ipynb
+Traceback (most recent call last):
+  File "/usr/local/bin/jupyter-nbconvert", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/jupyter_core/application.py", line 284, in launch_instance
+    super().launch_instance(argv=argv, **kwargs)
+  File "/usr/local/lib/python3.11/dist-packages/traitlets/config/application.py", line 1075, in launch_instance
+    app.start()
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 420, in start
+    self.convert_notebooks()
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 597, in convert_notebooks
+    self.convert_single_notebook(notebook_filename)
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 566, in convert_single_notebook
+    write_results = self.write_single_notebook(output, resources)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 526, in write_single_notebook
+    return self.writer.write(output, resources, notebook_name=notebook_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/writers/files.py", line 152, in write
+    with open(dest_path, "w", encoding="utf-8") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'notebooks/runs/n4_9x9_v5/n4_9x9_v5.executed.ipynb'
+=== attempt 2 failed at 2026-08-01T03:15:16+00:00 (killed kernel?) — retrying in 60s ===
+=== attempt 3/5 started 2026-08-01T03:16:16+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+[NbConvertApp] Writing 710497 bytes to notebooks/runs/n4_9x9_v5/n4_9x9_v5.executed.ipynb
+Traceback (most recent call last):
+  File "/usr/local/bin/jupyter-nbconvert", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/jupyter_core/application.py", line 284, in launch_instance
+    super().launch_instance(argv=argv, **kwargs)
+  File "/usr/local/lib/python3.11/dist-packages/traitlets/config/application.py", line 1075, in launch_instance
+    app.start()
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 420, in start
+    self.convert_notebooks()
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 597, in convert_notebooks
+    self.convert_single_notebook(notebook_filename)
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 566, in convert_single_notebook
+    write_results = self.write_single_notebook(output, resources)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 526, in write_single_notebook
+    return self.writer.write(output, resources, notebook_name=notebook_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/writers/files.py", line 152, in write
+    with open(dest_path, "w", encoding="utf-8") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'notebooks/runs/n4_9x9_v5/n4_9x9_v5.executed.ipynb'
+=== attempt 3 failed at 2026-08-01T04:35:59+00:00 (killed kernel?) — retrying in 60s ===
+=== attempt 4/5 started 2026-08-01T04:36:59+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook
+[NbConvertApp] Writing 710597 bytes to notebooks/runs/n4_9x9_v5/n4_9x9_v5.executed.ipynb
+Traceback (most recent call last):
+  File "/usr/local/bin/jupyter-nbconvert", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/jupyter_core/application.py", line 284, in launch_instance
+    super().launch_instance(argv=argv, **kwargs)
+  File "/usr/local/lib/python3.11/dist-packages/traitlets/config/application.py", line 1075, in launch_instance
+    app.start()
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 420, in start
+    self.convert_notebooks()
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 597, in convert_notebooks
+    self.convert_single_notebook(notebook_filename)
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 566, in convert_single_notebook
+    write_results = self.write_single_notebook(output, resources)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/nbconvertapp.py", line 526, in write_single_notebook
+    return self.writer.write(output, resources, notebook_name=notebook_name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/dist-packages/nbconvert/writers/files.py", line 152, in write
+    with open(dest_path, "w", encoding="utf-8") as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'notebooks/runs/n4_9x9_v5/n4_9x9_v5.executed.ipynb'
+=== attempt 4 failed at 2026-08-01T05:45:53+00:00 (killed kernel?) — retrying in 60s ===
+=== attempt 5/5 started 2026-08-01T05:46:53+00:00 ===
+[NbConvertApp] Converting notebook notebooks/train_9x9_n4.ipynb to notebook

@@ -1,0 +1,22 @@
+iter 1 | loss_p=2.753 loss_v=0.157 | vs_best=37.5% (acc>25.0%) ACCEPT | vs_rand=25.0% (fair=25.0%) | buf=270 | 8s
+iter 2 | loss_p=1.948 loss_v=0.055 | vs_best=0.0% (acc>25.0%) reject | vs_rand=12.5% (fair=25.0%) | buf=778 | 11s
+
+==================================================================
+EVALUATOR  N=4 random-vs-random (harness + rotation + attribution)
+==================================================================
+  games=24 | candidate 7 (29.2%, fair=25.0%) | opp 17 | draws 0 | by-seat[s0:2/6 s1:1/6 s2:2/6 s3:2/6]
+  fair share = 25%; candidate is also random, so ~25% expected (noisy at 24 games)
+
+==================================================================
+TRAINING  tiny N=4 maxⁿ loop (CPU, smoke)
+==================================================================
+
+  iterations completed: 2
+  checkpoints: ['latest.pt', 'best.pt']
+
+==================================================================
+CHECKPOINT  reload latest.pt
+==================================================================
+  reloaded ok: policy(44,) value(4,) (expect (44,) (4,))
+
+ALL DONE

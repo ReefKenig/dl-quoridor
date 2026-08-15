@@ -1,0 +1,47 @@
+{
+    "is_poc": true,
+    "board_size": 5,
+    "mcts": {
+        "num_simulations": 400,
+        "c_puct": 1.41,
+        "temperature": 1.0,
+        "dirichlet_alpha": 0.3,
+        "dirichlet_epsilon": 0.25,
+        "max_rollout_depth": 100
+    },
+    "network": {
+        "num_res_blocks": 4,
+        "num_channels": 64
+    },
+    "training": {
+        "num_iterations": 15,
+        "games_per_iteration": 100,
+        "batch_size": 256,
+        "training_epochs": 100,
+        "replay_buffer_size": 50000,
+        "learning_rate": 0.001,
+        "weight_decay": 0.0001,
+        "max_game_moves": 80,
+        "win_threshold": 0.55,
+        "self_play_checkpoint_freq": 10,
+        "reward_decay": 0.97
+    },
+    "parallel": {
+        "num_workers": 8,
+        "inference_batch_size": 64
+    },
+    "variants": {
+        "n2": {
+            "num_players": 2,
+            "max_walls_per_player": 3,
+            "eval_games": 20,
+            "eval_random_games": 20
+        },
+        "n4": {
+            "num_players": 4,
+            "max_walls_per_player": 2,
+            "eval_games": 80,
+            "eval_random_games": 24
+        }
+    }
+}

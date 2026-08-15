@@ -1,0 +1,168 @@
+{
+  "games_per_seat": 20,
+  "sims": 200,
+  "minimax_depth": 2,
+  "wall_candidates": [
+    16
+  ],
+  "complete": true,
+  "protocol": "evaluate_mp; opening_plies from each run's frozen config; each checkpoint on its own tensor spec",
+  "results": [
+    {
+      "ckpt": "runs/n4_9x9_v10/greedy_peak.pt",
+      "num_players": 4,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 16,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.5414,
+      "secs": 518.0,
+      "seats": {
+        "0": [
+          9,
+          20
+        ],
+        "1": [
+          0,
+          20
+        ],
+        "2": [
+          0,
+          20
+        ],
+        "3": [
+          0,
+          20
+        ]
+      },
+      "wins": 9,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.1125,
+      "racer_ceiling": 0.25
+    },
+    {
+      "ckpt": "runs/n4_9x9_v10/greedy_peak.pt",
+      "num_players": 4,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 16,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 200,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.5414,
+      "secs": 1578.1,
+      "seats": {
+        "0": [
+          0,
+          20
+        ],
+        "1": [
+          0,
+          20
+        ],
+        "2": [
+          0,
+          20
+        ],
+        "3": [
+          0,
+          20
+        ]
+      },
+      "wins": 0,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.0,
+      "racer_ceiling": 0.25
+    },
+    {
+      "ckpt": "runs/n4_9x9_v9/greedy_peak.pt",
+      "num_players": 4,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 16,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.4112,
+      "secs": 585.0,
+      "seats": {
+        "0": [
+          9,
+          20
+        ],
+        "1": [
+          0,
+          20
+        ],
+        "2": [
+          0,
+          20
+        ],
+        "3": [
+          0,
+          20
+        ]
+      },
+      "wins": 9,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.1125,
+      "racer_ceiling": 0.25
+    },
+    {
+      "ckpt": "runs/n4_9x9_v9/greedy_peak.pt",
+      "num_players": 4,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 16,
+      "opponent": "minimax",
+      "opening_plies": 4,
+      "sims": 200,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.4112,
+      "secs": 1633.5,
+      "seats": {
+        "0": [
+          0,
+          20
+        ],
+        "1": [
+          1,
+          20
+        ],
+        "2": [
+          0,
+          20
+        ],
+        "3": [
+          1,
+          20
+        ]
+      },
+      "wins": 2,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.025,
+      "racer_ceiling": 0.25
+    }
+  ]
+}

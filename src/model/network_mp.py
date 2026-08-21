@@ -137,13 +137,19 @@ class QuoridorModelMP:
         return policy, value_vec
 
     def train_step(self, states, target_policies, target_values,
-                   anchor_model=None, anchor_weight=0.0):
+                   anchor_model=None, anchor_weight=0.0, value_weights=None):
         """target_values: (B, num_players).
 
         anchor_model/anchor_weight: adds a cross-entropy pull toward a frozen
         reference policy on the same batch (KL up to a constant). The returned
         loss_policy stays the MCTS-target term alone, so history rows remain
         comparable with unanchored runs.
+
+        value_weights: optional (B, num_players) weights on the value targets,
+        for dropping the outcomes of games that teach the wrong lesson about a
+        seat (training_mp.clone_seat0_value_weights). Normalized by their own
+        sum, so a uniform weighting is the plain mean and loss_v keeps its
+        scale; an all-zero batch contributes no value gradient.
         """
         self.network.train()
         x = torch.from_numpy(states).float().permute(
@@ -153,7 +159,13 @@ class QuoridorModelMP:
             self.device)  # (B, num_players)
         log_policy, value = self.network(x)
         loss_policy = -torch.sum(pi * log_policy) / pi.size(0)
-        loss_value = F.mse_loss(value, z)           # MSE over the vector
+        if value_weights is None:
+            loss_value = F.mse_loss(value, z)       # MSE over the vector
+        else:
+            w = torch.from_numpy(value_weights).float().to(self.device)
+            total_w = w.sum()
+            loss_value = ((w * (value - z) ** 2).sum() / total_w if total_w > 0
+                          else torch.zeros((), device=self.device))
         total = loss_policy + self.value_loss_weight * loss_value
         if anchor_model is not None and anchor_weight > 0:
             # Through the public batch path: eval mode, no_grad and autocast

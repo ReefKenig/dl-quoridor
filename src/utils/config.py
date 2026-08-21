@@ -168,6 +168,22 @@ def ply_budget_per_player(raw: Dict[str, Any], variant: str) -> float:
     return merged["max_game_moves"] / num_players
 
 
+def env_max_turns(raw: Dict[str, Any], variant: str) -> int:
+    """The env's no-winner cutoff for a run, which may never bind first.
+
+    Two independent limits stop a game and the smaller one binds: the env
+    terminates without a winner at `max_turns`, while the self-play and eval
+    drivers stop rolling out at `max_game_moves`. `max_rollout_depth` (which
+    feeds `max_turns`) is shared across variants and `max_game_moves` is
+    per-variant, so the 200/320 pair silently shortened every 9x9 N=4 game from
+    v5 through v10 -- 50 own-turns per player instead of 80. Deriving the cutoff
+    here is what stops the pair from diverging again.
+    """
+    merged = resolve_run_config(raw, variant)
+    return max(int(merged.get("max_rollout_depth", 0)),
+               int(merged["max_game_moves"]))
+
+
 def load_config(path: str = "configs/config_5x5.json") -> AppConfig:
     """
     Load a JSON config file and return a typed AppConfig.

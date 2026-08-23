@@ -254,11 +254,21 @@ def test_the_notebook_is_valid_json(notebook):
 
 
 @pytest.mark.parametrize("notebook", NOTEBOOKS)
-def test_the_notebook_tracks_a_branch_that_exists(notebook):
-    """`git checkout .` discards local edits first, so a stale BRANCH silently
-    runs old code — which is how v4/v5 ran without their intended fixes."""
+def test_the_notebook_runs_the_branch_it_was_launched_from(notebook):
+    """`git checkout .` discards local edits first, so a hardcoded BRANCH runs
+    old code under a new notebook — which is how v4/v5 ran without their
+    intended fixes, and how the first v11 launch executed a dev notebook against
+    feat/9x9-v10's source and died on an import four cells later.
+
+    A literal cannot be checked for being the RIGHT branch, only for existing.
+    Deriving it from HEAD removes the question: the source and the notebook are
+    the same checkout or the run does not start."""
     text = (_repo_root() / notebook).read_text()
-    assert 'BRANCH = \\"' in text
+    assert "rev-parse" in text and "--abbrev-ref" in text, (
+        f"{notebook} no longer derives BRANCH from the checked-out branch")
+    assert 'BRANCH = \\"' not in text, (
+        f"{notebook} pins BRANCH to a literal again — it will silently run that "
+        f"branch's source under this notebook's cells.")
 
 
 def test_the_levers_this_work_added_are_all_configured():

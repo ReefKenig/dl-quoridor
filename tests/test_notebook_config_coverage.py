@@ -254,11 +254,13 @@ def test_the_notebook_is_valid_json(notebook):
 
 
 @pytest.mark.parametrize("notebook", NOTEBOOKS)
-def test_the_notebook_tracks_a_branch_that_exists(notebook):
-    """`git checkout .` discards local edits first, so a stale BRANCH silently
-    runs old code — which is how v4/v5 ran without their intended fixes."""
+def test_the_notebook_runs_dev(notebook):
+    """`git checkout .` discards local edits first, so a BRANCH left on a merged
+    feature branch runs old source under a new notebook. That is how v4/v5 ran
+    without their fixes, and how the first v11 launch died on an import."""
     text = (_repo_root() / notebook).read_text()
-    assert 'BRANCH = \\"' in text
+    assert 'BRANCH = \\"dev\\"' in text, (
+        f"{notebook} does not run dev — a stale branch here runs old code.")
 
 
 def test_the_levers_this_work_added_are_all_configured():

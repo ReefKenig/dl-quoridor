@@ -216,10 +216,9 @@ def test_the_ui_entrypoint_defaults_to_no_root_noise():
 
 
 # --- the env cutoff vs the driver cap -----------------------------------------
-# Two limits stop a game and the smaller binds: the env terminates without a
-# winner at max_turns, the self-play and eval drivers stop rolling out at
-# max_game_moves. The pair 200/320 was never validated against itself, so every
-# 9x9 N=4 run from v5 through v10 played 50 own-turns per player instead of 80.
+# The smaller of max_turns and max_game_moves ends the game. The pair was never
+# validated, so every 9x9 N=4 run from v5 to v10 played 200 plies against a
+# configured 320.
 
 
 def test_env_cutoff_is_never_below_the_driver_cap(cfg9):
@@ -237,7 +236,7 @@ def test_env_cutoff_lifts_the_n4_run_to_its_configured_cap(cfg9):
 
 
 def test_env_cutoff_leaves_n2_alone(cfg9):
-    """N=2 was never affected -- 200 already exceeds its 160-ply cap."""
+    """200 already exceeds the 160-ply cap, so N=2 was never affected."""
     assert env_max_turns(cfg9, "n2") == 200
 
 
@@ -250,7 +249,7 @@ def test_env_cutoff_keeps_a_rollout_depth_above_the_cap():
 
 
 def test_training_config_raises_a_short_env_cutoff_to_the_cap(caplog):
-    """The backstop for every construction site the notebooks do not own."""
+    """The backstop for the construction sites the notebooks do not own."""
     import logging
 
     from src.mcts.training_mp import TrainingConfigMP

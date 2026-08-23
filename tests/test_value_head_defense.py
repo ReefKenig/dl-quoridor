@@ -1,11 +1,8 @@
 """Seat-0 value targets from clone-vs-clone games (cfg.clone_seat0_value_weight).
 
-n4_9x9_v10 localized what the policy anchor cannot reach. The anchor holds the
-racing PRIOR, and the erosion that survived it is in the value head: clone games
-retrain it on outcomes in which seat-0 racing genuinely loses, so the head
-learns to price the only seat a racer can win at N=4 as a loss and the search
-stops racing it. Anchored games keep every column -- there the racing line is
-the line that wins.
+The policy anchor holds the racing prior; the erosion v10 measured surviving it
+is in the value head, which clone games retrain on outcomes where seat-0 racing
+loses. Anchored games keep every column -- there racing is what wins.
 """
 import numpy as np
 import pytest
@@ -47,7 +44,7 @@ def test_a_partial_weight_softens_rather_than_drops():
 
 
 def test_the_off_setting_builds_no_mask_at_all():
-    """1.0 must be the plain step, not a mask of ones taking the weighted path."""
+    """1.0 is the plain step, not a mask of ones on the weighted path."""
     assert clone_seat0_value_weights(["self"] * 4, 4, 1.0) is None
 
 
@@ -88,7 +85,7 @@ def test_sample_batch_keeps_its_three_value_shape_by_default():
 # --- the loss ----------------------------------------------------------------
 
 def test_uniform_weights_reproduce_the_plain_step():
-    """Normalizing by the weights' own sum keeps loss_v on its usual scale."""
+    """Normalizing by the weights' own sum keeps loss_v on its scale."""
     S, P, V = _batch()
     plain = _model(0).train_step(S, P, V)
     weighted = _model(0).train_step(S, P, V,
@@ -98,7 +95,7 @@ def test_uniform_weights_reproduce_the_plain_step():
 
 
 def test_dropped_seat_zero_targets_do_not_train_the_head():
-    """The head must stay where it was on seat 0 and still learn the others."""
+    """Seat 0 must stay put while the other seats still learn."""
     S, P, V = _batch(seed=3)
     weights = np.ones_like(V)
     weights[:, 0] = 0.0
@@ -137,8 +134,7 @@ def test_a_weight_outside_zero_to_one_is_rejected(bad):
 
 
 def test_the_n4_variant_turns_it_on_and_n2_does_not():
-    """The intervention is a four-player one: at N=2 both seats are winnable,
-    so a clone-game outcome is not misleading about either."""
+    """A four-player intervention: at N=2 both seats are winnable."""
     import json
 
     from src.utils.config import resolve_run_config

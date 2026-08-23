@@ -220,13 +220,10 @@ class TrainingConfigMP:
     anchor_weight: float = 0.0
     # Champion snapshots kept for the past-opponent share.
     champion_pool_size: int = 5
-    # Weight on the SEAT-0 value target of samples that came from clone-vs-clone
-    # self-play. 1.0 = the plain step; 0.0 excludes those outcomes entirely.
-    # The policy anchor defends the prior and v10 showed what survives it: the
-    # value head is retrained by clone games in which seat-0 racing genuinely
-    # loses, so the head learns to price the one seat a racer can win at N=4 as
-    # a loss and the search stops racing it. Anchored games (greedy/past), where
-    # the racing line is the one that wins, keep every column at full weight.
+    # Weight on the SEAT-0 value target of clone-vs-clone samples; 0.0 excludes
+    # them. Clone games teach the head that seat-0 racing loses, which is the
+    # erosion v10 measured surviving the policy anchor. Anchored games keep
+    # every column. 1.0 = the plain step.
     clone_seat0_value_weight: float = 1.0
 
     def __post_init__(self):
@@ -262,9 +259,8 @@ SOURCE_DTYPE = "U16"
 def clone_seat0_value_weights(sources, num_players, weight):
     """Per-sample, per-seat weights for the value loss; None when it is uniform.
 
-    Only the seat-0 column of clone-vs-clone samples moves. Seat 0 is fixed
-    across the mirror augmentation (_seat_perm keeps 0 -> 0), so column 0 is
-    seat 0 for augmented samples too.
+    Only the seat-0 column of clone-vs-clone samples moves. `_seat_perm` keeps
+    seat 0 fixed under the mirror, so column 0 is seat 0 for augmented samples too.
     """
     if weight == 1.0:
         return None
@@ -331,7 +327,7 @@ class ReplayBufferMP:
         iterations may hold fewer anchored samples than the target asks for.
 
         with_sources also returns the drawn samples' source labels, so a caller
-        can weight the loss by where a sample came from (cfg.clone_seat0_value_weight).
+        can weight the loss by where a sample came from.
         """
         n = min(batch_size, len(self.buffer))
         if source and source_share > 0:

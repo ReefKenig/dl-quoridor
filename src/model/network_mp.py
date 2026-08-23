@@ -145,11 +145,9 @@ class QuoridorModelMP:
         loss_policy stays the MCTS-target term alone, so history rows remain
         comparable with unanchored runs.
 
-        value_weights: optional (B, num_players) weights on the value targets,
-        for dropping the outcomes of games that teach the wrong lesson about a
-        seat (training_mp.clone_seat0_value_weights). Normalized by their own
-        sum, so a uniform weighting is the plain mean and loss_v keeps its
-        scale; an all-zero batch contributes no value gradient.
+        value_weights: optional (B, num_players) weights on the value targets
+        (training_mp.clone_seat0_value_weights). Normalized by their own sum, so
+        uniform weights are the plain mean and loss_v keeps its scale.
         """
         self.network.train()
         x = torch.from_numpy(states).float().permute(

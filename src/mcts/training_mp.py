@@ -222,10 +222,8 @@ class TrainingConfigMP:
     champion_pool_size: int = 5
 
     def __post_init__(self):
-        # Two limits stop a game and the smaller binds: the env terminates
-        # without a winner at max_turns, the drivers stop rolling out at
-        # max_game_moves. Nothing checked the pair, so every 9x9 N=4 run from v5
-        # to v10 played to 200 plies against a configured 320.
+        # The smaller of the two limits ends the game, so an env cutoff below
+        # the driver's cap shortens every game silently.
         if self.max_turns < self.max_game_moves:
             logger.warning(
                 "max_turns=%d is below max_game_moves=%d, which would end every "

@@ -171,13 +171,10 @@ def ply_budget_per_player(raw: Dict[str, Any], variant: str) -> float:
 def env_max_turns(raw: Dict[str, Any], variant: str) -> int:
     """The env's no-winner cutoff for a run, which may never bind first.
 
-    Two independent limits stop a game and the smaller one binds: the env
-    terminates without a winner at `max_turns`, while the self-play and eval
-    drivers stop rolling out at `max_game_moves`. `max_rollout_depth` (which
-    feeds `max_turns`) is shared across variants and `max_game_moves` is
-    per-variant, so the 200/320 pair silently shortened every 9x9 N=4 game from
-    v5 through v10 -- 50 own-turns per player instead of 80. Deriving the cutoff
-    here is what stops the pair from diverging again.
+    The env stops at `max_turns`, the drivers stop rolling out at
+    `max_game_moves`, and the smaller wins. `max_rollout_depth` is shared while
+    `max_game_moves` is per-variant, so deriving the cutoff is what keeps the
+    pair from diverging.
     """
     merged = resolve_run_config(raw, variant)
     return max(int(merged.get("max_rollout_depth", 0)),

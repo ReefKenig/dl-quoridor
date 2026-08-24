@@ -2,7 +2,7 @@
 
 greedy never places a wall, so it cannot probe wall play and a pure racer scores
 its theoretical ceiling against it (50% at N=2, 25% at N=4). This baseline
-searches, places walls, and is held out of training — see
+searches, places walls, and is held out of training - see
 docs/opponent_pool_and_evaluation.md. Its value depends on two properties that
 are easy to break silently: it must stay legal, and it must stay STRONGER than
 greedy, or it is not measuring anything greedy did not already measure.
@@ -131,8 +131,8 @@ def test_minimax_places_walls_where_greedy_never_does():
     """The whole reason this baseline exists."""
     env = _env()
     _, _, walls = _play({0: minimax_agent(depth=2), 1: greedy_agent()}, env, seed=1)
-    assert walls[0] > 0, "minimax placed no wall — it is then just a slower greedy"
-    assert walls[1] == 0, "greedy placed a wall — it is documented never to"
+    assert walls[0] > 0, "minimax placed no wall - it is then just a slower greedy"
+    assert walls[1] == 0, "greedy placed a wall - it is documented never to"
 
 
 def test_minimax_beats_greedy_in_both_seats():
@@ -213,4 +213,4 @@ def test_a_game_is_affordable_for_an_eval_loop():
     start = time.time()
     _play({0: minimax_agent(depth=2), 1: greedy_agent()}, env, seed=7)
     elapsed = time.time() - start
-    assert elapsed < 6.0, f"one game took {elapsed:.1f}s — too slow for a 40-game eval"
+    assert elapsed < 6.0, f"one game took {elapsed:.1f}s - too slow for a 40-game eval"

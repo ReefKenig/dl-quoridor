@@ -45,7 +45,7 @@ def _model(num_players=2):
 
 
 def _ev_single(model, env):
-    """Single-state eval via predict_batch(1 row) — identical numerics to driver."""
+    """Single-state eval via predict_batch(1 row) - identical numerics to driver."""
     def ev(s):
         stacked = torch.from_numpy(np.ascontiguousarray(
             np.stack([env.state_to_tensor(s).transpose(2, 0, 1)]),
@@ -136,7 +136,7 @@ def test_vectorized_concurrency_invariant():
 def test_vectorized_concurrency_invariant_with_noise():
     """With noise and temperature sampling on (the production regime), a game's
     data still depends only on its index, not on how many ran alongside it.
-    The eps=0/temp=0 test above cannot see this — it draws from no RNG at all."""
+    The eps=0/temp=0 test above cannot see this - it draws from no RNG at all."""
     cfg = _Cfg(num_players=2, eps=0.25)      # noise on
     model = _model(2)
     kw = dict(total_games=4, base_seed=17)   # temps left at production defaults
@@ -159,7 +159,7 @@ def test_vectorized_refill_does_not_disturb_inflight_games():
 
 
 def test_vectorized_pipeline_groups_do_not_change_results():
-    """Pipelining is a scheduling change only — splitting a round into k sub-batches
+    """Pipelining is a scheduling change only - splitting a round into k sub-batches
     must not alter the data (exactly so on CPU; GPU differs only in the last ulp)."""
     cfg = _Cfg(num_players=2, eps=0.25)
     model = _model(2)

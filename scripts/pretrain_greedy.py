@@ -3,14 +3,14 @@
 Six 9x9 N=4 attempts (v5 through v8) failed the same way for the same
 structural reason: 128 of 131 legal opening actions are walls, so an untrained
 net starts as a wall-spammer, and the only seat a racer can win (seat 0)
-contributes ~3.5% of the gradient. This script attacks the prior directly —
+contributes ~3.5% of the gradient. This script attacks the prior directly -
 generate greedy-vs-greedy games (no network, no MCTS, cheap on CPU), train the
 policy head to imitate greedy's moves and the value head on outcomes, and save
 a checkpoint for `TrainingConfigMP.init_checkpoint`.
 
 It is also the decisive capacity test: if the network cannot even IMITATE a
 scripted racer (low held-out agreement), the network is the problem, not the
-training signal — learned locally in minutes instead of after 6 pod-hours.
+training signal - learned locally in minutes instead of after 6 pod-hours.
 
 Usage (defaults match configs/config_9x9.json's network):
   PYTHONPATH=. python scripts/pretrain_greedy.py --players 4 --board 9 \

@@ -3,7 +3,7 @@
 With dirichlet_epsilon=0 and argmax selection, MCTS is a deterministic function
 of the position, so every eval game sharing a seat assignment replayed
 move-for-move. A 40-game gating eval was measuring 2 distinct games at N=2 and 4
-at N=4 while reporting n=40 — the reported win rate could only ever land on a
+at N=4 while reporting n=40 - the reported win rate could only ever land on a
 coarse lattice (0, 0.5, 1.0 at N=2).
 
 These tests use scripted policies rather than a real network: the property under
@@ -93,7 +93,7 @@ def test_sampled_opening_produces_distinct_games():
 
 
 def test_only_the_opening_is_sampled():
-    """After `opening_plies`, play returns to argmax — trajectories share a tail."""
+    """After `opening_plies`, play returns to argmax - trajectories share a tail."""
     env = CountingEnv(length=8)
     opening = 2
     agents = _agents(opening_plies=opening)
@@ -106,7 +106,7 @@ def test_only_the_opening_is_sampled():
 
 
 def test_same_seed_reproduces_the_same_game():
-    """Diversity must not cost reproducibility — eval stays seed-deterministic."""
+    """Diversity must not cost reproducibility - eval stays seed-deterministic."""
     env = CountingEnv()
     agents = _agents(opening_plies=3)
 

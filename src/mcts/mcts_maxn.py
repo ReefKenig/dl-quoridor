@@ -42,7 +42,7 @@ class MCTSConfig:
 # Search settings live under two spellings: TrainingConfigMP attributes
 # (mcts_*) and the worker config_dict keys the engines are handed. Every field
 # a run can set has to be forwarded at EVERY construction site, and a field
-# that is missed reaches no search at all — which is how dirichlet_alpha and
+# that is missed reaches no search at all - which is how dirichlet_alpha and
 # c_puct sat inert in configs/config_9x9.json through v7.
 _FROM_RUN_CONFIG = (
     ("num_simulations", "mcts_simulations"),
@@ -123,7 +123,7 @@ class MCTSMaxN:
         self._sims = 0
 
     def search_stats(self):
-        """Running counters since the last reset — how wide the search actually
+        """Running counters since the last reset - how wide the search actually
         branched (expanded_actions/expansions) and how many sims paid for it."""
         return {"expanded_actions": self._expanded_actions,
                 "expansions": self._expansions, "sims": self._sims}
@@ -199,7 +199,7 @@ class MCTSMaxN:
     def _expand_valids(self, node, env, state):
         """Set node.current_player + valid_actions; return the actions to expand.
 
-        The single choke point for every engine — sequential, root-batched,
+        The single choke point for every engine - sequential, root-batched,
         leaf-parallel descend and vectorized all come through here, so the
         candidate restriction applies everywhere from one place.
         """
@@ -298,7 +298,7 @@ class MCTSMaxN:
             # (leaf_node, leaf_state, path) awaiting eval
             pending = []
             pending_nodes = set()
-            resolved = []           # (path, value) terminals — no eval needed
+            resolved = []           # (path, value) terminals - no eval needed
             attempts = 0
             max_attempts = wave * 4  # bounded so heavy collisions cannot hang
             while len(pending) + len(resolved) < wave and attempts < max_attempts:
@@ -363,7 +363,7 @@ class MCTSMaxN:
     def _add_dirichlet_noise(self, root, rng=None):
         # epsilon <= 0 disables exploration noise entirely (used during eval so
         # strength is measured deterministically at true best-play). Short-circuit
-        # so we don't even draw from the RNG — the mix below would be a no-op anyway.
+        # so we don't even draw from the RNG - the mix below would be a no-op anyway.
         #
         # `rng`: callers stepping several searches at once must pass their own,
         # or interleaved draws off the global stream couple their noise together.
@@ -401,8 +401,8 @@ class VectorizedSearch:
     """One game's max^n search, driven step-by-step so a caller can batch the leaf
     evaluations of MANY concurrent searches into a single GPU forward pass.
 
-    This is EXACT sequential MCTS — no virtual loss, at most one pending leaf per
-    tree at a time — stepped instead of run to completion. The sequence of
+    This is EXACT sequential MCTS - no virtual loss, at most one pending leaf per
+    tree at a time - stepped instead of run to completion. The sequence of
     simulations is identical to `MCTSMaxN.search` with leaf_batch=1, so the final
     visit distribution is bit-for-bit identical to the sequential path (verified by
     the parity test). The only difference is *when* the network is called: instead
@@ -420,7 +420,7 @@ class VectorizedSearch:
         probs = vs.action_probs(temperature)
 
     `collect()` returns None exactly when the sim budget is spent, which always
-    coincides with `done()` — so None means "advance this game", not "retry".
+    coincides with `done()` - so None means "advance this game", not "retry".
 
     `rng` supplies the root's Dirichlet noise; a driver stepping several searches
     at once must give each its own. None = the global stream.

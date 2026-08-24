@@ -1,7 +1,7 @@
 ﻿"""
 Batched parallel self-play for the vector-maxⁿ (_mp) stack.
 
-Motivation — GPU starvation
+Motivation - GPU starvation
 ---------------------------
 Sequential self-play evaluates every MCTS leaf with `model.predict(single_state)`,
 i.e. one (1, C, H, W) forward pass at a time, leaving the GPU idle between
@@ -13,7 +13,7 @@ The reusable machinery (multi-model batcher thread, worker↔batcher plumbing,
 spawn/shutdown orchestration) lives in `batched_inference_mp.py`; this module
 only provides the self-play worker game loop and the thin orchestrator. Self-play
 uses a single model (`model_id` 0). Value-target assignment, augmentation and the
-maxⁿ search are unchanged — workers reuse `play_one_game` from `self_play_mp.py`,
+maxⁿ search are unchanged - workers reuse `play_one_game` from `self_play_mp.py`,
 so samples are bit-for-bit identical to the sequential path.
 """
 import multiprocessing as mp
@@ -75,7 +75,7 @@ def search_wall_metrics(totals, num_simulations, games):
         "visits_per_action": (round(num_simulations / mean_expanded, 3)
                               if mean_expanded else None),
         # Actual wall ACTIONS played by any seat, over every game including
-        # timeouts — not walls_on_board_mean, which counts cells sample-weighted.
+        # timeouts - not walls_on_board_mean, which counts cells sample-weighted.
         "walls_placed_per_game": (round(totals["walls_placed"] / games, 3)
                                   if games else None),
         # Mean over the games that placed one; None when nobody walled.
@@ -110,7 +110,7 @@ def _self_play_worker(worker_id, request_queue, response_queue, results_queue,
     `game_counter` (an atomic shared Value) until it is exhausted. A fast worker
     keeps grabbing games rather than going idle while a slow worker finishes its
     last one, so GPU-batch concurrency stays high through the end of the iteration
-    (no straggler tail — the failure mode where the last few games run alone at a
+    (no straggler tail - the failure mode where the last few games run alone at a
     fraction of steady-state throughput).
     """
     game_counter, total_games, config_dict, base_seed = payload
@@ -285,7 +285,7 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     # Spawn at most one worker per game (idle workers would only add spawn
     # overhead). Games are NOT pre-divided: workers pull from a shared atomic
     # counter (work-stealing), so a fast worker keeps claiming games instead of
-    # sitting idle while a slow worker finishes — this keeps the GPU batch full
+    # sitting idle while a slow worker finishes - this keeps the GPU batch full
     # right up to the last game and removes the end-of-iteration throughput tail.
     n_workers = max(1, min(num_workers, total_games))
 
@@ -359,13 +359,13 @@ def generate_parallel_self_play_mp(model, cfg, num_workers=8, total_games=40,
     )
 
     if not samples:
-        log("[PARALLEL-MP] WARNING: no samples generated — workers may have crashed.")
+        log("[PARALLEL-MP] WARNING: no samples generated - workers may have crashed.")
 
     # The buffer indexes one against the other; a drift here would mislabel the
     # source of every sample after the first mismatch instead of failing.
     if len(sources) != len(samples):
         raise RuntimeError(
-            f"[PARALLEL-MP] {len(sources)} sources for {len(samples)} samples — "
+            f"[PARALLEL-MP] {len(sources)} sources for {len(samples)} samples - "
             f"the two lists must stay index-aligned.")
 
     stats = {"opponent_mix": opponent_mix,

@@ -114,7 +114,7 @@ def test_ship_prefers_the_racing_peak(tmp_path):
 
     The rate is the POOLED win_vs_greedy, because that is what the ratchet in
     training_mp compares against greedy_peak_rate before writing the file.
-    greedy_best_seat is a different watermark — it drives the racing-decay stop
+    greedy_best_seat is a different watermark - it drives the racing-decay stop
     rule and never decides which checkpoint is saved.
     """
     run = _run_dir(
@@ -150,7 +150,7 @@ def test_ship_dates_the_peak_by_the_writers_own_stamp(tmp_path):
 
 def test_ship_dates_the_peak_by_first_maximum(tmp_path):
     """Without a stamp, a rate matched twice dates to the iteration that first
-    reached it — the run stopped saving once the peak stopped being beaten."""
+    reached it - the run stopped saving once the peak stopped being beaten."""
     run = _run_dir(
         tmp_path,
         ["greedy_peak.pt"],
@@ -218,7 +218,7 @@ def test_resume_training(tmp_dir):
     for i in range(3):
         ckpt.save(iteration=i + 1, model=model, replay_buffer=buffer)
 
-    # Phase 2: "crash" — create new manager (fresh session)
+    # Phase 2: "crash" - create new manager (fresh session)
     ckpt2 = CheckpointManager(base_dir=tmp_dir, keep_last_n=5)
     state = ckpt2.load_latest()
 

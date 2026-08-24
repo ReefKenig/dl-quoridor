@@ -5,7 +5,7 @@ batch: the loop counted *messages* against `batch_size` (documented as max
 leaves per forward), and it drained with get_nowait, so it fired a forward pass
 on whatever happened to be queued at that instant. Every worker blocks on its
 own response, so the batcher won the race and averaged ~16 leaves against
-inference_batch_size=256 — about 6% occupancy — in the 9x9 runs.
+inference_batch_size=256 - about 6% occupancy - in the 9x9 runs.
 
 These tests drive `_collect_batch` directly with a real queue: the property is
 about queue timing, not about the model.
@@ -81,7 +81,7 @@ def test_window_waits_for_stragglers():
 
 
 def test_zero_wait_reproduces_the_old_behaviour():
-    """With the window disabled, a straggler is missed — the bug, pinned."""
+    """With the window disabled, a straggler is missed - the bug, pinned."""
     q = queue.Queue()
 
     def produce():

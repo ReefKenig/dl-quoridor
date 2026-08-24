@@ -77,7 +77,7 @@ def test_renders_the_legacy_5x5_shape(tmp_path):
 
 def test_a_missing_column_is_not_plotted_as_zero():
     # 5 of the 11 runs in runs/ have no draw_rate. `.get(key, 0)` would draw
-    # them a confident flat 0% — the failure src/utils/history.py exists for.
+    # them a confident flat 0% - the failure src/utils/history.py exists for.
     rows = _history()
     for row in rows:
         del row["draw_rate"]
@@ -220,7 +220,7 @@ def test_ceiling_fraction_reads_a_rate_against_what_is_reachable():
 
 
 def test_an_unmeasured_rate_stays_unmeasured():
-    """None must not normalise to 0.0 — the failure this module exists for."""
+    """None must not normalise to 0.0 - the failure this module exists for."""
     assert ceiling_fraction(None, 2) is None
     assert ceiling_fraction(None, 4) is None
 
@@ -287,8 +287,8 @@ def test_a_run_with_no_fixed_baseline_draws_no_ceiling():
 
 def test_the_ceiling_is_greedy_only_not_minimax():
     """The 1/N cap comes from greedy-vs-greedy being decided purely by seat
-    (200/200 at 9x9). Minimax places walls and is NOT seat-determined —
-    measured 40/60 at N=2 and 23/23/27/27 at N=4 — so a model can beat it from
+    (200/200 at 9x9). Minimax places walls and is NOT seat-determined -
+    measured 40/60 at N=2 and 23/23/27/27 at N=4 - so a model can beat it from
     every seat and normalising it by 1/N would overstate the result twofold."""
     from src.utils.history import CEILING_KEYS
     assert CEILING_KEYS == ("win_vs_greedy",)
@@ -302,4 +302,4 @@ def test_summary_normalises_greedy_but_leaves_minimax_raw():
     minimax = next(l for l in lines if l.startswith("vs minimax"))
     assert "of achievable" in greedy
     assert "of achievable" not in minimax, \
-        "minimax has no 1/N ceiling — it is not seat-determined"
+        "minimax has no 1/N ceiling - it is not seat-determined"

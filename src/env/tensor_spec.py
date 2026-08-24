@@ -14,17 +14,17 @@ NOTE: these 10 are the BASE channels; state_to_tensor() appends ch 10
 
 Channel Breakdown
 -----------------
-Ch 0: Player 0 position    — binary, 1.0 at pawn location
-Ch 1: Player 1 position    — binary, 1.0 at pawn location
-Ch 2: Player 0 horizontal walls — binary, 1.0 where P0 placed horizontal walls
-Ch 3: Player 0 vertical walls   — binary, 1.0 where P0 placed vertical walls
-Ch 4: Player 1 horizontal walls — binary, 1.0 where P1 placed horizontal walls
-Ch 5: Player 1 vertical walls   — binary, 1.0 where P1 placed vertical walls
-Ch 6: Player 0 walls remaining  — uniform plane, value = remaining / max_walls
-Ch 7: Player 1 walls remaining  — uniform plane, value = remaining / max_walls
-Ch 8: Player 0 distance map     — BFS distance from each cell to P0's goal row, normalized by 2*board_size
-Ch 9: Player 1 distance map     — BFS distance from each cell to P1's goal row, normalized by 2*board_size
-Ch 10: Side to move             — uniform plane, value = current_player (added by
+Ch 0: Player 0 position    - binary, 1.0 at pawn location
+Ch 1: Player 1 position    - binary, 1.0 at pawn location
+Ch 2: Player 0 horizontal walls - binary, 1.0 where P0 placed horizontal walls
+Ch 3: Player 0 vertical walls   - binary, 1.0 where P0 placed vertical walls
+Ch 4: Player 1 horizontal walls - binary, 1.0 where P1 placed horizontal walls
+Ch 5: Player 1 vertical walls   - binary, 1.0 where P1 placed vertical walls
+Ch 6: Player 0 walls remaining  - uniform plane, value = remaining / max_walls
+Ch 7: Player 1 walls remaining  - uniform plane, value = remaining / max_walls
+Ch 8: Player 0 distance map     - BFS distance from each cell to P0's goal row, normalized by 2*board_size
+Ch 9: Player 1 distance map     - BFS distance from each cell to P1's goal row, normalized by 2*board_size
+Ch 10: Side to move             - uniform plane, value = current_player (added by
                                   QuoridorEnv.state_to_tensor, not by build_tensor)
 
 Design Rationale
@@ -46,7 +46,7 @@ In the tensor, we mark BOTH cells covered by each wall:
     Horizontal wall at (r, c): tensor[r, c, ch] = 1 AND tensor[r, c+1, ch] = 1
     Vertical wall at (r, c):   tensor[r, c, ch] = 1 AND tensor[r+1, c, ch] = 1
 
-This keeps the spatial structure — convolutions can "see" wall extent.
+This keeps the spatial structure - convolutions can "see" wall extent.
 """
 
 import numpy as np

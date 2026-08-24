@@ -9,10 +9,10 @@ Every other speedup (work-stealing, Option B) produces bit-identical samples.
 This script measures that approximation two ways on a FIXED checkpoint, so the
 result is a clean comparison of the search only (same net, no Dirichlet noise):
 
-  1. Search fidelity — on K sampled positions, run deterministic search with
+  1. Search fidelity - on K sampled positions, run deterministic search with
      leaf_batch=1 and leaf_batch=B at the SAME sim budget, then compare the visit
      distributions: top-1 action agreement, mean total-variation distance, mean KL.
-  2. Strength — win rate vs random for leaf_batch=1 and leaf_batch=B (Wilson 95% CI).
+  2. Strength - win rate vs random for leaf_batch=1 and leaf_batch=B (Wilson 95% CI).
 
 Verdict:
   - fidelity high (top-1 agree high, TV small) AND strength CIs overlap
@@ -212,14 +212,14 @@ def main():
     if fidelity_high and ci_overlap:
         print("VERDICT: virtual loss is HARMLESS on this net.")
         print("  -> Work-stealing tail-fix is sufficient. Option B would be pure")
-        print("     throughput (no strength gain) — build it only if you need more speed.")
+        print("     throughput (no strength gain) - build it only if you need more speed.")
     elif not ci_overlap and sB['win_rate'] < s1['win_rate']:
         print(
             f"VERDICT: leaf_batch={args.leaf_batch} is measurably WEAKER than leaf_batch=1.")
         print("  -> Option B pays off on STRENGTH: it batches across games so each")
         print("     game can run exact leaf_batch=1 search AND fill the GPU.")
     else:
-        print("VERDICT: MIXED — fidelity drop present but strength CIs overlap.")
+        print("VERDICT: MIXED - fidelity drop present but strength CIs overlap.")
         print("  -> Borderline. Consider lowering leaf_batch (e.g. 4) or building")
         print("     Option B if you want both exact search and full batches.")
     print("=" * 68)

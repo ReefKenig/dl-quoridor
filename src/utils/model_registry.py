@@ -7,7 +7,7 @@ network and environment that checkpoint expects.
 One source of truth for the pygame UI and the web server. A checkpoint loaded
 under the wrong architecture fails loudly on a shape mismatch, but one loaded
 under the wrong tensor spec, wall count or wall-candidate budget fails
-*silently* — the model just plays badly on planes, or under a search, it never
+*silently* - the model just plays badly on planes, or under a search, it never
 saw during training.
 
 Usage:
@@ -144,7 +144,7 @@ def load_variant(board_size: int, num_players: int, registry=None, root=None,
     """(env, model, spec) with weights loaded when the checkpoint is on disk.
 
     Returns an untrained model rather than raising when it is not, so the demo
-    still starts — but says so, because an untrained net is indistinguishable
+    still starts - but says so, because an untrained net is indistinguishable
     from a trained one at the UI unless it announces itself.
     """
     spec = variant_spec(board_size, num_players, registry=registry, root=root)
@@ -156,6 +156,6 @@ def load_variant(board_size: int, num_players: int, registry=None, root=None,
         log(f"[{variant_key(board_size, num_players)}] loaded {spec.label}")
     else:
         log(f"[{variant_key(board_size, num_players)}] WARNING: no checkpoint "
-            f"({spec.label}) — the AI is an untrained network and will play "
+            f"({spec.label}) - the AI is an untrained network and will play "
             f"close to randomly")
     return env, model, spec

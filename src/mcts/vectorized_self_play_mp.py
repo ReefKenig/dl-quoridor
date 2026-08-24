@@ -8,20 +8,20 @@ G games concurrently in ONE process. Each game owns a `VectorizedSearch`
 coordinator (exact sequential MCTS, one pending leaf per tree); every step, the
 driver gathers one leaf from each active game, runs a SINGLE `model.predict_batch`
 over all of them, scatters the results back, and advances any game whose search
-finished. No multiprocessing, no queues, no per-worker blocking — the GPU batch is
+finished. No multiprocessing, no queues, no per-worker blocking - the GPU batch is
 G-wide until the quota runs out, then narrows over the final G games as slots
 retire. That tail is bounded by G, not by the straggler spread.
 
 Correctness: because each game runs `VectorizedSearch` (bit-identical to
 `MCTSMaxN.search` with leaf_batch=1), the per-move visit distributions are exact
-sequential MCTS — no virtual-loss approximation. Value-target assignment and
+sequential MCTS - no virtual-loss approximation. Value-target assignment and
 augmentation reuse `assign_vector_targets` / `augment_mp`, so samples match the
 sequential/parallel paths. The return contract `(samples, wins)` is identical to
 `generate_parallel_self_play_mp` for a drop-in swap.
 
 Randomness: every slot owns a `np.random.Generator` seeded from (base_seed,
 game_index) for both Dirichlet noise and action sampling, never the global
-stream — so a game's data depends on its index alone, not on vec_games. (On CUDA,
+stream - so a game's data depends on its index alone, not on vec_games. (On CUDA,
 up to predict_batch's batch-composition nondeterminism; exact on CPU.)
 """
 import numpy as np
@@ -89,7 +89,7 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
                       round never has more than vec_games leaves anyway).
         on_games_complete : optional callback(games_done, total_games, wins).
         base_seed   : game g draws from its own Generator seeded
-                      game_seed(base_seed, g) — Dirichlet noise + action sampling.
+                      game_seed(base_seed, g) - Dirichlet noise + action sampling.
                       A game's data therefore depends on its index, never on
                       vec_games or on which games ran alongside it.
         explore_temp/final_temp : action-sampling temperature before/after
@@ -100,7 +100,7 @@ def generate_vectorized_self_play_mp(model, cfg, total_games=40, vec_games=None,
                       synchronous, so splitting only shrinks the batch).
 
     Returns:
-        (samples, wins) — samples is a flat list of (state_hwc, policy, value_vec)
+        (samples, wins) - samples is a flat list of (state_hwc, policy, value_vec)
         tuples (already augmented), wins maps winner -> count (None = draw/timeout).
     """
     N = cfg.num_players

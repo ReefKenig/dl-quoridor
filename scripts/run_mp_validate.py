@@ -52,7 +52,7 @@ for g in range(games):
             break
         if do:
             break
-print("  PASS — N=2 identical to original" if mism ==
+print("  PASS - N=2 identical to original" if mism ==
       0 else f"  FAIL ({mism} mismatches)")
 
 # ---------- TEST 2: official jump rule, crafted N=4 positions ----------
@@ -132,4 +132,4 @@ for N in (4,):
             winner = info.get("winner")
             break
     print(f"  N={N}: max^n self-play ended at move {m+1}, winner=seat {winner}")
-print("  PASS — search loop handles N seats")
+print("  PASS - search loop handles N seats")

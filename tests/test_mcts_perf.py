@@ -42,7 +42,7 @@ def test_mcts_perf(sims: int, capsys: pytest.CaptureFixture[str]) -> None:
     avg = statistics.mean(ms)
     with capsys.disabled():
         print(
-            f"\n  {sims:>4} sims — "
+            f"\n  {sims:>4} sims - "
             f"avg {avg:>7.1f}ms  "
             f"min {min(ms):>7.1f}ms  "
             f"max {max(ms):>7.1f}ms  "

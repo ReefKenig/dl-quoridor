@@ -135,7 +135,7 @@ def main():
     model.load(path)
 
     # Without this the probe searches all 131 opening actions while the model
-    # was trained under a restricted search — a different agent than the run's.
+    # was trained under a restricted search - a different agent than the run's.
     wall_candidates = (args.wall_candidates if args.wall_candidates is not None
                        else rc.get("mcts_wall_candidates", 0) or 0)
     print(f"  mcts_wall_candidates={wall_candidates}"
@@ -156,7 +156,7 @@ def main():
                                        list(range(N)), base_seed=7 + plies)
         rate = wins / decided if decided else 0.0
         seats = " ".join(f"seat{s}:{w}" for s, w in by_seat.items())
-        note = " (1 game/seat — a 0-ply opening replays)" if plies == 0 else ""
+        note = " (1 game/seat - a 0-ply opening replays)" if plies == 0 else ""
         print(f"  opening_plies={plies}: {wins}/{decided} decided = {rate:.1%}"
               f"  [{seats}]{note}")
 

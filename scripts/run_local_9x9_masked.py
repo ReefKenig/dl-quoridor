@@ -1,7 +1,7 @@
 """Local smoke run: does the wall curriculum make a 9x9 model race?
 
-Small net, low sims, few iterations — sized for a laptop, not for strength.
-Watch avg_len (should fall toward a pure race) and the per-seat greedy line —
+Small net, low sims, few iterations - sized for a laptop, not for strength.
+Watch avg_len (should fall toward a pure race) and the per-seat greedy line -
 one seat is won outright by racing, so it is the first place progress shows up.
 
 Two curricula, selected by env var:
@@ -18,7 +18,7 @@ Two curricula, selected by env var:
     PYTHONPATH=. .venv/bin/python scripts/run_local_9x9_masked.py          # N=2
     VARIANT=n4 PYTHONPATH=. .venv/bin/python scripts/run_local_9x9_masked.py
 
-On a GPU box, at the production network and search budget — so a zero cannot be
+On a GPU box, at the production network and search budget - so a zero cannot be
 blamed on the undersized laptop net:
 
     VARIANT=n4 DEVICE=auto CHANNELS=128 BLOCKS=8 SIMS=600 GAMES=40 ITERS=14 \
@@ -58,7 +58,7 @@ WALLS, MAX_MOVES = rc["max_walls_per_player"], rc["max_game_moves"]
 
 def make_model():
     # Small net and CPU by default (laptop). On a GPU box pass the production
-    # shape — net size is a confound when the answer is "it scored zero".
+    # shape - net size is a confound when the answer is "it scored zero".
     return QuoridorModelMP(
         board_size=BOARD, action_space_size=compute_action_space_size(BOARD),
         in_channels=3 * N + 3,

@@ -2,7 +2,7 @@
 
 The launch banner reported `os.cpu_count()` and total host RAM. On the shared,
 MIG-partitioned training box that read "256 cores, 1623 GB RAM" while the
-container's real budget was a fraction of it — the one number you would consult
+container's real budget was a fraction of it - the one number you would consult
 after a kernel is killed, and it points away from the cause.
 """
 import pytest

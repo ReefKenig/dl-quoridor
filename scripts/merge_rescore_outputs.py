@@ -24,7 +24,7 @@ def load(path):
 def main(repo, scratch):
     main_tbl = load(os.path.join(repo, "outputs", "held_out_eval.json"))
     if main_tbl is None:
-        sys.exit("no outputs/held_out_eval.json — run the main table first")
+        sys.exit("no outputs/held_out_eval.json - run the main table first")
 
     rows = [r for r in main_tbl["results"] if r["ckpt"] != CONTAMINATED]
     dropped = len(main_tbl["results"]) - len(rows)
@@ -33,7 +33,7 @@ def main(repo, scratch):
     for sub in ("v7_200", "v7_600"):
         d = load(os.path.join(scratch, sub, "held_out_eval.json"))
         if d is None:
-            print(f"  WARNING: {sub} missing — v7 will be incomplete")
+            print(f"  WARNING: {sub} missing - v7 will be incomplete")
             continue
         for r in d["results"]:
             r["checkpoint_iteration"] = 60

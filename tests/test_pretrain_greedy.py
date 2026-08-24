@@ -1,6 +1,6 @@
 """Greedy-imitation warm start (scripts/pretrain_greedy.py).
 
-The generator must produce the same sample format self-play does — the whole
+The generator must produce the same sample format self-play does - the whole
 point is that RL continues from these weights on the same tensors and targets.
 """
 import numpy as np

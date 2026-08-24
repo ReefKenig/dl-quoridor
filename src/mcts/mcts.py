@@ -7,11 +7,11 @@ Phase 2: Swap in NN via the `evaluate_fn` parameter.
 Usage:
     from src.mcts.mcts import MCTS, MCTSConfig
 
-    # Phase 1 — random rollouts
+    # Phase 1 - random rollouts
     mcts = MCTS(config=MCTSConfig(num_simulations=400))
     action_probs = mcts.search(env, state)
 
-    # Phase 2 — with neural network
+    # Phase 2 - with neural network
     def nn_evaluate(state) -> Tuple[np.ndarray, float]:
         tensor = env.state_to_tensor(state)
         policy, value = model(tensor)
@@ -130,7 +130,7 @@ class MCTS:
                          Pass explicitly instead of mutating config.
 
         Returns:
-            np.ndarray of shape [action_space_size] — normalized visit count
+            np.ndarray of shape [action_space_size] - normalized visit count
             distribution. Use as training target for the policy head.
         """
         root = Node(state=env.clone_state(state))
@@ -156,7 +156,7 @@ class MCTS:
                 # Convention: env.step() returns reward=+1 for the player
                 # who just MOVED (the parent's action led here). The
                 # current node's perspective is that of the NEXT player
-                # to move — i.e., the opponent of whoever just won.
+                # to move - i.e., the opponent of whoever just won.
                 # Therefore: winner exists → current node lost → -1.
                 #            Draw / no winner → 0.
                 winner = info.get("winner", None)
@@ -248,7 +248,7 @@ class MCTS:
                     return -1.0
                 return 0.0
 
-        return 0.0  # depth limit — inconclusive
+        return 0.0  # depth limit - inconclusive
 
     def _backpropagate(self, node: Node, value: float):
         """

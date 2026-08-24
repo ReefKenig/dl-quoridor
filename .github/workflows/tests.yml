@@ -25,7 +25,7 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      # torch first, from the CPU wheel index — requirements-test.txt omits it
+      # torch first, from the CPU wheel index - requirements-test.txt omits it
       # so nothing re-resolves it against PyPI and drags in the CUDA build.
       - name: Install test dependencies
         run: |

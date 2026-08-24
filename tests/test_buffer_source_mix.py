@@ -3,7 +3,7 @@
 Uniform sampling makes the gradient share whatever each opponent happened to
 produce, which is not what the config asks for. An anchored game yields only the
 model's own plies and a scripted racer ends the game sooner, so in
-runs/n2_9x9_anchored 35% of GAMES came out as ~10% of SAMPLES — enough to
+runs/n2_9x9_anchored 35% of GAMES came out as ~10% of SAMPLES - enough to
 acquire racing by iteration 8 and not enough to still have it at iteration 12,
 where seat 1 fell 17/20 -> 0/20. These pin that the knob now controls the
 quantity it names.

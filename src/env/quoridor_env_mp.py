@@ -105,7 +105,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
             # NOTE: official 4-player Quoridor gives 5 walls each on a 9x9
             # board. For the 5x5 POC these are deliberately scaled down
             # (N=2 → 3, N≥3 → 2) to keep games short. With only 2 walls
-            # per seat at N=4, wall strategy is nearly vestigial — the POC
+            # per seat at N=4, wall strategy is nearly vestigial - the POC
             # mostly learns pathfinding/racing, not blocking. To demonstrate
             # coalition-emergence / leader-blocking, raise this to ≥4.
             self.max_walls_per_player = (3 if num_players == 2 else 2) if board_size == 5 else (
@@ -120,7 +120,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
 
     @property
     def starting_walls(self):
-        """Walls each player begins with — the curriculum budget, or the max."""
+        """Walls each player begins with - the curriculum budget, or the max."""
         if self.wall_budget is None:
             return self.max_walls_per_player
         return max(0, min(self.wall_budget, self.max_walls_per_player))
@@ -197,7 +197,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
     def get_search_actions(self, state, max_walls=0):
         """Legal actions worth SEARCHING: pawn moves + walls that cut a path.
 
-        Always a subset of get_valid_actions — this narrows what MCTS expands,
+        Always a subset of get_valid_actions - this narrows what MCTS expands,
         never what the rules allow. At 9x9 the opening offers 131 legal actions,
         so 600 simulations buy 4.6 visits each and the visit histogram cannot
         move away from the prior that seeded it. Restricting to the walls that
@@ -215,7 +215,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
         if len(walls) <= max_walls:
             return valid
         blockers = self._player_blockers(state, state.h_walls, state.v_walls)
-        if blockers is None:          # someone is walled in — do not narrow
+        if blockers is None:          # someone is walled in - do not narrow
             return valid
         # How many players' paths each slot cuts; a double block is worth more.
         cuts = {}
@@ -267,7 +267,7 @@ class QuoridorEnvMP(QuoridorEnvInterface):
         """After advancing current_player, skip any player who has zero
         legal moves (locally boxed in by pawns + walls). Mutates state
         in-place. Safe: the path-check rule guarantees a goal-path always
-        exists, so the stuck player can be freed by others' moves — this
+        exists, so the stuck player can be freed by others' moves - this
         just skips their turn until they're unstuck."""
         for _ in range(state.num_players):
             if self._player_has_moves(state):

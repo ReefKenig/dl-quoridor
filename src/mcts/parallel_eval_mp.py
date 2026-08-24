@@ -5,7 +5,7 @@ Eval is otherwise the sequential bottleneck: `evaluate_mp` plays one game at a
 time, each MCTS leaf a single `model.predict` call, so the GPU starves exactly
 like sequential self-play did. This module runs eval games across worker
 processes whose leaf evaluations are batched through the shared GPU batcher in
-`batched_inference_mp.py` — the same machinery self-play uses — but serving TWO
+`batched_inference_mp.py` - the same machinery self-play uses - but serving TWO
 models: the candidate (`model_id` 0) and the champion (`model_id` 1). The random
 opponent never touches the GPU.
 
@@ -20,7 +20,7 @@ Dirichlet noise is disabled (`dirichlet_epsilon=0`) so strength is measured at
 true best-play, but the first `eval_opening_plies` moves are sampled from the
 search's own visit distribution using a per-game RNG. Without that, argmax over
 an ε=0 search is a deterministic function of the position and every game sharing
-a seat assignment replayed identically — a 40-game gating eval was measuring 2
+a seat assignment replayed identically - a 40-game gating eval was measuring 2
 distinct games at N=2 and 4 at N=4.
 """
 import os
@@ -84,7 +84,7 @@ def _eval_worker(worker_id, request_queue, response_queue, results_queue,
                 config=mcts_config_for(
                     config_dict,
                     num_simulations=config_dict["eval_simulations"],
-                    dirichlet_epsilon=0.0,  # deterministic eval — no exploration noise
+                    dirichlet_epsilon=0.0,  # deterministic eval - no exploration noise
                     max_rollout_depth=config_dict["max_game_moves"],
                     leaf_batch=leaf_batch, virtual_loss=virtual_loss),
                 evaluate_fn=partial(evaluate_fn, model_id=model_id),
@@ -176,7 +176,7 @@ def evaluate_parallel_mp(cand_model, champ_model, config_dict, num_games=24,
 
     `config_dict` needs: num_players, board_size, max_walls_per_player, max_turns,
     eval_simulations, max_game_moves; optional: adjudicate (score timeouts by
-    shortest path — the gate sets it), leaf_batch/virtual_loss, search params.
+    shortest path - the gate sets it), leaf_batch/virtual_loss, search params.
     Returns an `EvalResultMP`.
     """
     return _run_eval({0: cand_model, 1: champ_model}, "vs_best", config_dict,
@@ -198,7 +198,7 @@ def evaluate_against_greedy_parallel_mp(cand_model, config_dict, num_games=24,
                                         num_workers=8, batch_size=64,
                                         on_progress=None, base_seed=0, log=print,
                                         response_timeout=300.0):
-    """Parallel candidate-vs-greedy eval — the absolute yardstick.
+    """Parallel candidate-vs-greedy eval - the absolute yardstick.
 
     Same shape as the vs-random eval, but the opponent is the pawn-rush baseline
     from `evaluator_mp.greedy_agent`, which does not saturate the way random does.
@@ -212,7 +212,7 @@ def evaluate_against_minimax_parallel_mp(cand_model, config_dict, num_games=24,
                                          num_workers=8, batch_size=64,
                                          on_progress=None, base_seed=0, log=print,
                                          response_timeout=300.0):
-    """Parallel candidate-vs-minimax eval — the HELD-OUT yardstick.
+    """Parallel candidate-vs-minimax eval - the HELD-OUT yardstick.
 
     Unlike greedy this opponent places walls, and unlike greedy it is never a
     training opponent, so it keeps measuring generalisation after the opponent

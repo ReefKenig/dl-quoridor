@@ -30,7 +30,7 @@ GRID = "#e4e3df"
 MASK_BAND = "#eef4fc"
 SURFACE = "#fcfcfb"
 
-WIN_TITLE = "Win rate — the fixed baseline is the only one that can fail"
+WIN_TITLE = "Win rate - the fixed baseline is the only one that can fail"
 # Draw order, then style: the emphasis series is drawn last and heaviest.
 WIN_SERIES = (("win_vs_random", RANDOM, 1.6),
               ("win_vs_best", GATE, 1.6),
@@ -109,7 +109,7 @@ def _win_rate_panel(ax, history, fair_pct, accept_margin=0.0, mask_iters=0,
         label = EVAL_LABELS[key]
         dashes = None
         if key == "win_vs_greedy" and greedy_trained:
-            label += " — in training"
+            label += " - in training"
             dashes = (4, 2)
         line, = ax.plot(xs, ys, color=color, linewidth=width, marker="o",
                         markersize=4, markeredgecolor=SURFACE,
@@ -186,7 +186,7 @@ def plot_training_curves(meta, out_path, title, fair=None, accept_margin=0.0,
         _diagnostic(ax, history, key, panel_title, ylabel)
         _mark_restarts(ax, restarts, label=(col == 0))
 
-    # Game length and timeouts share the story — is the policy racing? — but
+    # Game length and timeouts share the story - is the policy racing? - but
     # not a scale, so they get a panel each rather than a second y-axis.
     ax_len = fig.add_subplot(gs[1, 2])
     if _diagnostic(ax_len, history, "avg_len", "Game length", "Plies"):
@@ -246,13 +246,13 @@ def _sample_share(ax, history):
             markersize=3, label="games")
     ax.plot(iters, sample_pct, color=GREEDY, linewidth=2.4, marker="o",
             markersize=3, label="samples")
-    _style(ax, "Anchored share — games vs gradient", "% anchored")
+    _style(ax, "Anchored share - games vs gradient", "% anchored")
     ax.legend(frameon=False, fontsize=8, loc="upper right", labelcolor=INK_SOFT)
     return True
 
 
 def _value_split(ax, history):
-    """Value error on walled vs wall-free states — the coverage gap, measured."""
+    """Value error on walled vs wall-free states - the coverage gap, measured."""
     drawn = False
     for key, color, label in (("value_mae_wallfree", WALLFREE, "wall-free"),
                               ("value_mae_walled", WALLED, "walled")):
@@ -273,7 +273,7 @@ def plot_mechanism(meta, out_path, title, mask_iters=0):
     """The panels that say WHY a run moved, not just that it did.
 
     Every one of these measures a step in the wall-curriculum argument directly,
-    so a result can be attributed instead of guessed at — which is what the
+    so a result can be attributed instead of guessed at - which is what the
     v4/v5 runs could not do.
     """
     history = meta.get("history", [])
@@ -310,7 +310,7 @@ def plot_mechanism(meta, out_path, title, mask_iters=0):
 
 
 def plot_variant_comparison(runs, out_path, title):
-    """One panel per variant, shared y — the divergence in one figure.
+    """One panel per variant, shared y - the divergence in one figure.
 
     runs: [(label, meta, fair), ...]
     """
@@ -344,7 +344,7 @@ def run_settings(run_dir, meta):
     history = meta.get("history", [])
     n = cfg.get("num_players") or players_from_fair(history[-1].get("fair", 0.5))
     board = cfg.get("board_size", 9)
-    title = (f"Quoridor {board}×{board} N={n} — "
+    title = (f"Quoridor {board}×{board} N={n} - "
              f"{os.path.basename(os.path.normpath(run_dir))}")
     return title, {
         "fair": 1.0 / n,
@@ -366,7 +366,7 @@ def plot_run(run_dir, out_path=None):
 def plot_run_mechanism(run_dir, out_path=None):
     """Render the mechanism figure, when the run recorded the diagnostics.
 
-    Returns (fig, out_path), or (None, None) for a run predating them — the
+    Returns (fig, out_path), or (None, None) for a run predating them - the
     earlier runs have none of these keys and must not be drawn as zeros.
     """
     meta = load_meta(run_dir)

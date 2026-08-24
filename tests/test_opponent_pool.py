@@ -118,7 +118,7 @@ def test_unanchored_games_have_no_seat():
 
 # --- seat-0 anchoring bias (anchored_seat0_share) ------------------------------
 # At N=4 seat 0 is the only seat a racer can win, and uniform rotation left it
-# with ~300 of ~8400 samples/iter in v8 — the one seat that matters, starved.
+# with ~300 of ~8400 samples/iter in v8 - the one seat that matters, starved.
 
 
 def test_seat0_share_zero_keeps_the_rotation_bit_identical():
@@ -272,7 +272,7 @@ def test_a_mixed_scripted_game_produces_aligned_targets():
                                     explore_moves=5,
                                     seat_agents={1: greedy_agent()})
     assert winner is not None and samples
-    # Sparse trajectory, so every target must be strictly inside (-1, 1) — the
+    # Sparse trajectory, so every target must be strictly inside (-1, 1) - the
     # symptom of counting distance in entries was targets pinned at +/-1.
     for _t, _p, vec in samples:
         assert vec.shape == (2,) and 0 < abs(vec[0]) < 1.0

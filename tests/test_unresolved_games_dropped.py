@@ -1,6 +1,6 @@
 """Timed-out games must contribute no training samples.
 
-Quoridor has no draws — `winner is None` is a timeout at max_game_moves. Every
+Quoridor has no draws - `winner is None` is a timeout at max_game_moves. Every
 position in such a game used to be labelled with a zero value vector. At the
 N=4 9x9 timeout rate of 84-90% that was roughly 166k of 195k buffer samples all
 teaching "this position is neutral", and the value head duly collapsed onto
@@ -26,7 +26,7 @@ def test_unresolved_game_contributes_no_samples():
 
 
 def test_resolved_game_still_contributes_samples():
-    """Regression guard against over-filtering — decided games must survive."""
+    """Regression guard against over-filtering - decided games must survive."""
     samples = assign_vector_targets(_trajectory(20), winner=2, num_players=4)
 
     assert len(samples) == 20
@@ -96,7 +96,7 @@ def test_long_four_player_game_keeps_a_usable_opening_target():
     """The 9x9 N=4 failure mode, as a number.
 
     136 plies at gamma=0.99 labelled the opening 0.99**136 ~= 0.25 under ply
-    counting — and ~0.07 in the early high-timeout iterations, which is what
+    counting - and ~0.07 in the early high-timeout iterations, which is what
     taught the value head that the opening is worth nothing.
     """
     samples = assign_vector_targets(_trajectory(136, num_players=4), winner=0,

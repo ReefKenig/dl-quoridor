@@ -12,17 +12,17 @@ contract.
 
 It is organized into:
 
-- src — main implementation
-- configs — JSON hyperparameter files
-- checkpoints — model and training checkpoints
-- tests — validation and unit tests
-- notebooks — experiment / training notebooks
+- src - main implementation
+- configs - JSON hyperparameter files
+- checkpoints - model and training checkpoints
+- tests - validation and unit tests
+- notebooks - experiment / training notebooks
 
 ---
 
 ## Core Components
 
-### 1. env — Game environment
+### 1. env - Game environment
 
 - env_interface.py
   - Defines `QuoridorEnvInterface`
@@ -67,7 +67,7 @@ It is organized into:
 
 ---
 
-### 2. model — Neural network
+### 2. model - Neural network
 
 - network.py
   - Implements `QuoridorNetwork` and `QuoridorModel` (2-player, scalar value)
@@ -83,20 +83,20 @@ It is organized into:
     - `save(path)` and `load(path)` for checkpointing
   - Uses PyTorch
 - network_mp.py
-  - `QuoridorNetworkMP` / `QuoridorModelMP` — same architecture but value head emits length-N vector (tanh per component)
+  - `QuoridorNetworkMP` / `QuoridorModelMP` - same architecture but value head emits length-N vector (tanh per component)
   - No sign-flipping; the vector targets carry absolute-perspective values
   - Same interface as `QuoridorModel` except `predict` returns `(policy, value_vec)` instead of `(policy, scalar)`
 
 ---
 
-### 3. mcts — Search and training
+### 3. mcts - Search and training
 
 - mcts.py
   - Implements AlphaZero-style Monte Carlo Tree Search
   - Key classes:
-    - `MCTSConfig` — hyperparameters (`num_simulations`, `c_puct`, `temperature`, `dirichlet_alpha`, etc.)
-    - `Node` — tree node storing priors, visit counts, values, children
-    - `MCTS` — search logic
+    - `MCTSConfig` - hyperparameters (`num_simulations`, `c_puct`, `temperature`, `dirichlet_alpha`, etc.)
+    - `Node` - tree node storing priors, visit counts, values, children
+    - `MCTS` - search logic
   - Search flow:
     - expand root and add Dirichlet noise
     - repeated simulation:
@@ -136,7 +136,7 @@ It is organized into:
 
 ---
 
-### 4. server — Inference API
+### 4. server - Inference API
 
 - app.py
   - Flask app exposing `/predict`
@@ -149,7 +149,7 @@ It is organized into:
 
 ---
 
-### 5. ui — Human interface
+### 5. ui - Human interface
 
 - game_ui.py
   - Pygame-based GUI for human vs AI play
@@ -161,7 +161,7 @@ It is organized into:
 
 ---
 
-### 6. utils — Configuration, checkpointing, logging
+### 6. utils - Configuration, checkpointing, logging
 
 - config.py
   - Loads JSON configs like config_5x5.json
@@ -187,7 +187,7 @@ It is organized into:
 
 ---
 
-### 7. notebooks — Training experiments
+### 7. notebooks - Training experiments
 
 - train_5x5_poc.ipynb
   - Original Colab notebook for training the Quoridor AI on a 5×5 board (POC mode)

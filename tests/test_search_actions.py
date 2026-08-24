@@ -50,7 +50,7 @@ def test_search_actions_are_always_legal(num_players, plies):
 
 @pytest.mark.parametrize("num_players", [2, 4])
 def test_every_pawn_move_survives_the_filter(num_players):
-    """Only walls are ever dropped — losing a pawn move could hide the only
+    """Only walls are ever dropped - losing a pawn move could hide the only
     escape from a position."""
     env = _env(num_players)
     state = _advance(env, env.reset(), 8)
@@ -350,7 +350,7 @@ def test_rollouts_are_deliberately_not_restricted():
 
 def test_the_blocker_computation_holds_no_state_between_calls():
     """_player_blockers/_path_blockers are pure functions of the state handed in
-    — no memo, no instance cache — so nothing is shared to race over. Pinned so
+    - no memo, no instance cache - so nothing is shared to race over. Pinned so
     a future cache cannot be added without this failing."""
     env = _env()
     state = _advance(env, env.reset(), 6)
@@ -367,7 +367,7 @@ def test_the_blocker_computation_holds_no_state_between_calls():
 
 def test_concurrent_callers_on_one_env_agree():
     """The parallel engines are processes, not threads, but the env is also
-    reachable from the batcher's thread pool — so it must be re-entrant."""
+    reachable from the batcher's thread pool - so it must be re-entrant."""
     from concurrent.futures import ThreadPoolExecutor
 
     env = _env()

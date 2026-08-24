@@ -1,5 +1,5 @@
 """
-Test B: Same-weights comparison — negamax MCTS vs max^n MCTS.
+Test B: Same-weights comparison - negamax MCTS vs max^n MCTS.
 
 Loads the real trained model.pt (scalar value head) and wraps it for both
 the old negamax MCTS and the new max^n MCTS. Runs:
@@ -53,7 +53,7 @@ def eval_negamax(state):
 
 
 def eval_maxn(state):
-    """New-style: returns (policy, vector[N]) — absolute perspective."""
+    """New-style: returns (policy, vector[N]) - absolute perspective."""
     tensor = env.state_to_tensor(state)
     tensor = tensor[:, :, :10]  # strip turn channel; model trained on 10ch
     policy, value_scalar = model.predict(tensor)
@@ -181,7 +181,7 @@ print(
 h2h_ok = abs(nega_pct - 50) < 30  # generous margin
 vs_rand_ok = nega_vs_random_wins >= GAMES_VS_RANDOM * \
     0.8 and maxn_vs_random_wins >= GAMES_VS_RANDOM * 0.8
-print(f"\n  VERDICT: {'PASS' if (h2h_ok and vs_rand_ok) else 'CHECK'} — ",
+print(f"\n  VERDICT: {'PASS' if (h2h_ok and vs_rand_ok) else 'CHECK'} - ",
       end="")
 if h2h_ok and vs_rand_ok:
     print("max^n preserves model strength")

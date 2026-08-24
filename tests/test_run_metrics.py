@@ -71,7 +71,7 @@ def test_realized_walled_share_is_counted_from_the_regime_actually_played():
 
 
 def test_realized_exposes_sample_asymmetry_that_game_counts_hide():
-    """Equal game counts, wildly unequal gradient — the whole point of samples."""
+    """Equal game counts, wildly unequal gradient - the whole point of samples."""
     out = realized_by_seat(_fold([
         _game(seat=0, samples=12), _game(seat=0, samples=12),
         _game(seat=3, samples=180), _game(seat=3, samples=180),
@@ -118,7 +118,7 @@ def test_first_wall_ply_averages_only_games_that_walled():
 
 def test_learner_sims_are_summed_raw_for_the_caller_to_rate():
     """The rate is computed in training_mp against the sp_secs it reports, so
-    only the raw count crosses the boundary — one timer, one denominator."""
+    only the raw count crosses the boundary - one timer, one denominator."""
     totals, _ = _fold([_game(sims=60) for _ in range(4)])
     assert search_wall_metrics(totals, 60, 4)["learner_sims"] == 240
 
@@ -258,7 +258,7 @@ def test_search_width_metric_responds_to_wall_candidates_end_to_end():
             worker_join_timeout=20.0)
         widths[k] = stats["mean_expanded_actions"]
     assert widths[4] < widths[0]
-    # visits_per_action moves the opposite way — the resolution claim.
+    # visits_per_action moves the opposite way - the resolution claim.
     assert widths[4] > 0 and widths[0] > 0
 
 

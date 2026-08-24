@@ -9,7 +9,7 @@ from src.env.tensor_spec import build_tensor
 from src.env.tensor_spec_mp import build_tensor_mp
 
 
-# ── Item 1: jump edge case — straight blocked + one diagonal pawn + other diagonal wall ──
+# ── Item 1: jump edge case - straight blocked + one diagonal pawn + other diagonal wall ──
 
 class TestJumpEdgeCases:
     """Cover multi-pawn adjacency scenarios on 5×5 with 4 pawns."""
@@ -57,7 +57,7 @@ class TestJumpEdgeCases:
         assert up_targets == []  # can't go up at all
 
 
-# ── Item 5: tensor parity — MP at N=2 must reproduce 2p tensor channels ──
+# ── Item 5: tensor parity - MP at N=2 must reproduce 2p tensor channels ──
 
 class TestTensorParity:
     """Assert build_tensor_mp at N=2 reproduces build_tensor's channels

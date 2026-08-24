@@ -1,4 +1,4 @@
-# Quoridor 5×5 — Action Space Specification
+# Quoridor 5×5 - Action Space Specification
 
 ## Overview
 
@@ -49,7 +49,7 @@ When a pawn is adjacent to the opponent, it can jump:
 Maximum possible jump destinations from any position:
 
 - Straight jumps: 4 (one per direction)
-- Diagonal jumps: 4 (UL, UR, DL, DR — only possible when straight is blocked)
+- Diagonal jumps: 4 (UL, UR, DL, DR - only possible when straight is blocked)
 
 Total unique pawn destinations (cells reachable in one move):
 **Up to 8 positions**, but in practice never all 8 simultaneously.
@@ -155,7 +155,7 @@ Vertical walls:   64   (8 × 8)
 TOTAL:           140
 ```
 
-Note: the design document says 132 (4 pawn + 128 walls). This is incorrect —
+Note: the design document says 132 (4 pawn + 128 walls). This is incorrect -
 it doesn't account for jump moves. The correct number for 9×9 is **140**.
 
 ## 4. Action Index Mapping (5×5)
@@ -219,7 +219,7 @@ A wall placement is **illegal** if:
 1. The position is already occupied by another wall
 2. The wall overlaps/crosses an existing wall
 3. The wall completely blocks a player's path to their goal row
-   (connectivity check via BFS — required by Quoridor rules)
+   (connectivity check via BFS - required by Quoridor rules)
 4. The player has no walls remaining
 
 A pawn move is **illegal** if:

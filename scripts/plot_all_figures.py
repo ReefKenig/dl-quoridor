@@ -55,7 +55,7 @@ def plot_n4_curves(history: list[dict], output_path: str | Path) -> None:
     loss_v = [h["loss_v"] for h in history]
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
-    fig.suptitle(f"Quoridor 5×5 — N=4 Max^n Training ({len(history)} iterations)",
+    fig.suptitle(f"Quoridor 5×5 - N=4 Max^n Training ({len(history)} iterations)",
                  fontsize=14, fontweight="bold")
 
     # Panel 1: vs_rand
@@ -117,7 +117,7 @@ def plot_n4_dashboard(history: list[dict], output_path: str | Path) -> None:
     buf = [h["buffer"] for h in history]
 
     fig, axes = plt.subplots(3, 2, figsize=(16, 14))
-    fig.suptitle(f"Quoridor 5×5 N=4 — Full Training Dashboard ({len(history)} iterations)",
+    fig.suptitle(f"Quoridor 5×5 N=4 - Full Training Dashboard ({len(history)} iterations)",
                  fontsize=15, fontweight="bold")
 
     # Panel 1: vs_rand with trend
@@ -130,7 +130,7 @@ def plot_n4_dashboard(history: list[dict], output_path: str | Path) -> None:
                 alpha=0.9, label=f"{window}-eval avg")
     ax.axhline(y=25, color="gray", linestyle="--",
                alpha=0.5, label="fair share (25%)")
-    ax.set_title("Win Rate vs Random — Strength Signal")
+    ax.set_title("Win Rate vs Random - Strength Signal")
     ax.set_ylabel("%")
     ax.set_ylim(0, 105)
     ax.legend(fontsize=9)
@@ -162,7 +162,7 @@ def plot_n4_dashboard(history: list[dict], output_path: str | Path) -> None:
              marker="s", markersize=2, label="Value (MSE)")
     axb.set_ylabel("Value Loss", color="#F44336")
     axb.tick_params(axis="y", labelcolor="#F44336")
-    ax.set_title("Loss Curves — Policy (left) vs Value (right)")
+    ax.set_title("Loss Curves - Policy (left) vs Value (right)")
     lines1, labels1 = ax.get_legend_handles_labels()
     lines2, labels2 = axb.get_legend_handles_labels()
     ax.legend(lines1 + lines2, labels1 + labels2, fontsize=8)
@@ -177,7 +177,7 @@ def plot_n4_dashboard(history: list[dict], output_path: str | Path) -> None:
         best_ver.append(cur)
     ax.step(iters, best_ver, where="post", color="#FF9800", linewidth=2)
     ax.fill_between(iters, best_ver, step="post", alpha=0.15, color="#FF9800")
-    ax.set_title("Model Evolution — Accepted Upgrades")
+    ax.set_title("Model Evolution - Accepted Upgrades")
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Best Model Version #")
     ax.grid(True, alpha=0.2)
@@ -224,11 +224,11 @@ def plot_2p_dashboard(metrics: list[dict], output_path: str | Path) -> None:
     plot_training_dashboard(metrics, output_path)
 
 
-# ── Model Comparison — 2p vs 4p side-by-side ──────────────────────────────
+# ── Model Comparison - 2p vs 4p side-by-side ──────────────────────────────
 def plot_comparison(n4_history: list[dict], metrics_2p: list[dict] | None,
                     output_path: str | Path) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle("Quoridor 5×5 — 2-Player vs 4-Player Training Comparison",
+    fig.suptitle("Quoridor 5×5 - 2-Player vs 4-Player Training Comparison",
                  fontsize=14, fontweight="bold")
 
     # 2p panel

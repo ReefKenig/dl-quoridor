@@ -1,4 +1,4 @@
-"""The greedy pawn-rush baseline — an absolute yardstick that does not saturate.
+"""The greedy pawn-rush baseline - an absolute yardstick that does not saturate.
 
 vs-random stops measuring almost immediately at 9x9: the N=2 run reached 100%
 against random at iteration 5 and stayed there for the remaining 95 iterations,
@@ -64,7 +64,7 @@ def test_greedy_beats_random_decisively(num_players):
 
 def test_greedy_is_stable_when_one_move_is_strictly_best():
     """A yardstick must not wobble. In open play exactly one move shortens the
-    path, so greedy is deterministic there regardless of RNG — eval-game
+    path, so greedy is deterministic there regardless of RNG - eval-game
     diversity comes from the candidate's sampled opening, not the opponent.
     """
     env, agent = _env(), greedy_agent()

@@ -46,7 +46,7 @@ def test_explore_moves_per_player_is_equal_across_variants(cfg9):
     """explore_moves counts plies too, so sharing it starves N=4 the same way.
 
     Temperature sampling runs for the first `explore_moves` plies. A shared 20
-    is ~10 exploratory turns each at N=2 but only 5 at N=4 — a quarter of the
+    is ~10 exploratory turns each at N=2 but only 5 at N=4 - a quarter of the
     self-play diversity, on the harder problem.
     """
     n2 = resolve_run_config(cfg9, "n2")
@@ -140,8 +140,8 @@ def test_run_config_variant_overrides_win(cfg9):
     n2, n4 = resolve_run_config(cfg9, "n2"), resolve_run_config(cfg9, "n4")
 
     assert (n2["max_game_moves"], n4["max_game_moves"]) == (160, 320)
-    assert (n2["num_iterations"], n4["num_iterations"]) == (60, 40)
-    # A variant key beats the section it also lives in — the two runs share a
+    assert (n2["num_iterations"], n4["num_iterations"]) == (150, 40)
+    # A variant key beats the section it also lives in - the two runs share a
     # 16-cpu quota, so neither may take the parallel section's worker count.
     assert n2["num_workers"] == n4["num_workers"] == 8
     assert n2["num_workers"] != cfg9["parallel"]["num_workers"]

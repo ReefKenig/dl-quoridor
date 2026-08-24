@@ -13,7 +13,7 @@
 #   scripts/run_notebook.sh n4        # N=4 9x9 training (run dir from notebook)
 #   MODE=tmux scripts/run_notebook.sh n2      # inside tmux instead of nohup
 #
-# There is NO default variant — you must pass n2 or n4 explicitly.
+# There is NO default variant - you must pass n2 or n4 explicitly.
 #
 # Monitor:
 #   tail -f runs/<run_dir>/notebook.log
@@ -23,7 +23,7 @@
 set -euo pipefail
 
 # --- resolve repo root from THIS script's location, then run from there ---
-# Everything (notebooks/, runs/, configs/) is repo-relative — no sibling-clone model.
+# Everything (notebooks/, runs/, configs/) is repo-relative - no sibling-clone model.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$REPO_ROOT"
@@ -72,7 +72,7 @@ fi
 # thread. If a previous run was HARD-killed (kernel kill / SIGKILL) mid-self-play
 # its finally: cleanup never ran, so worker processes are orphaned and leak CUDA
 # state. Enough orphans wedge the GPU, and then the very first CUDA call of the
-# next run hangs forever with no exception — which silently burns a full 5-hour
+# next run hangs forever with no exception - which silently burns a full 5-hour
 # training slot. Catch that here, before we launch.
 #
 #   PREFLIGHT=on   (default) abort if a wedged GPU / leftover procs are detected
@@ -84,7 +84,7 @@ PREFLIGHT_KILL="${PREFLIGHT_KILL:-0}"
 
 preflight() {
   [ "$PREFLIGHT" = "off" ] && return 0
-  command -v nvidia-smi >/dev/null 2>&1 || { echo "  [preflight] no nvidia-smi (CPU host?) — skipping GPU check"; return 0; }
+  command -v nvidia-smi >/dev/null 2>&1 || { echo "  [preflight] no nvidia-smi (CPU host?) - skipping GPU check"; return 0; }
 
   echo "=== GPU pre-flight ==="
   # Memory summary (used/total across all GPUs).
@@ -100,7 +100,7 @@ preflight() {
   py_pids="$(echo "$apps" | grep -iE 'python' | awk -F',' '{gsub(/ /,"",$1); print $1}' | grep -E '^[0-9]+$' || true)"
 
   if [ -z "$py_pids" ]; then
-    echo "  [preflight] no leftover GPU compute processes — clean. OK to launch."
+    echo "  [preflight] no leftover GPU compute processes - clean. OK to launch."
     echo "======================"
     return 0
   fi
@@ -109,7 +109,7 @@ preflight() {
   echo "$apps" | grep -iE 'python' | sed 's/^/    /' || true
 
   if [ "$PREFLIGHT_KILL" = "1" ]; then
-    echo "  [preflight] PREFLIGHT_KILL=1 — terminating leftover PIDs: $py_pids"
+    echo "  [preflight] PREFLIGHT_KILL=1 - terminating leftover PIDs: $py_pids"
     # shellcheck disable=SC2086
     kill $py_pids 2>/dev/null || true
     sleep 5
@@ -130,7 +130,7 @@ preflight() {
   echo "======================"
 
   if [ "$PREFLIGHT" = "warn" ]; then
-    echo "  [preflight] PREFLIGHT=warn — launching despite the warning."
+    echo "  [preflight] PREFLIGHT=warn - launching despite the warning."
     return 0
   fi
   echo "ERROR: aborting launch to avoid burning a training slot on a wedged GPU." >&2
@@ -139,7 +139,7 @@ preflight() {
 
 # Don't double-launch the same notebook. The pid must still be alive AND still
 # be this notebook: pids recycle, and a stale file pointing at an unrelated
-# process would lock the run out permanently — fatal under a watchdog, which
+# process would lock the run out permanently - fatal under a watchdog, which
 # would then no-op forever instead of restarting.
 PID_FILE="$LOG_DIR/notebook.pid"
 if [ -f "$PID_FILE" ]; then
@@ -150,7 +150,7 @@ if [ -f "$PID_FILE" ]; then
       echo "       Stop it first:  kill $OLD_PID" >&2
       exit 1
     fi
-    echo "  [preflight] pid $OLD_PID is alive but is not $NOTEBOOK — stale pid file, continuing."
+    echo "  [preflight] pid $OLD_PID is alive but is not $NOTEBOOK - stale pid file, continuing."
   fi
   rm -f "$PID_FILE"
 fi
@@ -160,7 +160,7 @@ preflight
 # nbconvert execution:
 #   --to notebook --execute : run every cell in order
 #   --allow-errors : a raising cell no longer aborts the rest of the notebook.
-#     Both 9x9 v3 runs died this way — a TypeError in the training-curves cell
+#     Both 9x9 v3 runs died this way - a TypeError in the training-curves cell
 #     skipped every cell after it, including the checkpoint export.
 #   --ExecutePreprocessor.timeout=-1 : no per-cell timeout (training is long)
 #   --output-dir + --output : write the executed copy next to the logs.
@@ -186,7 +186,7 @@ for attempt in \$(seq 1 $MAX_RETRIES); do
     echo \"=== completed on attempt \$attempt at \$(date -Iseconds) after \$(( (\$(date +%s) - started) / 60 )) min ===\"
     exit 0
   fi
-  echo \"=== attempt \$attempt failed at \$(date -Iseconds) (killed kernel?) — retrying in ${RETRY_DELAY}s ===\"
+  echo \"=== attempt \$attempt failed at \$(date -Iseconds) (killed kernel?) - retrying in ${RETRY_DELAY}s ===\"
   sleep $RETRY_DELAY
 done
 echo \"=== gave up after $MAX_RETRIES attempts at \$(date -Iseconds), \$(( (\$(date +%s) - started) / 60 )) min elapsed ===\"

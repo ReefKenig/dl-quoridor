@@ -5,8 +5,8 @@ Usage:
     PYTHONPATH=. python scripts/plot_registry_figures.py [--out-dir DIR]
 
 Outputs (to attachments/figures/ by default):
-    training-comparison-9x9.png  — loss + greedy win-rate for all shipped 9×9 runs
-    held-out-eval-bar.png        — grouped bar chart of held-out protocol results
+    training-comparison-9x9.png  - loss + greedy win-rate for all shipped 9×9 runs
+    held-out-eval-bar.png        - grouped bar chart of held-out protocol results
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def plot_training_comparison(out: Path) -> None:
     # Kept narrow: the figure is scaled to ~0.92\textwidth in the report, so a
     # wide canvas shrinks the tick labels below legibility.
     fig, axes = plt.subplots(1, 3, figsize=(7.5, 2.7))
-    fig.suptitle("9×9 registry models — training comparison",
+    fig.suptitle("9×9 registry models - training comparison",
                  fontsize=14, fontweight="bold")
 
     ceilings: dict[float, str] = {}
@@ -181,7 +181,7 @@ def plot_held_out_bar(out: Path) -> None:
                     label="vs depth-2 minimax (held out)",
                     color="#FF7043", alpha=0.85)
 
-    ax.set_title("Held-out evaluation — registry models at serving configuration",
+    ax.set_title("Held-out evaluation - registry models at serving configuration",
                  fontsize=15, fontweight="bold")
     ax.set_ylabel("Win rate (%)", fontsize=13)
     ax.set_xticks(x)
@@ -220,7 +220,7 @@ def plot_all_models_summary(out: Path) -> None:
     ]
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    fig.suptitle("All Registry Models — Final Win Rate vs Random",
+    fig.suptitle("All Registry Models - Final Win Rate vs Random",
                  fontsize=13, fontweight="bold")
 
     names = []

@@ -1,7 +1,7 @@
 """Local end-to-end validation of the opponent pool and the held-out baseline.
 
-Runs the REMOTE code path — parallel self-play with a GPU/CPU batcher, the mixed
-wall curriculum, greedy anchoring and the minimax eval — on a 5x5 board so it
+Runs the REMOTE code path - parallel self-play with a GPU/CPU batcher, the mixed
+wall curriculum, greedy anchoring and the minimax eval - on a 5x5 board so it
 finishes in minutes. The point is not strength; it is that every metric the run
 depends on actually reaches meta.json, and that anchoring changes the data the
 way it claims to.
@@ -44,7 +44,7 @@ def make_model():
 
 
 def check(label, ok, detail=""):
-    print(f"  [{'PASS' if ok else 'FAIL'}] {label}{(' — ' + detail) if detail else ''}")
+    print(f"  [{'PASS' if ok else 'FAIL'}] {label}{(' - ' + detail) if detail else ''}")
     return ok
 
 

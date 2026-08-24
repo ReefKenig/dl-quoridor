@@ -5,7 +5,7 @@ vectorized (in-process, Option B).
 Runs the SAME model + config through both engines for a fixed number of games and
 reports wall-clock, games/sec, and samples produced. Use it to decide whether the
 vectorized engine is actually faster on the target box before swapping it into a
-run (single-process vectorized can be CPU-bound on a many-core host — the number
+run (single-process vectorized can be CPU-bound on a many-core host - the number
 that matters is measured here, not assumed).
 
 Usage (local 5x5 smoke):
@@ -85,7 +85,7 @@ def heartbeat(label, every=30.0):
 
 
 def _time(label, fn, repeat=1):
-    """Time `fn` `repeat` times, best-of — the noise here (page cache, other
+    """Time `fn` `repeat` times, best-of - the noise here (page cache, other
     load, CUDA clock ramp) is one-sided."""
     times = []
     for r in range(repeat):
@@ -115,7 +115,7 @@ def describe_device(device="auto"):
           f"| device={device!r} resolves to {resolved!r}")
     if not cuda:
         print("WARNING: no CUDA. Both engines will be CPU-bound and the "
-              "vectorized driver runs unpipelined — these numbers will not "
+              "vectorized driver runs unpipelined - these numbers will not "
               "transfer to the GPU box.")
     return resolved
 
@@ -123,7 +123,7 @@ def describe_device(device="auto"):
 def run_bench(**kwargs):
     """Run the parallel-vs-vectorized comparison. Returns {engine: best_seconds}.
 
-    Accepts any key in DEFAULTS. This is the whole benchmark — main() only parses
+    Accepts any key in DEFAULTS. This is the whole benchmark - main() only parses
     argv and calls it, so the notebook and the CLI measure identical things.
     """
     unknown_kw = set(kwargs) - set(DEFAULTS)
@@ -264,7 +264,7 @@ def main():
                     help="ply cap during warmup")
     ap.add_argument("--order", default=DEFAULTS["order"],
                     help="comma-separated engine order. Run it both ways if the "
-                         "margin is close — ordering effects are real")
+                         "margin is close - ordering effects are real")
     ap.add_argument("--skip-parallel", action="store_true")
     ap.add_argument("--skip-vectorized", action="store_true")
     a = ap.parse_args()

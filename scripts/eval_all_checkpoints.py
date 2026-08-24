@@ -1,6 +1,6 @@
 """Re-score every checkpoint under ONE protocol: greedy, held-out minimax, K=0 vs K=16.
 
-Answers the question Branch 1 left open — is the wall-candidate restriction a
+Answers the question Branch 1 left open - is the wall-candidate restriction a
 TRAINING result or an inference-time one? Scoring each checkpoint at both K under
 an identical protocol is the only way to tell, so K is a column here, not a
 setting.
@@ -41,7 +41,7 @@ from src.utils.config import read_frozen_config
 GAMES_PER_SEAT = int(os.environ.get("GAMES_PER_SEAT", 20))
 # FIXED across checkpoints, and stated: a table that compares models must not
 # vary the search budget between them. Budget changes the ANSWER, not just the
-# cost — v7 vs greedy at K=0 scores 70% at 200 sims and 30% at 600, and all of
+# cost - v7 vs greedy at K=0 scores 70% at 200 sims and 30% at 600, and all of
 # that swing is seat 1. Each row also records the run's OWN eval_simulations, so
 # a reader can see where this protocol differs from what a run was scored under.
 SIMS = int(os.environ.get("SIMS", 200))
@@ -102,7 +102,7 @@ def resolve_opening_plies(path, frozen_plies, games_per_seat):
     if plies == 0 and games_per_seat > 1:
         raise SystemExit(
             f"{path} records eval_opening_plies=0. Against greedy and minimax, "
-            f"which are deterministic, that replays ONE game per seat — "
+            f"which are deterministic, that replays ONE game per seat - "
             f"{games_per_seat} games/seat would be reported from 1 distinct "
             f"game. Set GAMES_PER_SEAT=1 to score a single replay deliberately, "
             f"or fix the run's config. See tests/test_eval_opening_diversity.py.")

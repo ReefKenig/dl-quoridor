@@ -1,4 +1,4 @@
-"""Wall-aware pathing shared by both tensor specs — one BFS, one blocking rule.
+"""Wall-aware pathing shared by both tensor specs - one BFS, one blocking rule.
 
 Previously duplicated in tensor_spec.py (2-player) and tensor_spec_mp.py
 (N-player) with identical semantics but different signatures.
@@ -9,7 +9,7 @@ import numpy as np
 
 # Distance planes divide by DIST_NORM_MULTIPLE * board_size. A straight run is
 # board_size-1 steps, so this leaves headroom for wall detours while keeping one
-# step of progress at ~1/(2*bs) — 0.056 at 9x9, against binary planes at 1.0.
+# step of progress at ~1/(2*bs) - 0.056 at 9x9, against binary planes at 1.0.
 # The old bs**2 divisor never clipped but put a step at 1/81, so the racing
 # signal arrived an order of magnitude below every other channel.
 # Trade-off: detours longer than 2*bs now clip to 1.0, the same value as
@@ -18,7 +18,7 @@ import numpy as np
 DIST_NORM_MULTIPLE = 2
 
 # Tensor spec version. The distance-plane divisor changed between the two, which
-# rescales channels 8/9 by board_size/2 — 2.5x at 5x5, 4.5x at 9x9. A model only
+# rescales channels 8/9 by board_size/2 - 2.5x at 5x5, 4.5x at 9x9. A model only
 # ever sees the spec it trained under, so every checkpoint predating the change
 # must keep asking for V1; runs/MODELS.json records which one each was trained on.
 SPEC_V1_DIST_SQ = 1      # divisor = board_size ** 2
@@ -82,7 +82,7 @@ def distance_map(board_size, goal, h_walls, v_walls, spec_version=CURRENT_SPEC):
 
     goal is ('row', k) or ('col', k). Returns (board_size, board_size) float32
     in [0, 1]; unreachable cells and detours past the norm both read 1.0.
-    spec_version picks the divisor — pass a checkpoint's own spec, not the
+    spec_version picks the divisor - pass a checkpoint's own spec, not the
     current one, or the model sees planes on a scale it never trained on.
     """
     bs = board_size

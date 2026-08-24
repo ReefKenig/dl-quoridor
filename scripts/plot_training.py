@@ -37,7 +37,7 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
 
     fig, axes = plt.subplots(3, 2, figsize=(16, 14))
     fig.suptitle(
-        "Quoridor 5×5 AlphaZero — Full Training Dashboard (40 iterations)",
+        "Quoridor 5×5 AlphaZero - Full Training Dashboard (40 iterations)",
         fontsize=15,
         fontweight="bold",
     )
@@ -64,7 +64,7 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
     ax1b.tick_params(axis="y", labelcolor=color_v)
     ax1b.set_ylim(0.05, 0.16)
 
-    ax1.set_title("Loss Curves — Policy (left) vs Value (right)")
+    ax1.set_title("Loss Curves - Policy (left) vs Value (right)")
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax1b.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2,
@@ -78,9 +78,9 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
     ax2.bar(iters, [w * 100 for w in wr_best],
             color=colors_wr, alpha=0.7, width=0.8,
             label="vs best (gate)")
-    # vs_random was extracted here but never drawn. It is the strength signal —
+    # vs_random was extracted here but never drawn. It is the strength signal -
     # vs_best only says "better than the current champion", which is uninformative
-    # when the champion moves or stalls — so the dashboard needs both curves.
+    # when the champion moves or stalls - so the dashboard needs both curves.
     ax2.plot(iters, [w * 100 for w in wr_random], "b-o", markersize=3,
              linewidth=1.5, label="vs random (strength)")
     ax2.axhline(y=55, color="orange", linestyle="--",
@@ -99,7 +99,7 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
         metrics) if m["iteration"] == 38), None)
     if crash_idx is not None:
         ax2.annotate(
-            "5% — catastrophic\nregression",
+            "5% - catastrophic\nregression",
             xy=(38, 5),
             xytext=(32, 25),
             fontsize=8,
@@ -109,7 +109,7 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
         )
 
     # =====================================================================
-    # Panel 3: Game Efficiency — avg game length + samples per iteration
+    # Panel 3: Game Efficiency - avg game length + samples per iteration
     # =====================================================================
     ax3 = axes[1, 0]
     ax3.plot(iters, avg_len, color="#9C27B0", linewidth=2,
@@ -118,7 +118,7 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
                 label="Optimal shortest path (~8 moves)")
     ax3.set_xlabel("Iteration")
     ax3.set_ylabel("Moves per Game")
-    ax3.set_title("Game Efficiency — How Fast Does It Win?")
+    ax3.set_title("Game Efficiency - How Fast Does It Win?")
     ax3.legend(fontsize=8)
     ax3.grid(True, alpha=0.2)
     ax3.set_ylim(0, 45)
@@ -164,7 +164,7 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
 
     ax4.set_xlabel("Iteration")
     ax4.set_ylabel("Best Model Version #")
-    ax4.set_title("Model Evolution — Accepted Upgrades Over Time")
+    ax4.set_title("Model Evolution - Accepted Upgrades Over Time")
     ax4.grid(True, alpha=0.2)
     ax4.annotate(
         f"Final: v{best_version[-1]} (from {len(iters)} iterations)",
@@ -175,7 +175,7 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
     )
 
     # =====================================================================
-    # Panel 5: Time Breakdown — stacked area chart
+    # Panel 5: Time Breakdown - stacked area chart
     # =====================================================================
     ax5 = axes[2, 0]
     total_time = [s + t + e for s, t, e in zip(sp_dur, train_dur, eval_dur)]
@@ -190,7 +190,7 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
     )
     ax5.set_xlabel("Iteration")
     ax5.set_ylabel("Time (seconds)")
-    ax5.set_title("Time Budget Per Iteration — Where Time Goes")
+    ax5.set_title("Time Budget Per Iteration - Where Time Goes")
     ax5.legend(loc="upper right", fontsize=8)
     ax5.grid(True, alpha=0.2)
 
@@ -206,7 +206,7 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
     )
 
     # =====================================================================
-    # Panel 6: Data Pipeline — buffer fill + samples per iteration
+    # Panel 6: Data Pipeline - buffer fill + samples per iteration
     # =====================================================================
     ax6 = axes[2, 1]
     ax6.bar(iters, samples, color="#78909C", alpha=0.6,
@@ -221,7 +221,7 @@ def plot_training_dashboard(metrics, output_path="training_dashboard.png"):
     ax6.set_ylabel("Samples Generated", color="#78909C")
     ax6b.set_ylabel("Buffer Size", color="#E91E63")
     ax6b.tick_params(axis="y", labelcolor="#E91E63")
-    ax6.set_title("Data Pipeline — Generation & Buffer Utilization")
+    ax6.set_title("Data Pipeline - Generation & Buffer Utilization")
 
     lines1, labels1 = ax6.get_legend_handles_labels()
     lines2, labels2 = ax6b.get_legend_handles_labels()

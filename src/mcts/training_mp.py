@@ -220,6 +220,11 @@ class TrainingConfigMP:
     anchor_weight: float = 0.0
     # Champion snapshots kept for the past-opponent share.
     champion_pool_size: int = 5
+    # Weight on the SEAT-0 value target of clone-vs-clone samples; 0.0 excludes
+    # them. Clone games teach the head that seat-0 racing loses, which is the
+    # erosion v10 measured surviving the policy anchor. Anchored games keep
+    # every column. 1.0 = the plain step.
+    clone_seat0_value_weight: float = 1.0
 
     def __post_init__(self):
         # The smaller of the two limits ends the game, so an env cutoff below
@@ -239,6 +244,10 @@ class TrainingConfigMP:
             raise NotImplementedError(
                 "opponent_past_share needs the parallel engine — the champion "
                 "is served as model_id 1 on the shared inference batcher.")
+        if not 0.0 <= self.clone_seat0_value_weight <= 1.0:
+            raise ValueError(
+                f"clone_seat0_value_weight is a weight on an existing target "
+                f"({self.clone_seat0_value_weight}); 0.0 drops it, 1.0 keeps it.")
         total = self.opponent_past_share + self.opponent_greedy_share
         if total > 1.0:
             raise ValueError(
@@ -254,6 +263,19 @@ SELF_SOURCE = "self"
 # Fixed width so the persisted array and the in-memory cache agree; source names
 # are short labels ("self", "greedy", "past"), not free text.
 SOURCE_DTYPE = "U16"
+
+
+def clone_seat0_value_weights(sources, num_players, weight):
+    """Per-sample, per-seat weights for the value loss; None when it is uniform.
+
+    Only the seat-0 column of clone-vs-clone samples moves. `_seat_perm` keeps
+    seat 0 fixed under the mirror, so column 0 is seat 0 for augmented samples too.
+    """
+    if weight == 1.0:
+        return None
+    w = np.ones((len(sources), num_players), dtype=np.float32)
+    w[np.asarray(sources, dtype=SOURCE_DTYPE) == SELF_SOURCE, 0] = weight
+    return w
 
 
 class ReplayBufferMP:
@@ -306,11 +328,15 @@ class ReplayBufferMP:
     def indices_by_source(self, source):
         return np.flatnonzero(self.sources_array() == source)
 
-    def sample_batch(self, batch_size, source=None, source_share=0.0):
+    def sample_batch(self, batch_size, source=None, source_share=0.0,
+                     with_sources=False):
         """A batch, optionally drawing `source_share` of it from `source`.
 
         Falls back to whatever is available rather than failing: early
         iterations may hold fewer anchored samples than the target asks for.
+
+        with_sources also returns the drawn samples' source labels, so a caller
+        can weight the loss by where a sample came from.
         """
         n = min(batch_size, len(self.buffer))
         if source and source_share > 0:
@@ -342,6 +368,8 @@ class ReplayBufferMP:
         S = np.array([x[0] for x in b], np.float32)
         P = np.array([x[1] for x in b], np.float32)
         V = np.array([x[2] for x in b], np.float32)
+        if with_sources:
+            return S, P, V, self.sources_array()[idx]
         return S, P, V
 
     def __len__(self):
@@ -839,7 +867,10 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         f"train_steps={cfg.train_steps_per_iter} max_moves={cfg.max_game_moves} "
         f"explore_moves={cfg.explore_moves} warmup={cfg.warmup_min_samples} "
         f"discount={cfg.discount}/{cfg.discount_unit} "
-        f"leaf_batch={cfg.leaf_batch} vloss={cfg.virtual_loss}",
+        f"leaf_batch={cfg.leaf_batch} vloss={cfg.virtual_loss}"
+        + (f" | clone seat-0 value targets weighted "
+           f"{cfg.clone_seat0_value_weight}"
+           if cfg.clone_seat0_value_weight != 1.0 else ""),
         *resource_banner(cfg),
         "=" * 70,
     )
@@ -1080,11 +1111,13 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             _log(f"[iter {it+1}/{cfg.num_iterations}] training skipped — "
                  f"buffer {len(buffer)} < warmup {warmup} (filling)")
         for _ in range(steps):
-            S, P, V = buffer.sample_batch(
+            S, P, V, src = buffer.sample_batch(
                 cfg.batch_size, source="greedy",
-                source_share=cfg.anchored_sample_share)
-            a, b = model.train_step(S, P, V, anchor_model=anchor,
-                                    anchor_weight=cfg.anchor_weight)
+                source_share=cfg.anchored_sample_share, with_sources=True)
+            a, b = model.train_step(
+                S, P, V, anchor_model=anchor, anchor_weight=cfg.anchor_weight,
+                value_weights=clone_seat0_value_weights(
+                    src, cfg.num_players, cfg.clone_seat0_value_weight))
             lp += a
             lv += b
         lp /= max(steps, 1)

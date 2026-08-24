@@ -61,7 +61,7 @@ NON_TRAINING_CONFIG_KEYS = frozenset({
 VALUE_MUST_COME_FROM_CONFIG = (
     "mcts_simulations", "discount", "train_steps_per_iter",
     "mcts_wall_candidates", "wall_mask_fraction", "opponent_greedy_share",
-    "anchored_sample_share", "gate_arm_on_greedy",
+    "anchored_sample_share", "gate_arm_on_greedy", "clone_seat0_value_weight",
 )
 
 

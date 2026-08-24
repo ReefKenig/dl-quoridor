@@ -63,7 +63,7 @@ def resolve_ship_checkpoint(run_dir):
 
     Preference: greedy_peak.pt (the strongest ABSOLUTE eval) whenever it
     exists, then best.pt if the gate accepted, then latest.pt. The old order
-    put the accepted champion first, assuming accepts imply strength —
+    put the accepted champion first, assuming accepts imply strength -
     n4_9x9_v9 falsified that: the gate accepted at iterations 20/24/28 while
     win_vs_greedy fell 40% -> 0%, and shipped the 0% model over the saved
     10% peak. Accepts measure relative-to-champion; the deliverable is
@@ -89,16 +89,16 @@ def resolve_ship_checkpoint(run_dir):
             (r for r in history if r.get("win_vs_greedy") is not None),
             key=lambda r: r["win_vs_greedy"], default=None)
         detail = (f"{top['win_vs_greedy']:.1%} vs greedy at iter {top.get('iter', '?')}"
-                  if top else "rate unknown — no greedy rows in meta.json")
+                  if top else "rate unknown - no greedy rows in meta.json")
         if accepts:
-            detail += f"; outranks best.pt's {len(accepts)} accepts — see docstring"
+            detail += f"; outranks best.pt's {len(accepts)} accepts - see docstring"
         return str(peak), f"greedy_peak.pt ({detail})"
     if accepts and best.exists():
         return str(best), f"best.pt (accepted at iter {accepts[-1]}, {len(accepts)} accepts)"
     if latest.exists():
         why = ("no iteration was ever accepted, so best.pt is the untrained "
                "initialization" if history else "no history in meta.json")
-        return str(latest), f"latest.pt (iter {last_iter}) — {why}"
+        return str(latest), f"latest.pt (iter {last_iter}) - {why}"
     if best.exists():
         return str(best), "best.pt (no latest.pt found)"
     return None, f"no greedy_peak.pt, best.pt or latest.pt in {run_dir}"
@@ -292,7 +292,7 @@ class CheckpointManager:
     # ------------------------------------------------------------------
 
     def _save_replay_buffer(self, buffer, path: Path):
-        """Serialize replay buffer. Uses pickle — buffer contains numpy arrays."""
+        """Serialize replay buffer. Uses pickle - buffer contains numpy arrays."""
         with open(path, "wb") as f:
             pickle.dump(list(buffer.buffer), f,
                         protocol=pickle.HIGHEST_PROTOCOL)

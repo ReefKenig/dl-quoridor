@@ -5,7 +5,7 @@ KEY CHANGE vs scalar self_play.py:
   - value_target is a length-N vector, identical for all players' bookkeeping:
         vec[j] = +disc  if j == winner
                  -disc  otherwise
-    Games that time out (winner is None) yield no samples at all — see
+    Games that time out (winner is None) yield no samples at all - see
     assign_vector_targets for why they are dropped rather than labelled 0.
   - The per-position "mover perspective" disappears. The trajectory's
     `player` field is no longer used to sign the target; only `winner` is.
@@ -27,7 +27,7 @@ def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
     restores the old zero-vector labelling for tests.
 
     discount_unit: "round" decays per the mover's own turns (plies/N), "ply"
-    per move by anybody. Per-variant — the right effective target magnitude
+    per move by anybody. Per-variant - the right effective target magnitude
     depends on game length and player count.
 
     plies/total_plies: real ply indices, needed when the model did not move on
@@ -37,7 +37,7 @@ def assign_vector_targets(trajectory, winner, num_players, discount=0.97,
     dense trajectory, where the index is the ply.
     """
     # Misalignment would silently mis-discount every target rather than fail, so
-    # it is checked here — the one place all callers share.
+    # it is checked here - the one place all callers share.
     if plies is not None and len(plies) != len(trajectory):
         raise ValueError(
             f"trajectory and plies must align (one ply per trajectory entry): "
@@ -131,7 +131,7 @@ def normalize_action_probs(probs, env=None, state=None):
         return fallback
     raise RuntimeError(
         "MCTS produced an all-zero action distribution and the position has no "
-        "valid actions — the search root is a dead end.")
+        "valid actions - the search root is a dead end.")
 
 
 def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
@@ -140,8 +140,8 @@ def play_one_game(env, mcts, num_players, max_moves=200, discount=0.97,
                   game_stats=None):
     """seat_agents: {seat: AgentFn} for seats a scripted opponent plays.
 
-    Those plies produce no training sample — the opponent's move is not a
-    policy target — but they still advance the real ply count, which the value
+    Those plies produce no training sample - the opponent's move is not a
+    policy target - but they still advance the real ply count, which the value
     targets are discounted against.
 
     game_stats: optional dict filled in place with per-game counters

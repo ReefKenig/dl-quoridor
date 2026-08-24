@@ -1,7 +1,7 @@
 """Sparse eval columns must read as gaps, not as zeros.
 
 Eval runs every `eval_every` iterations. Un-evaluated rows used to store 0.0,
-which is indistinguishable from a real 0% win rate — 44 of the 51 rows across
+which is indistinguishable from a real 0% win rate - 44 of the 51 rows across
 the two 9x9 runs carried a meaningless win_vs_best/win_vs_random of 0.0, and the
 figures drew them as a curve collapsing to zero four iterations in five.
 """
@@ -32,7 +32,7 @@ def test_skipped_rows_are_dropped_not_plotted_as_zero():
 
 
 def test_a_genuine_zero_is_kept():
-    """0% measured is a result and must survive — the whole point of using None."""
+    """0% measured is a result and must survive - the whole point of using None."""
     history = [_row(5, best=0.0, rand=0.0, ran=True, best_secs=90.0)]
 
     iters, values = eval_series(history, "win_vs_best")
@@ -55,7 +55,7 @@ def test_legacy_rows_detected_via_eval_best_secs():
     """Existing 9x9/5x5 meta.json files predate the eval_ran flag.
 
     They store 0.0 for skipped iterations, but eval_best_secs is 0.0 exactly
-    when eval was skipped — the old `eval_done` field is useless here, since it
+    when eval was skipped - the old `eval_done` field is useless here, since it
     was written as `not run_eval` and then overwritten with True on completion,
     leaving it True in both cases.
     """
@@ -74,7 +74,7 @@ def test_legacy_rows_detected_via_eval_best_secs():
 def test_real_n2_9x9_rows_recover_only_the_measured_points():
     """Rows lifted verbatim from the n2_9x9_v1 meta.json (eval_every=5).
 
-    38 rows, 36 of which literally store win_vs_best 0.0 — but only 5 of those
+    38 rows, 36 of which literally store win_vs_best 0.0 - but only 5 of those
     zeros were measured. The two interesting survivors are iter 15 (0.5, the
     candidate-vs-identical-copy signature) and iter 20 (0.025), both of which
     must be kept while the surrounding fabricated zeros are dropped.
@@ -95,7 +95,7 @@ def test_real_n2_9x9_rows_recover_only_the_measured_points():
 
 
 def test_oldest_format_without_eval_columns_is_treated_as_evaluated():
-    """runs/n4_5x5_v3 has no eval bookkeeping — it evaluated every iteration.
+    """runs/n4_5x5_v3 has no eval bookkeeping - it evaluated every iteration.
 
     Absence of the column means "evaluated", not "skipped". Reading it the other
     way drops all 70 rows and produces an empty figure.

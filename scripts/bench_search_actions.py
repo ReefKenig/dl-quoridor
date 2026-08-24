@@ -7,7 +7,7 @@ the filter costs in wall time.
     PYTHONPATH=. python scripts/bench_search_actions.py --board 9 --sims 600
 
 Everything here is a property of the env, so it needs no checkpoint and runs on
-CPU in seconds. Strength numbers are a different measurement — see
+CPU in seconds. Strength numbers are a different measurement - see
 scripts/eval_all_checkpoints.py.
 """
 import argparse

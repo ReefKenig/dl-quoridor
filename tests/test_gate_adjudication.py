@@ -2,7 +2,7 @@
 
 v9 settled that no move cap fixes the gate: two trained wall-capable models
 stall each other, 3-6 of 40 gate games decided at 320 plies, candidate winning
-80-100% of the ones that finished — an unusable 'decided' starves the floor.
+80-100% of the ones that finished - an unusable 'decided' starves the floor.
 Adjudication scores the stall by shortest path instead of discarding it.
 """
 import pytest
@@ -19,7 +19,7 @@ def env():
 
 
 def _pawn_forward(env, state, ply=0, rng=None):
-    """Always advance toward the goal — a deterministic racer."""
+    """Always advance toward the goal - a deterministic racer."""
     cp = state.current_player
     valid = env.get_valid_actions(state)
     moves = [a for a in valid if a < 12]

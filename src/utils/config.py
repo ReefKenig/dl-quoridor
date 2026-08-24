@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # a quarter of the demo's moves became near-random walls MCTS could not reject
 # (configs/config_9x9.json, _wall_mask_note). Difficulty is simulations and
 # temperature. "hard" is the configuration every reported number was measured
-# under — eps 0, temperature ~0, c_puct 1.41 (scripts/probe_greedy.py, and
+# under - eps 0, temperature ~0, c_puct 1.41 (scripts/probe_greedy.py, and
 # mcts_c_puct in every run config); it is the only preset that reproduces them.
 DIFFICULTY_SETTINGS = {
     "easy": {"num_simulations": 50, "temperature": 1.5, "c_puct": 1.41, "dirichlet_epsilon": 0.0},
@@ -159,7 +159,7 @@ def resolve_run_config(raw: Dict[str, Any], variant: str) -> Dict[str, Any]:
 def ply_budget_per_player(raw: Dict[str, Any], variant: str) -> float:
     """Plies each player gets before a game is cut short at `max_game_moves`.
 
-    The number that should be comparable across variants — not the raw cap.
+    The number that should be comparable across variants - not the raw cap.
     """
     merged = resolve_variant(raw, variant)
     num_players = merged.get("num_players")

@@ -2,7 +2,7 @@
 `get_valid_actions` fast path == exhaustive path-check, byte for byte.
 
 Wall enumeration used to run `_all_paths` (one BFS per player) for all 128
-candidate slots on a 9x9 board — up to 512 BFS per call, which is what starved
+candidate slots on a 9x9 board - up to 512 BFS per call, which is what starved
 the GPU batcher in the opening. It now BFSes once per player and only re-checks
 players whose route the candidate wall actually cuts.
 
@@ -142,7 +142,7 @@ def test_rejects_a_wall_that_would_enclose_a_player():
 
 
 def test_path_blockers_match_can_move():
-    """_path_blockers is the inverse of _can_move — check it directly.
+    """_path_blockers is the inverse of _can_move - check it directly.
 
     If these drift apart the filter silently skips real BFS checks, so pin the
     mapping rather than trusting the playout tests to stumble onto it.

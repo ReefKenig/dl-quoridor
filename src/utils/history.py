@@ -20,8 +20,8 @@ EVAL_LABELS = {
 }
 EVAL_KEYS = tuple(EVAL_LABELS)
 # Greedy ONLY. The 1/N cap comes from greedy-vs-greedy being decided purely by
-# seat (200/200 at 9x9). Minimax places walls, so it is not seat-determined —
-# measured 40/60 at N=2 and 23/23/27/27 at N=4 — and a model can in principle
+# seat (200/200 at 9x9). Minimax places walls, so it is not seat-determined -
+# measured 40/60 at N=2 and 23/23/27/27 at N=4 - and a model can in principle
 # beat it from every seat. Normalising it by 1/N would overstate a result twofold.
 CEILING_KEYS = ("win_vs_greedy",)
 
@@ -29,8 +29,8 @@ CEILING_KEYS = ("win_vs_greedy",)
 def racer_ceiling(num_players):
     """Highest pooled win rate a pure racer can reach AGAINST GREEDY.
 
-    Greedy vs greedy is decided by seat — the player who jumps takes the tempo
-    and wins 200/200 at 9x9 — so a racer scores only from that 1 seat in N.
+    Greedy vs greedy is decided by seat - the player who jumps takes the tempo
+    and wins 200/200 at 9x9 - so a racer scores only from that 1 seat in N.
     Specific to greedy: see CEILING_KEYS.
     """
     return 1.0 / num_players
@@ -49,7 +49,7 @@ def ceiling_fraction(value, num_players):
 
 
 def players_from_fair(fair):
-    """Seat count behind a fair share of 1/N — history rows record the share."""
+    """Seat count behind a fair share of 1/N - history rows record the share."""
     return round(1.0 / fair) if fair else 2
 
 
@@ -79,7 +79,7 @@ def restart_iters(history):
 
     Rows written since the buffer became durable carry `resumed`. Older runs
     are inferred from the buffer collapsing, which is what a restart used to
-    look like — that fallback misses back-to-back restarts, where the second
+    look like - that fallback misses back-to-back restarts, where the second
     kill lands before the buffer has refilled.
     """
     if any("resumed" in row for row in history):
@@ -98,12 +98,12 @@ def eval_ran(row) -> bool:
 
     Three history formats exist in runs/ and all three must plot:
 
-    1. current — explicit `eval_ran` flag.
-    2. 9x9-era — has `eval_best_secs`, which is 0.0 exactly when eval was
+    1. current - explicit `eval_ran` flag.
+    2. 9x9-era - has `eval_best_secs`, which is 0.0 exactly when eval was
        skipped. The `eval_done` field of that era cannot be used: it was written
        as `not run_eval` at row creation and then overwritten with True on
        completion, leaving it True in both cases.
-    3. 5x5-era — no eval bookkeeping at all (e.g. runs/n4_5x5_v3), because eval
+    3. 5x5-era - no eval bookkeeping at all (e.g. runs/n4_5x5_v3), because eval
        ran every iteration. Absence of the column therefore means "evaluated",
        not "skipped"; treating it as skipped drops every row in the file.
     """

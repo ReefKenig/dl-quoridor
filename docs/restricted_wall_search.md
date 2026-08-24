@@ -9,8 +9,8 @@ search returns a slightly sharpened copy of the policy it started from, and the
 policy target it produces teaches the network what it already believed.
 
 5x5, where this project's models play their board optimally, gets 17.1
-visits/action at the same budget. That gap — not the network, the curriculum or
-the wall mask — is what separated the two boards.
+visits/action at the same budget. That gap - not the network, the curriculum or
+the wall mask - is what separated the two boards.
 
 ## 2. What the restriction does
 
@@ -40,8 +40,8 @@ identically at the opening (131 -> 19) and costs +8%.
 
 A wall that misses every player's shortest path cannot change any player's
 distance to goal on the move it is placed. The slots that *do* cut a path are
-already computed — `_path_blockers` produces them for wall-legality checking and
-throws them away — so the filter reuses that work, which is why it costs ~10%
+already computed - `_path_blockers` produces them for wall-legality checking and
+throws them away - so the filter reuses that work, which is why it costs ~10%
 rather than another BFS sweep.
 
 `tests/test_search_actions.py::test_a_dropped_non_cutting_wall_cannot_change_any_distance`
@@ -55,7 +55,7 @@ moves later can fall outside the set. That is the knob's actual trade-off; the
 exactness argument above covers only the walls dropped for cutting nothing.
 Pawn moves are never dropped.
 
-## 4. Comparability — read this before putting numbers in one table
+## 4. Comparability - read this before putting numbers in one table
 
 **An evaluation run with `wall_candidates != 0` is not comparable to a number
 produced without it.** The restriction changes what search explores, so it
@@ -92,7 +92,7 @@ halves have to be stated; either alone is misleading.
 - Any script that scores a checkpoint must pass the K the checkpoint trained
   under, and must run it on its own tensor spec.
 - The UI defaults to `wall_candidates=16` (`src/server/app.py`), which is
-  correct for v7 and harmless for older checkpoints — `probe_n2_ramp` is flat
+  correct for v7 and harmless for older checkpoints - `probe_n2_ramp` is flat
   under it, per the table above.
 
 ## 5. Configuration
@@ -105,7 +105,7 @@ halves have to be stated; either alone is misleading.
 | `src/server/app.py` (UI) | `wall_candidates` setting | 16 |
 | minimax baseline | `minimax_wall_candidates` | 16 |
 
-`0` disables the filter and reproduces the unrestricted search exactly —
+`0` disables the filter and reproduces the unrestricted search exactly -
 `test_the_knob_off_is_identical_to_the_pre_restriction_search` pins the visit
 distribution against an env with no `get_search_actions` at all. Negative values
 behave as `0`.
@@ -116,7 +116,7 @@ recorded results are untouched; 9x9 opts in through its config.
 ## 6. Reuse and concurrency
 
 `_player_blockers` and `_path_blockers` are pure functions of the state passed
-in — no instance cache, no memo, fresh sets per call — so there is nothing
+in - no instance cache, no memo, fresh sets per call - so there is nothing
 shared for concurrent callers to race over. The parallel engines are separate
 *processes* with their own env objects in any case.
 `test_the_blocker_computation_holds_no_state_between_calls` and

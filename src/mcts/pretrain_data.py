@@ -1,7 +1,7 @@
 """Greedy-imitation pretraining data, in the exact self-play sample format.
 
 The warm start's whole premise is that RL continues from these weights on the
-same tensors and targets self-play produces — so the generator lives here,
+same tensors and targets self-play produces - so the generator lives here,
 beside `assign_vector_targets`/`augment_mp`, not in a script nobody greps when
 the sample format changes.
 """
@@ -23,7 +23,7 @@ def generate_games(env, num_games, opening_max, max_moves, discount,
                    discount_unit, base_seed, log=print):
     """Per-game sample lists (kept separate so the holdout split is by game).
 
-    A random opening (mostly walls — they are 98% of legal actions) diversifies
+    A random opening (mostly walls - they are 98% of legal actions) diversifies
     the states greedy then races through; only greedy's own plies become policy
     targets. Timeouts are dropped by assign_vector_targets, same as self-play.
     """
@@ -68,7 +68,7 @@ def to_arrays(games):
     flat = [s for game in games for s in game]
     if not flat:
         raise ValueError(
-            "no samples from greedy game generation — every game timed out or "
+            "no samples from greedy game generation - every game timed out or "
             "none were played; check --games/--opening-max/--max-moves")
     S = np.stack([s[0] for s in flat]).astype(np.float32, copy=False)
     P = np.stack([s[1] for s in flat]).astype(np.float32, copy=False)

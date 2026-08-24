@@ -115,9 +115,9 @@ class TrainingConfigMP:
     # --- self-play engine selector ---
     # "auto" (default) => derive from parallel_self_play (back-compat: parallel if
     # True else sequential). Explicit values override:
-    #   "sequential" — one game at a time, no batching.
-    #   "parallel"   — K worker processes + shared GPU batcher (leaf-parallel).
-    #   "vectorized" — in-process, G games share one predict_batch (Option B;
+    #   "sequential" - one game at a time, no batching.
+    #   "parallel"   - K worker processes + shared GPU batcher (leaf-parallel).
+    #   "vectorized" - in-process, G games share one predict_batch (Option B;
     #                  exact sequential MCTS per game, no straggler tail).
     self_play_mode: str = "auto"
     # Games run concurrently by the vectorized engine (GPU batch width).
@@ -163,10 +163,10 @@ class TrainingConfigMP:
     # so the resulting checkpoint can be replayed on the planes it actually saw.
     spec_version: int = CURRENT_SPEC
     # Early stop on racing decay. Greedy always has one seat a pure racer wins
-    # outright (seat 1 at N=2, seat 0 at N=4 — whoever the head-on pawn jump
+    # outright (seat 1 at N=2, seat 0 at N=4 - whoever the head-on pawn jump
     # favours), so the BEST per-seat greedy rate is a hard-ceiling probe: it
     # cannot drift up, and a sustained fall means the policy stopped racing.
-    # The gate cannot see this — in local_9x9_v6 it kept accepting (69%, 60%)
+    # The gate cannot see this - in local_9x9_v6 it kept accepting (69%, 60%)
     # while greedy went 60% -> 10%. Stop after this many consecutive evals at
     # least greedy_stop_drop below the best rate seen so far. 0 = disabled.
     greedy_stop_patience: int = 0
@@ -182,7 +182,7 @@ class TrainingConfigMP:
     greedy_min_seat_after: int = 0
     # Stop when this many consecutive greedy evals pass without a new pooled
     # peak. greedy_peak.pt already holds the deliverable, so running on is
-    # only justified while a new peak is plausible — v9's N=2 spent ~44
+    # only justified while a new peak is plausible - v9's N=2 spent ~44
     # iterations (~20 h) after its last improvement. 0 = off.
     peak_stall_evals: int = 0
     # Held-out baseline. greedy becomes a training opponent once the pool
@@ -200,7 +200,7 @@ class TrainingConfigMP:
     # Target share of each TRAINING BATCH drawn from anchored games. The shares
     # above govern how many games are produced; this governs how much gradient
     # they get, and the two diverge by ~9x at N=2 and ~20x at N=4. 0 = uniform,
-    # which let 35% of games become ~10% of the gradient — enough to acquire
+    # which let 35% of games become ~10% of the gradient - enough to acquire
     # racing at iteration 8 and not enough to still have it at iteration 12.
     anchored_sample_share: float = 0.0
     # Fraction of anchored games pinned to seat 0 (rest rotate over 1..N-1).
@@ -214,7 +214,7 @@ class TrainingConfigMP:
     # batch. n4_9x9_v9 measured why the data-mix lever is not enough: seat-0
     # anchored games held their configured 40 games/~580 samples every
     # iteration and the racer still eroded to 0/80 by iteration 28
-    # (first_wall_ply 3.4 -> 0.7) — 65%-walled self-play gradient outweighs
+    # (first_wall_ply 3.4 -> 0.7) - 65%-walled self-play gradient outweighs
     # any realistic sample share, so the prior must be defended in the loss.
     # 0 = off.
     anchor_weight: float = 0.0
@@ -238,11 +238,11 @@ class TrainingConfigMP:
             self.max_turns = self.max_game_moves
         if self.anchor_weight and not self.init_checkpoint:
             raise ValueError(
-                "anchor_weight requires init_checkpoint — the warm-start "
+                "anchor_weight requires init_checkpoint - the warm-start "
                 "policy is the anchor.")
         if self.opponent_past_share and not self.parallel_self_play:
             raise NotImplementedError(
-                "opponent_past_share needs the parallel engine — the champion "
+                "opponent_past_share needs the parallel engine - the champion "
                 "is served as model_id 1 on the shared inference batcher.")
         if not 0.0 <= self.clone_seat0_value_weight <= 1.0:
             raise ValueError(
@@ -289,7 +289,7 @@ class ReplayBufferMP:
 
     NOT thread-safe, and deliberately so: `add`, `sample_batch`, `save` and
     `load` all assume a single caller. The buffer lives in the main training
-    process only — self-play workers are separate processes that ship samples
+    process only - self-play workers are separate processes that ship samples
     back over a queue, and `training_loop_mp` adds and samples sequentially. The
     two deques and the source cache are mutated without a lock on that basis, so
     concurrent access would need locking added here first.
@@ -314,7 +314,7 @@ class ReplayBufferMP:
             sources = list(sources)
             if len(sources) != len(samples):
                 raise ValueError(
-                    f"{len(sources)} sources for {len(samples)} samples — the "
+                    f"{len(sources)} sources for {len(samples)} samples - the "
                     f"two deques must stay index-aligned.")
             self.sources.extend(sources)
         self._sources_cache = None      # eviction can shift every index
@@ -404,14 +404,14 @@ class ReplayBufferMP:
                 # them as self-play is what they were.
                 src = data["src"] if "src" in data else None
         except (OSError, ValueError, KeyError) as exc:
-            log(f"WARNING: could not read {path} ({exc}) — starting with an "
+            log(f"WARNING: could not read {path} ({exc}) - starting with an "
                 f"empty buffer, as if it had not been persisted.")
             return 0
         # A truncated src would silently shift every label onto the wrong sample
         # and quietly mis-weight the source mix for the rest of the run.
         if src is not None and len(src) != len(S):
             log(f"WARNING: {path} holds {len(src)} source labels for {len(S)} "
-                f"samples — dropping the labels and treating the buffer as "
+                f"samples - dropping the labels and treating the buffer as "
                 f"self-play rather than mislabelling it.")
             src = None
         # .copy() because iterating a stacked array yields views: one surviving
@@ -494,7 +494,7 @@ def sample_diagnostics(samples, num_players, model=None, max_states=512):
 
 def evals_since_last_peak(history):
     """Greedy evals since the last new pooled peak, from the writer's
-    greedy_peak_saved stamps — so a resume keeps the staleness clock."""
+    greedy_peak_saved stamps - so a resume keeps the staleness clock."""
     since = 0
     for r in history:
         if r.get("win_vs_greedy") is None:
@@ -542,7 +542,7 @@ def resolve_self_play_mode(cfg):
         return "parallel" if cfg.parallel_self_play else "sequential"
     if mode not in SELF_PLAY_MODES:
         raise ValueError(
-            f"self_play_mode={mode!r} is not recognised — expected 'auto' or one "
+            f"self_play_mode={mode!r} is not recognised - expected 'auto' or one "
             f"of {SELF_PLAY_MODES}.")
     return mode
 
@@ -557,7 +557,7 @@ def zero_sample_reason(it, engine, wins, games_per_iteration, checkpoint_dir):
             f"variant. It counts plies rather than rounds, so N=4 needs roughly "
             f"twice the N=2 value to give each player the same budget.")
     return (
-        f"[iter {it}] {engine} self-play produced 0 samples — aborting before "
+        f"[iter {it}] {engine} self-play produced 0 samples - aborting before "
         f"empty training. Check {os.path.join(checkpoint_dir, 'games.log')} for "
         f"'[GPU INFERENCE] CRASHED' or '[WORKER … ] CRASHED'.")
 
@@ -624,7 +624,7 @@ def _cpu_budget():
 
 
 def _gpu_desc():
-    """Device name and memory as this process sees it — a MIG slice, not the card."""
+    """Device name and memory as this process sees it - a MIG slice, not the card."""
     try:
         import torch
         if not torch.cuda.is_available():
@@ -647,7 +647,7 @@ def resource_banner(cfg):
     if cpus and cfg.num_workers > cpus:
         lines.append(
             f"WARNING: num_workers={cfg.num_workers} exceeds the {cpus:.0f} usable "
-            f"cpus — expect contention, and slowdowns that end in a killed kernel.")
+            f"cpus - expect contention, and slowdowns that end in a killed kernel.")
     return lines
 
 
@@ -655,7 +655,7 @@ def resource_banner(cfg):
 def _wall_budget(cfg, env, budget):
     """Apply the curriculum's wall budget to self-play only.
 
-    Restores on the way out even if self-play raises — eval, gating and the
+    Restores on the way out even if self-play raises - eval, gating and the
     greedy baseline must always play the full game, and the caller may keep
     using this env after a failed iteration.
     """
@@ -668,7 +668,7 @@ def _wall_budget(cfg, env, budget):
 
 def assert_resume_spec_matches(cfg, checkpoint_dir):
     """Refuse to resume a run onto input planes it was not trained on. Run dirs
-    predating the versioning have no spec_version key — those are all v1."""
+    predating the versioning have no spec_version key - those are all v1."""
     frozen = read_frozen_config(checkpoint_dir)
     if frozen is None:
         return
@@ -748,7 +748,7 @@ def load_past_champion(past_model, path, env):
     except Exception as exc:
         raise RuntimeError(
             f"past-opponent champion {path} failed to load or serve a warmup "
-            f"forward pass — it cannot be used on the inference batcher") from exc
+            f"forward pass - it cannot be used on the inference batcher") from exc
     return past_model
 
 
@@ -792,7 +792,7 @@ def _load_warm_start(target, path):
         target.load(path)
     except Exception as exc:
         raise RuntimeError(
-            f"init_checkpoint {path} failed to load — usually a channels/"
+            f"init_checkpoint {path} failed to load - usually a channels/"
             f"blocks/players mismatch with this run's network config.") from exc
 
 
@@ -821,7 +821,7 @@ def load_champion(best, model, checkpoint_dir, log=print):
         return True
     best.copy_weights_from(model)
     best.save(best_path)
-    log(f"WARNING: {best_path} is missing on resume — the gating champion has "
+    log(f"WARNING: {best_path} is missing on resume - the gating champion has "
         f"been re-seeded from the current model and saved. Until a candidate is "
         f"accepted, eval-vs-best compares the model against an identical copy of "
         f"itself and cannot exceed the accept threshold.")
@@ -892,7 +892,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         _log(
             f"Resumed from iteration {start_iter} (checkpoint: {checkpoint_dir})",
             f"Replay buffer restored: {n_buffered} samples" if n_buffered else
-            "Replay buffer not on disk — refilling from scratch")
+            "Replay buffer not on disk - refilling from scratch")
     else:
         if cfg.init_checkpoint:
             # Before init_champion, so the iteration-0 gate opponent is the
@@ -938,7 +938,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
     greedy_rates = [(r.get("win_vs_greedy") or 0.0) for r in history]
     # Peak staleness (see cfg.peak_stall_evals), resumed like everything else.
     evals_since_peak = evals_since_last_peak(history)
-    # Strongest POOLED greedy eval so far, ratcheted to greedy_peak.pt — distinct
+    # Strongest POOLED greedy eval so far, ratcheted to greedy_peak.pt - distinct
     # from best_seat_peak above, the per-seat watermark the decay watch tracks.
     # The gate can go a whole run without accepting while latest.pt declines
     # past the peak, so neither checkpoint holds the strongest model without it.
@@ -1030,7 +1030,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     # Either self-play stalled (usually: the GPU inference thread died
                     # and workers hung until the queue timeout) or every game timed
                     # out. Abort loudly instead of "training" on an empty buffer and
-                    # silently advancing completed_iterations — the run can then be
+                    # silently advancing completed_iterations - the run can then be
                     # resumed from the last good checkpoint.
                     raise RuntimeError(zero_sample_reason(
                         it + 1, "parallel", wins, cfg.games_per_iteration,
@@ -1065,7 +1065,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         win_dist = ", ".join(
             f"{'draw' if w is None else f'P{w}'}={wins[w]}"
             for w in sorted(wins, key=lambda k: (k is None, k)))
-        # Quoridor has no true draws — a None winner is a timeout at max_game_moves,
+        # Quoridor has no true draws - a None winner is a timeout at max_game_moves,
         # which yields an all-zero value target (weak learning signal). Track the rate
         # as a watchdog. avg_len divides by 2 because augment_mp doubles each game's
         # samples (original + mirror).
@@ -1090,7 +1090,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                  f"learner_sims/s={learner_sims_per_second}")
         if draw_rate > 0.20:
             _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: draw_rate "
-                 f"{100*draw_rate:.0f}% > 20% — games timing out at "
+                 f"{100*draw_rate:.0f}% > 20% - games timing out at "
                  f"max_game_moves={cfg.max_game_moves} (weak value signal).")
 
         # --- 2. train ---
@@ -1108,7 +1108,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             steps = cfg.train_steps_per_iter
         else:
             steps = 0
-            _log(f"[iter {it+1}/{cfg.num_iterations}] training skipped — "
+            _log(f"[iter {it+1}/{cfg.num_iterations}] training skipped - "
                  f"buffer {len(buffer)} < warmup {warmup} (filling)")
         for _ in range(steps):
             S, P, V, src = buffer.sample_batch(
@@ -1143,7 +1143,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         # model is not modified during eval, so latest.pt saved now == saved after
         # eval. Eval only affects best.pt (the gating champion) and this row's eval
         # columns, both updated in place below as eval progresses. An eval-phase
-        # interruption therefore costs only that iteration's eval — the ~1h of
+        # interruption therefore costs only that iteration's eval - the ~1h of
         # self-play + training is already durable and resume skips to the next iter.
         run_eval = (it + 1) % cfg.eval_every == 0 or (it +
                                                       1) == cfg.num_iterations
@@ -1174,7 +1174,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                    # the record rather than only in games.log.
                    wall_budget=budget,
                    wall_mask_fraction=frac or None,
-                   # Realised, not configured — the two diverge if the sampler
+                   # Realised, not configured - the two diverge if the sampler
                    # or a worker misbehaves, and only the realised one explains
                    # the data the iteration actually trained on.
                    opponent_mix=sp_stats.get("opponent_mix") or None,
@@ -1218,7 +1218,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
 
         _write_meta()  # durable resume point: self-play + training now survive a crash
 
-        # --- 3. accept/reject vs best (candidate rotates seats) — best-effort ---
+        # --- 3. accept/reject vs best (candidate rotates seats) - best-effort ---
         # Eval uses fewer sims than self-play when eval_simulations is set:
         # eval only measures relative strength, so it doesn't need full search
         # depth. This does NOT weaken the trained model (self-play keeps full sims).
@@ -1251,7 +1251,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 "adjudicate": False,
             }
             # How the GATE deviates from a normal eval, defined once for both
-            # engines: its own move cap (max_turns raised alongside — the env
+            # engines: its own move cap (max_turns raised alongside - the env
             # ends games there on its own) and timeout adjudication.
             gate_moves = cfg.gate_max_game_moves or cfg.max_game_moves
             gate_overrides = {
@@ -1261,7 +1261,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
             }
             if not cfg.parallel_eval:
                 # The learner's eval agent, shared by every sequential eval
-                # below — vs-random/greedy/minimax still run while the gate is
+                # below - vs-random/greedy/minimax still run while the gate is
                 # held, so it cannot live inside the vs-best branch.
                 # dirichlet_epsilon=0 → best-play eval (matches the parallel
                 # path); game diversity comes from the sampled opening.
@@ -1309,7 +1309,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     best.copy_weights_from(model)
                     best.save(os.path.join(checkpoint_dir, "best.pt"))
                     # Snapshot every champion, so the past-opponent share draws from
-                    # a spread of earlier selves rather than only the newest one —
+                    # a spread of earlier selves rather than only the newest one -
                     # sampling old versions is what stabilised Bansal et al.
                     if cfg.opponent_past_share:
                         champion_pool.append(snapshot_champion(
@@ -1318,7 +1318,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 min_decided = ev.num_games * ev.MIN_DECIDED_FRACTION
                 if not accepted and ev.decided_games < min_decided:
                     verdict = (f"reject (only {ev.decided_games}/{ev.num_games} games "
-                               f"decided — too few to gate on)")
+                               f"decided - too few to gate on)")
                     thin_evals += 1
                     # Nothing aggregated the per-eval line, so 13 consecutive
                     # unreachable evals went by unnoticed in v7.
@@ -1328,7 +1328,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                              f"fewer than the {min_decided:.0f} games the accept "
                              f"gate requires ({ev.MIN_DECIDED_FRACTION:.0%} of "
                              f"{ev.num_games}). The gate CANNOT accept at this "
-                             f"decided rate regardless of strength — lower "
+                             f"decided rate regardless of strength - lower "
                              f"eval_games, raise max_game_moves, or check that "
                              f"the champion can reach its goal at all.")
                 else:
@@ -1429,7 +1429,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                         model, os.path.join(checkpoint_dir, "greedy_peak.pt"))
                     row["greedy_peak_saved"] = True
                     _log(f"[iter {it+1}/{cfg.num_iterations}] new greedy peak "
-                         f"{evg_wr:.1%} — saved greedy_peak.pt")
+                         f"{evg_wr:.1%} - saved greedy_peak.pt")
                 else:
                     evals_since_peak += 1
                     if (cfg.peak_stall_evals
@@ -1442,7 +1442,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                             f"longer.")
 
                 # Arm the gate the moment the learner clears the absolute bar,
-                # and seed the champion from it — a racer that reaches its goal,
+                # and seed the champion from it - a racer that reaches its goal,
                 # so gate games can decide.
                 if not gate_armed and evg_wr > cfg.gate_arm_greedy_min:
                     gate_armed = True
@@ -1505,7 +1505,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                     floor_after = max(cfg.wall_mask_iters,
                                       getattr(cfg, "greedy_min_seat_after", 0))
                     if cfg.greedy_min_seat and it >= floor_after:
-                        # Armed only once the curriculum has had its chance —
+                        # Armed only once the curriculum has had its chance -
                         # every run is below the floor while still untrained.
                         greedy_below_floor = stalled_below_floor(
                             best_seat, cfg.greedy_min_seat, greedy_below_floor)
@@ -1519,7 +1519,7 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                                 f"delivering at this setting; more iterations will "
                                 f"not fix it.")
                     if greedy_below_peak > prev_below:
-                        _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: racing decay — "
+                        _log(f"[iter {it+1}/{cfg.num_iterations}] WARNING: racing decay - "
                              f"best seat {100*best_seat:.0f}% is {100*(best_seat_peak-best_seat):.0f} "
                              f"pts below the peak {100*best_seat_peak:.0f}% "
                              f"({greedy_below_peak}/{cfg.greedy_stop_patience} evals)")
@@ -1553,6 +1553,6 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
         if stop_reason:
             # meta.json and both checkpoints are already written for this
             # iteration, so the run resumes from here untouched if wanted.
-            _log(f"STOPPING EARLY at iteration {it+1}/{cfg.num_iterations} — {stop_reason}")
+            _log(f"STOPPING EARLY at iteration {it+1}/{cfg.num_iterations} - {stop_reason}")
             break
     return history

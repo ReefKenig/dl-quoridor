@@ -16,7 +16,7 @@ FPS = 30
 WINDOW_SIZE = 700
 MARGIN = 50
 
-# Colors — up to 4 players
+# Colors - up to 4 players
 PLAYER_COLORS = [
     (200, 50, 50),    # P0: red (human)
     (50, 100, 200),   # P1: blue
@@ -159,7 +159,7 @@ class GameUI:
             self.screen.blit(label, (center_x - label.get_width() // 2,
                                      center_y - label.get_height() // 2))
 
-        # Draw UI text — walls remaining for each player
+        # Draw UI text - walls remaining for each player
         y_offset = 5
         for i in range(self.num_players):
             txt = self.small_font.render(
@@ -257,7 +257,7 @@ def load_ai_and_run(board_size: int = 5, num_players: int = 4,
           f"{board_size}x{board_size} board...")
 
     # The registry owns the checkpoint, the architecture, the tensor spec and
-    # the wall count together — they are only correct as a set.
+    # the wall count together - they are only correct as a set.
     env, model, spec = load_variant(board_size, num_players)
     print(f"  {spec.max_walls} walls/player, tensor spec v{spec.tensor_spec}, "
           f"{spec.num_channels}ch/{spec.num_res_blocks} blocks, "

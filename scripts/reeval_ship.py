@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 NUM_GAMES = 240
 MCTS_SIMS = 100
 
-# tensor_spec mirrors runs/MODELS.json — both ship.pt files predate the v2
+# tensor_spec mirrors runs/MODELS.json - both ship.pt files predate the v2
 # distance-plane divisor, so they must be fed v1 planes to score meaningfully.
 MODELS = {
     "2p_vector": {

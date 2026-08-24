@@ -183,7 +183,7 @@ def test_batcher_expands_stacked_request_and_preserves_order():
 
 # --------------------------------------------------------------------------
 # VectorizedSearch parity: the step-by-step coordinator (Option B) must reproduce
-# the sequential search bit-for-bit — it is the correctness anchor for building
+# the sequential search bit-for-bit - it is the correctness anchor for building
 # vectorized self-play on top of it.
 # --------------------------------------------------------------------------
 

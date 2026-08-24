@@ -1,7 +1,7 @@
 """Wall curriculum: the self-play wall budget, and restoring it for eval.
 
 Budget 0 removes 128 of 140 actions at 9x9, so a leak in either direction is
-expensive and silent — a masked eval scores against the wrong game, and a
+expensive and silent - a masked eval scores against the wrong game, and a
 self-play iteration that failed to mask trains on the prior it was meant to fix.
 """
 import numpy as np
@@ -35,7 +35,7 @@ def test_a_zero_budget_offers_pawn_moves_only(board_size, num_players):
 
 
 def test_a_partial_budget_still_offers_every_wall_placement():
-    # The ramp limits how MANY walls a player may spend, not which squares —
+    # The ramp limits how MANY walls a player may spend, not which squares -
     # otherwise the policy would be learning a different action space each time.
     env = QuoridorEnvMP(board_size=9, num_players=2, max_walls_per_player=10,
                         wall_budget=2)

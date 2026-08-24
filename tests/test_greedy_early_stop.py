@@ -45,7 +45,7 @@ def test_single_catastrophic_eval_stops_at_patience_1():
 
 
 def test_recovery_clears_the_strike_counter():
-    # Down, back up, down again — never two consecutive, so it keeps running.
+    # Down, back up, down again - never two consecutive, so it keeps running.
     assert _watch([1.0, 0.5, 1.0, 0.5, 1.0], patience=2) is None
 
 
@@ -66,7 +66,7 @@ def test_peak_tracks_the_max_not_the_previous_eval(drop):
 
 # --- the significance gate ---------------------------------------------------
 #
-# Without it the peak — a max over seats AND evals — overshoots the true rate,
+# Without it the peak - a max over seats AND evals - overshoots the true rate,
 # so the 20-pt line lands near the mean and a stable model strikes on noise.
 
 def test_z_gate_is_on_by_default():
@@ -117,7 +117,7 @@ def test_zero_sample_size_cannot_veto_a_strike():
 # --- the never-acquired watch -------------------------------------------------
 #
 # Decay can only fire on a fall from a peak. probe_n4_ramp peaked at 0.10 against
-# a 0.20 drop, so `best <= peak - drop` was `0.0 <= -0.10` — never true — and the
+# a 0.20 drop, so `best <= peak - drop` was `0.0 <= -0.10` - never true - and the
 # run continued 10 hours past the point its answer was known.
 
 def test_decay_cannot_fire_when_the_peak_is_below_the_drop():

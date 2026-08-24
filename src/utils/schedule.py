@@ -33,7 +33,7 @@ def lr_at(schedule: str, base_lr: float, step: int, total_steps: int,
     """
     if schedule not in SCHEDULES:
         raise ValueError(
-            f"lr_schedule={schedule!r} is not recognised — expected one of {SCHEDULES}.")
+            f"lr_schedule={schedule!r} is not recognised - expected one of {SCHEDULES}.")
     if schedule == "constant":
         return base_lr
     return cosine_lr(base_lr, base_lr * final_frac, step, total_steps)
@@ -43,8 +43,8 @@ def wall_budget_at(it, mask_iters, ramp_hold, max_walls):
     """Walls each player starts self-play with at iteration `it` (0-based).
 
     0 while masked, then one more wall every `ramp_hold` iterations.
-    Note a budget of 1 already exposes the FULL 128-wall action space — the env
-    gates walls on `walls_remaining > 0` — so ramping above 1 changes nothing the
+    Note a budget of 1 already exposes the FULL 128-wall action space - the env
+    gates walls on `walls_remaining > 0` - so ramping above 1 changes nothing the
     policy can see. Kept for reproducing the earlier probes; prefer
     `wall_mask_fraction`. 0 = full allowance at once.
     """
@@ -125,7 +125,7 @@ def opponent_for_game(game_index, greedy_share, past_share=0.0):
 
     Anchored games put the model in one seat against a scripted racer, which is
     the distribution the greedy baseline scores and the one pure self-play
-    drifts away from — at N=4 it converges on jump-camping, which wins among
+    drifts away from - at N=4 it converges on jump-camping, which wins among
     four identical agents and loses to three racers. 'past' plays a frozen
     earlier champion, which is what keeps a self-play run from cycling.
 

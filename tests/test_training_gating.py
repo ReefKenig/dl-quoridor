@@ -14,7 +14,7 @@ from src.mcts.training_mp import init_champion, load_champion
 
 
 class FakeModel:
-    """Minimal stand-in for QuoridorModelMP — only weight identity matters here."""
+    """Minimal stand-in for QuoridorModelMP - only weight identity matters here."""
 
     def __init__(self, weights="init"):
         self.weights = weights
@@ -101,7 +101,7 @@ def test_resume_after_fallback_is_stable(ckpt_dir):
 # route: 128 of 131 legal opening actions at 9x9 are walls, so an untrained
 # champion spams walls and never advances. 134-151 of 160 gate games then ran
 # past max_game_moves, decided stayed under the 25% floor, and the gate could not
-# accept — which kept the champion at the random init. v7 accepted 0 times in 53
+# accept - which kept the champion at the random init. v7 accepted 0 times in 53
 # iterations while win_vs_best read as high as 1.000.
 
 class _Cfg:

@@ -2,7 +2,7 @@
 N-player evaluation harness.
 
 A candidate agent is rotated through all N seats; the remaining seats are filled
-by an `opponent` AgentFn (reused — agents are stateless per search). Fair share
+by an `opponent` AgentFn (reused - agents are stateless per search). Fair share
 for the candidate is 1/N, so `should_accept` compares the candidate win-rate to a
 threshold that should sit above 1/N (the training loop sets it per N).
 
@@ -55,7 +55,7 @@ def random_agent() -> AgentFn:
 
 
 def raw_policy_agent(model) -> AgentFn:
-    """Argmax of the raw policy over valid actions — no search. The strength
+    """Argmax of the raw policy over valid actions - no search. The strength
     floor: any MCTS on top only adds to it."""
     def agent(env, state, ply: int = 0, rng=None) -> int:
         policy, _ = model.predict(env.state_to_tensor(state))
@@ -83,7 +83,7 @@ def greedy_agent() -> AgentFn:
         for action in moves:
             nxt, *_ = env.step(state, action)
             dist = env.distance_to_goal(nxt, cp)
-            if dist is None:            # walled in by this move — never choose it
+            if dist is None:            # walled in by this move - never choose it
                 continue
             if best is None or dist < best:
                 best, ties = dist, [action]
@@ -103,7 +103,7 @@ WIN_SCORE = 1e6
 def _path_difference(env, state):
     """Per-player score: how far ahead of the nearest rival each player is.
 
-    Zero-sum at N=2, so the maxn backup below reduces to minimax there — the
+    Zero-sum at N=2, so the maxn backup below reduces to minimax there - the
     same reduction `run_reduction.py` proves for the search itself.
     """
     n = state.num_players
@@ -147,7 +147,7 @@ def minimax_agent(depth: int = 2, max_wall_candidates: int = 16) -> AgentFn:
     """Depth-limited maxn on the path-difference heuristic.
 
     The conventional Quoridor baseline, and unlike `greedy_agent` it PLACES
-    WALLS — so it probes the skill the 9x9 models lack and does not saturate
+    WALLS - so it probes the skill the 9x9 models lack and does not saturate
     the way vs-random does. Held out from training on purpose: see
     docs/opponent_pool_and_evaluation.md.
 
@@ -335,7 +335,7 @@ def evaluate_mp(env, candidate: AgentFn, opponent: AgentFn,
 
     on_progress: optional callback(games_done, total, result) invoked every few
     games so long eval phases don't look stuck (e.g. write to games.log).
-    base_seed: per-game RNG seed base — drives both the random opponent and the
+    base_seed: per-game RNG seed base - drives both the random opponent and the
     sampled opening, so games are distinct but reproducible.
     """
     N = env.num_players

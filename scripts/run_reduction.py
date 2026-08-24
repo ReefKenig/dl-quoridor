@@ -63,7 +63,7 @@ maxn = MCTSMaxN(config=MCTSConfig(num_simulations=SIMS, c_puct=1.41, dirichlet_e
 nega = MCTS(config=CfgOld(num_simulations=SIMS, c_puct=1.41, dirichlet_epsilon=0.0),
             evaluate_fn=eval_negamax)
 
-print("Deterministic evaluator, no Dirichlet, no rollout — must be bit-identical at N=2\n")
+print("Deterministic evaluator, no Dirichlet, no rollout - must be bit-identical at N=2\n")
 state = env.reset()
 bad = 0
 for i in range(8):
@@ -78,5 +78,5 @@ for i in range(8):
     state, _, done, _ = env.step(state, a)
     if done:
         break
-print("\n  RESULT:", "PASS — max^n(N=2) == negamax" if bad ==
+print("\n  RESULT:", "PASS - max^n(N=2) == negamax" if bad ==
       0 else f"FAIL ({bad} differ)")

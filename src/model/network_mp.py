@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # guarded so CPU-only hosts / non-CUDA builds are unaffected.
 # NOTE: torch.backends.cudnn.benchmark is intentionally left OFF. Leaf-parallel
 # self-play feeds VARIABLE batch sizes (wave sizes shrink on collisions), which
-# would make benchmark re-autotune kernels on nearly every forward — a net loss,
+# would make benchmark re-autotune kernels on nearly every forward - a net loss,
 # unlike the batch-size-agnostic TF32 flags.
 if torch.cuda.is_available():
     torch.backends.cuda.matmul.allow_tf32 = True

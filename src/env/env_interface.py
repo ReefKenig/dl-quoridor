@@ -36,7 +36,7 @@ class QuoridorEnvInterface(ABC):
 
     @abstractmethod
     def clone_state(self, state) -> Any:
-        """Deep copy of the game state. MCTS needs this — don't skip it."""
+        """Deep copy of the game state. MCTS needs this - don't skip it."""
         ...
 
     @abstractmethod
@@ -54,7 +54,7 @@ class QuoridorEnvInterface(ABC):
         """
         Convert game state to the observation tensor for the neural network.
 
-        Shape: (board_size, board_size, OBS_CHANNELS) — HWC format.
+        Shape: (board_size, board_size, OBS_CHANNELS) - HWC format.
             5×5 board: (5, 5, 11)
             9×9 board: (9, 9, 11)
 

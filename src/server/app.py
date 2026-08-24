@@ -42,7 +42,7 @@ def _build_loaded_variant(board_size, num_players):
     # max^n at N=2 is bit-identical to negamax (scripts/run_reduction.py) and is
     # what every variant trained under, so one path serves all of them. The
     # negamax MCTSConfig has no wall_candidates field, so routing N=2 through it
-    # silently searched 9x9 unrestricted — half the model's strength.
+    # silently searched 9x9 unrestricted - half the model's strength.
     def make_mcts(settings):
         cfg = MCTSConfigMaxN(
             num_simulations=settings["num_simulations"],

@@ -5,5 +5,5 @@ try:
     __all__ = ["QuoridorModel", "QuoridorNetwork",
                "QuoridorModelMP", "QuoridorNetworkMP"]
 except ImportError:
-    # torch not installed yet — network module won't be available
+    # torch not installed yet - network module won't be available
     __all__ = []

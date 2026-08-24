@@ -3,16 +3,16 @@ Correctness tests for GPU-batched parallel evaluation (`parallel_eval_mp.py`).
 
 Validated against the existing 5×5 checkpoints for BOTH N=2 and N=4:
 
-  T1  inference equivalence — model.predict_batch(stack) == model.predict(each)
+  T1  inference equivalence - model.predict_batch(stack) == model.predict(each)
       within tolerance (the batcher's only numerical assumption).
-  T2  exact eval equivalence (the gate) — evaluate_parallel_mp reproduces, field
+  T2  exact eval equivalence (the gate) - evaluate_parallel_mp reproduces, field
       for field, an in-process reference that uses the SAME predict_batch numerics
       (candidate vs champion, ε=0, deterministic). Catches any seat-rotation,
-      tally, aggregation, or model-id routing bug — if the batcher served a
+      tally, aggregation, or model-id routing bug - if the batcher served a
       candidate leaf with the champion net, the win tallies would diverge.
-  T3  exact vs-random equivalence — same, for the candidate-vs-random path
+  T3  exact vs-random equivalence - same, for the candidate-vs-random path
       (per-game seeding makes the random opponent reproducible).
-  T4  production-parity — evaluate_parallel_mp vs the real sequential evaluate_mp
+  T4  production-parity - evaluate_parallel_mp vs the real sequential evaluate_mp
       (predict-based, ε=0); win counts match within 1 game, absorbing the tiny
       predict-vs-predict_batch float gap measured in T1.
 
@@ -191,7 +191,7 @@ def test_parallel_vs_random_exact(key):
 
 def test_parallel_matches_sequential_evaluate_mp():
     """T4: parallel gating eval vs the REAL sequential evaluate_mp (predict-based, ε=0).
-    Win counts match within 1 game — the only slack is the predict-vs-predict_batch
+    Win counts match within 1 game - the only slack is the predict-vs-predict_batch
     float gap bounded by T1, which can flip a rare argmax tie."""
     spec = SPECS["n2"]
     if not _have(spec):

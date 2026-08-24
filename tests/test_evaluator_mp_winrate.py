@@ -1,6 +1,6 @@
 """EvalResultMP win-rate accounting under draws.
 
-Quoridor has no true draws — a draw is a timeout at max_game_moves, i.e. a game
+Quoridor has no true draws - a draw is a timeout at max_game_moves, i.e. a game
 that measured nothing. Counting those in the denominator made the N=4 gate
 unpassable: at the observed 84-90% timeout rate the candidate's ceiling was ~10%
 against a fair+margin bar of 28%.
@@ -28,7 +28,7 @@ def test_win_rate_is_over_decided_games():
 
 
 def test_no_draws_behaves_as_before():
-    """With zero draws the denominator is unchanged — no silent regression."""
+    """With zero draws the denominator is unchanged - no silent regression."""
     r = _result(num_players=2, games=40, wins=30, draws=0)
 
     assert r.decided_games == 40
@@ -58,7 +58,7 @@ def test_n4_high_draw_rate_can_now_accept():
 
 
 def test_too_few_decided_games_cannot_promote():
-    """A lucky single decided game reads as 100% — must not clear the gate."""
+    """A lucky single decided game reads as 100% - must not clear the gate."""
     r = _result(num_players=4, games=40, wins=1, draws=39)
 
     assert r.candidate_win_rate == 1.0

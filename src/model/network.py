@@ -2,10 +2,10 @@
 Dual-Headed Neural Network (Policy + Value)
 =============================================
 AlphaZero-style CNN/ResNet:
-    Input:  (batch, board_h, board_w, OBS_CHANNELS) — board tensor as produced by
+    Input:  (batch, board_h, board_w, OBS_CHANNELS) - board tensor as produced by
             QuoridorEnv.state_to_tensor (see src/env/tensor_spec.py)
-    Output: policy (batch, action_space_size) — move probabilities
-            value  (batch, 1)               — win probability [-1, 1]
+    Output: policy (batch, action_space_size) - move probabilities
+            value  (batch, 1)               - win probability [-1, 1]
 
 Losses:
     Policy: Cross-entropy against MCTS visit distribution
@@ -103,8 +103,8 @@ class QuoridorNetwork(nn.Module):
             x: (batch, 10, board_size, board_size) float tensor
 
         Returns:
-            policy: (batch, action_space_size) — log-softmax probabilities
-            value:  (batch, 1) — scalar in [-1, 1]
+            policy: (batch, action_space_size) - log-softmax probabilities
+            value:  (batch, 1) - scalar in [-1, 1]
         """
         # Shared trunk
         out = F.relu(self.bn_input(self.conv_input(x)))
@@ -211,9 +211,9 @@ class QuoridorModel:
         Single training step on a batch.
 
         Args:
-            states: (batch, board_size, board_size, 10) — HWC format
-            target_policies: (batch, action_space_size) — MCTS visit distributions
-            target_values: (batch,) — game outcomes in [-1, 1]
+            states: (batch, board_size, board_size, 10) - HWC format
+            target_policies: (batch, action_space_size) - MCTS visit distributions
+            target_values: (batch,) - game outcomes in [-1, 1]
 
         Returns:
             (policy_loss, value_loss) as Python floats

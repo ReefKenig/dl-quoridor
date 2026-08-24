@@ -1,7 +1,7 @@
-# `runs/` — training runs, versioned
+# `runs/` - training runs, versioned
 
 Every training run gets its own self-contained directory. Everything about a run
-— its config, its progress record, its logs, its checkpoints, and its figures —
+- its config, its progress record, its logs, its checkpoints, and its figures -
 lives together so a run is reproducible and identifiable at a glance.
 
 ## Naming convention
@@ -12,22 +12,22 @@ runs/<arch>_<board>_<version>/
 
 e.g. `n4_5x5_v3` = 4 players, 5×5 board, run version 3.
 Bump the `vN` suffix for each new run (set `RUN_DIR` in the `scripts/run_train_*.py`
-driver). Never overwrite a finished run — start a new version.
+driver). Never overwrite a finished run - start a new version.
 
 ## Layout of a single run
 
 ```
 runs/n4_5x5_v3/
-├── config.json        # frozen hyperparameters + env (TRACKED — reproducibility)
-├── meta.json          # completed_iterations + full per-iter history (TRACKED — progress)
+├── config.json        # frozen hyperparameters + env (TRACKED - reproducibility)
+├── meta.json          # completed_iterations + full per-iter history (TRACKED - progress)
 ├── train.log          # training stdout for this run (TRACKED)
 ├── figures/           # plots generated FROM this run's metrics (TRACKED)
 │   ├── n4_training_curves.png
 │   └── n4_full_dashboard.png
-├── latest.pt          # weights — ignored by git (large, regenerable)
-├── best.pt            # weights — ignored
-├── ship.pt            # the chosen release checkpoint — ignored
-└── peaks/             # auto-captured new-high snapshots (watch_peak.py) — ignored
+├── latest.pt          # weights - ignored by git (large, regenerable)
+├── best.pt            # weights - ignored
+├── ship.pt            # the chosen release checkpoint - ignored
+└── peaks/             # auto-captured new-high snapshots (watch_peak.py) - ignored
     └── peak_iter69_100.pt ...
 ```
 
@@ -36,18 +36,18 @@ runs/n4_5x5_v3/
 **Metadata-only versioning.** Git tracks the things that record *progress and
 identity* and are small: `config.json`, `meta.json`, `*.log`, and `figures/*.png`.
 Git ignores all model weights (`*.pt`/`*.pth`/`*.onnx`) and replay buffers
-(`*.pkl`) — they're large and reproducible from the config + code. See `.gitignore`.
+(`*.pkl`) - they're large and reproducible from the config + code. See `.gitignore`.
 
 So in git, each run reads as: which config produced what curve, iteration by
-iteration — without dragging multi-MB binaries into history.
+iteration - without dragging multi-MB binaries into history.
 
 ## Current runs
 
 | Run                 | Players | Status                  | Iters | Notes                          |
 |---------------------|---------|-------------------------|-------|--------------------------------|
-| `legacy_2p`         | 2       | legacy (old trainer)    | —     | older `metrics_full.json` format; `model_export.pt` is a downloaded snapshot |
+| `legacy_2p`         | 2       | legacy (old trainer)    | -     | older `metrics_full.json` format; `model_export.pt` is a downloaded snapshot |
 | `n4_5x5_v1`         | 4       | superseded              | 20    | early run                      |
-| `n4_5x5_v2_killed`  | 4       | killed mid-run          | —     | abandoned                      |
+| `n4_5x5_v2_killed`  | 4       | killed mid-run          | -     | abandoned                      |
 | `n4_5x5_v3`         | 4       | **current / finished**  | 70    | `ship.pt` is the release model |
 
 > `config.json` is only present for runs created after this convention (v3+).

@@ -159,7 +159,7 @@ def test_every_configured_setting_reaches_the_training_config(notebook):
     keys = _config_keys_that_are_training_fields("n2")
     missing = [k for k in keys if k not in passed]
     assert not missing, (
-        f"{notebook} never passes {missing} to TrainingConfigMP — the run would "
+        f"{notebook} never passes {missing} to TrainingConfigMP - the run would "
         f"silently train with the dataclass default instead of the config value.")
 
 
@@ -260,7 +260,7 @@ def test_the_notebook_runs_dev(notebook):
     without their fixes, and how the first v11 launch died on an import."""
     text = (_repo_root() / notebook).read_text()
     assert 'BRANCH = \\"dev\\"' in text, (
-        f"{notebook} does not run dev — a stale branch here runs old code.")
+        f"{notebook} does not run dev - a stale branch here runs old code.")
 
 
 def test_the_levers_this_work_added_are_all_configured():

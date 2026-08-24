@@ -455,7 +455,7 @@ def training_loop(
         avg_lp = total_loss_p / max(total_steps, 1)
         avg_lv = total_loss_v / max(total_steps, 1)
         logger.info(
-            "  Avg losses — policy: %.4f, value: %.4f",
+            "  Avg losses - policy: %.4f, value: %.4f",
             avg_lp,
             avg_lv,
         )

@@ -121,7 +121,7 @@ class TrainingLogger:
     """
     Dual-mode logger: wandb (remote) + CSV (local fallback).
 
-    wandb is optional — if not installed or not configured, falls back
+    wandb is optional - if not installed or not configured, falls back
     to CSV-only mode silently. This way the training loop never crashes
     because of a logging issue.
     """

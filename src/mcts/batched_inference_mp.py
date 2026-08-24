@@ -12,7 +12,7 @@ Both parallel self-play (`parallel_self_play_mp.py`) and parallel evaluation
     per model, and scatters the per-row (policy, value_vec) back to each worker.
 
 Self-play uses a single model (`model_id` 0); evaluation uses two (candidate=0,
-champion=1). This module owns the reusable machinery — the multi-model batcher
+champion=1). This module owns the reusable machinery - the multi-model batcher
 thread, the worker↔batcher plumbing (`make_batched_evaluate`), process spawning,
 results draining, and graceful shutdown (`run_batched_inference`). The game-loop
 bodies (what a worker actually plays) live in the caller modules.
@@ -123,7 +123,7 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
 
             # Each request carries a numpy array: a single (C,H,W) leaf or a stacked
             # (b,C,H,W) batch of leaves from one worker (leaf-parallel). Sending numpy
-            # (not torch tensors) keeps queue pickling plain — no torch shared-memory
+            # (not torch tensors) keeps queue pickling plain - no torch shared-memory
             # IPC (torch_shm_manager), which is both fragile and slower. Expand every
             # request into rows, run one forward per model_id, then regroup per request.
             rows = []                 # (model_id, chw_numpy)
@@ -183,7 +183,7 @@ def _inference_worker(models, request_queue, response_queues, batch_size,
     except Exception as e:
         log(f"[GPU INFERENCE] CRASHED: {e}\n{traceback.format_exc()}")
         stop_flag.set()
-        # Unblock the main loop right away — it is waiting on results_queue and
+        # Unblock the main loop right away - it is waiting on results_queue and
         # would otherwise sit until the (multi-thousand-second) timeout, since
         # the worker processes cannot observe stop_flag.
         if results_queue is not None:
@@ -200,7 +200,7 @@ def make_batched_evaluate(worker_id, request_queue, response_queue, env,
     Converts HWC numpy → CHW float tensor, ships `(worker_id, model_id, tensor)`
     to the batcher, and blocks (bounded) on the worker's response queue. A single
     batched forward pass returns in well under a second, so a multi-minute stall
-    means the batcher died — raise so the worker exits instead of hanging forever
+    means the batcher died - raise so the worker exits instead of hanging forever
     and burning the whole results-queue timeout.
     """
     def batched_evaluate(state, model_id=0):
@@ -212,7 +212,7 @@ def make_batched_evaluate(worker_id, request_queue, response_queue, env,
         except Exception:
             raise RuntimeError(
                 f"worker {worker_id}: no GPU response within {response_timeout:.0f}s "
-                f"— inference batcher likely crashed (check games.log).")
+                f"- inference batcher likely crashed (check games.log).")
         return np.asarray(policy), np.asarray(value_vec)
     return batched_evaluate
 
@@ -236,7 +236,7 @@ def make_batched_evaluate_many(worker_id, request_queue, response_queue, env,
         except Exception:
             raise RuntimeError(
                 f"worker {worker_id}: no GPU response within {response_timeout:.0f}s "
-                f"— inference batcher likely crashed (check games.log).")
+                f"- inference batcher likely crashed (check games.log).")
         return [(np.asarray(p), np.asarray(v)) for (p, v) in replies]
     return evaluate_many
 
@@ -314,7 +314,7 @@ def run_batched_inference(models, worker_target, per_worker_payloads, batch_size
             except Exception:
                 log(f"[{label}] WARNING: results queue timeout after {queue_timeout:.0f}s "
                     f"({workers_done}/{num_workers} workers done). The GPU inference "
-                    f"thread is likely wedged (no exception, no progress) — check "
+                    f"thread is likely wedged (no exception, no progress) - check "
                     f"nvidia-smi for orphaned worker processes from a hard-killed run.")
                 break
             tag = msg[0]

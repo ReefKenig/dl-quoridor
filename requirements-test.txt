@@ -4,7 +4,7 @@
 # (gunicorn, pygame, wandb, shimmy), which no test imports, and an
 # unpinned `torch>=2.0.0` that resolves against PyPI rather than the CPU wheel
 # index. CI installs CPU torch first and then this file, so torch is absent here
-# on purpose — listing it would re-resolve it.
+# on purpose - listing it would re-resolve it.
 #
 # gymnasium and stable-baselines3 are here for exactly one file,
 # tests/test_sb3.py, which imports them unguarded: without them that file errors

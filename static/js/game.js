@@ -40,7 +40,7 @@ async function startGame() {
     isPlayerTurn = true;
     gameState = data;
 
-    statusText.innerText = `🎮 ${numPlayers}-player game on ${currentGridSize}×${currentGridSize} — Your turn!`;
+    statusText.innerText = `🎮 ${numPlayers}-player game on ${currentGridSize}×${currentGridSize} - Your turn!`;
     drawBoard();
   } catch (error) {
     console.log("Failed to start game:", error);

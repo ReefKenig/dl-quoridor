@@ -36,9 +36,17 @@ RENAMED_CONFIG_KEYS = {
     "reward_decay": "discount",                   # default 0.97 vs config 0.99
     "training_epochs": "train_steps_per_iter",    # default 200 vs config 600
     "dirichlet_epsilon": "mcts_dirichlet_epsilon",
-    "max_rollout_depth": "max_turns",             # default 300 vs config 200
     "dirichlet_alpha": "mcts_dirichlet_alpha",    # was inert until v8: MCTSConfig default 0.3
     "c_puct": "mcts_c_puct",                      # was inert until v8: MCTSConfig default 1.41
+}
+
+# config key -> (TrainingConfigMP field, helper that derives it). These reach a
+# run through a helper rather than a plain rc[...] read, because the value has to
+# be reconciled with another setting first and the helper is where that invariant
+# lives: max_rollout_depth is shared across variants while max_game_moves is
+# per-variant, and the smaller of the two ends the game.
+DERIVED_CONFIG_KEYS = {
+    "max_rollout_depth": ("max_turns", "env_max_turns"),
 }
 
 # Resolved config keys that deliberately do not reach TrainingConfigMP: they
@@ -185,11 +193,13 @@ def test_the_renamed_key_mapping_is_not_stale():
     resolved, fields = _resolved("n2"), _training_fields()
     unclassified = sorted(k for k in resolved if k not in fields
                           and k not in RENAMED_CONFIG_KEYS
+                          and k not in DERIVED_CONFIG_KEYS
                           and k not in NON_TRAINING_CONFIG_KEYS)
     assert not unclassified, (
         f"{unclassified} in {CONFIG} match no TrainingConfigMP field. Add each to "
-        f"RENAMED_CONFIG_KEYS with the field it feeds, or to "
-        f"NON_TRAINING_CONFIG_KEYS if it is not a training setting.")
+        f"RENAMED_CONFIG_KEYS with the field it feeds, to DERIVED_CONFIG_KEYS if a "
+        f"helper reconciles it, or to NON_TRAINING_CONFIG_KEYS if it is not a "
+        f"training setting.")
 
 
 def test_the_renamed_key_mapping_is_well_formed():
@@ -244,11 +254,13 @@ def test_the_notebook_is_valid_json(notebook):
 
 
 @pytest.mark.parametrize("notebook", NOTEBOOKS)
-def test_the_notebook_tracks_a_branch_that_exists(notebook):
-    """`git checkout .` discards local edits first, so a stale BRANCH silently
-    runs old code — which is how v4/v5 ran without their intended fixes."""
+def test_the_notebook_runs_dev(notebook):
+    """`git checkout .` discards local edits first, so a BRANCH left on a merged
+    feature branch runs old source under a new notebook. That is how v4/v5 ran
+    without their fixes, and how the first v11 launch died on an import."""
     text = (_repo_root() / notebook).read_text()
-    assert 'BRANCH = \\"' in text
+    assert 'BRANCH = \\"dev\\"' in text, (
+        f"{notebook} does not run dev — a stale branch here runs old code.")
 
 
 def test_the_levers_this_work_added_are_all_configured():
@@ -265,3 +277,50 @@ def test_both_variants_resolve_the_same_field_set():
     the two runs quietly uses a default."""
     assert (_config_keys_that_are_training_fields("n2")
             == _config_keys_that_are_training_fields("n4"))
+
+
+def _helper_bindings(notebook):
+    """Notebook constant name -> function it is assigned from (`X = helper(...)`)."""
+    bindings = {}
+    for tree in _parsed_cells(notebook):
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and isinstance(node.value, ast.Call)
+                    and isinstance(node.value.func, ast.Name)):
+                bindings[node.targets[0].id] = node.value.func.id
+    return bindings
+
+
+@pytest.mark.parametrize("notebook", NOTEBOOKS)
+def test_derived_config_keys_reach_their_field_through_their_helper(notebook):
+    """A derived setting must be passed, and passed from the deriving helper.
+
+    Reading `max_rollout_depth` straight into `max_turns` is what let the env cut
+    every N=4 game off at 200 plies while the config read 320: the raw key is
+    only half of the setting.
+    """
+    passed = _training_config_kwargs(notebook)
+    resolved, helpers = _resolved("n4"), _helper_bindings(notebook)
+    broken = []
+    for key, (field, helper) in sorted(DERIVED_CONFIG_KEYS.items()):
+        if key not in resolved:
+            continue
+        value = passed.get(field)
+        if value is None:
+            broken.append(f"{field} (from {key!r}) is never passed")
+        elif not (isinstance(value, ast.Name) and helpers.get(value.id) == helper):
+            broken.append(f"{field} is passed but is not derived by {helper}()")
+    assert not broken, (
+        f"{notebook}: {broken}. Reading the raw key instead of calling the helper "
+        f"drops the invariant the helper exists to enforce.")
+
+
+def test_the_derived_key_mapping_is_well_formed():
+    resolved, fields = _resolved("n4"), _training_fields()
+    import src.utils.config as config_module
+    for key, (field, helper) in DERIVED_CONFIG_KEYS.items():
+        assert field in fields, f"{field} is not a TrainingConfigMP field"
+        assert key in resolved, f"{key} is no longer in {CONFIG}"
+        assert callable(getattr(config_module, helper, None)), (
+            f"{helper} is not a helper in src.utils.config")

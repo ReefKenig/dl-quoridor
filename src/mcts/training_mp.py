@@ -227,6 +227,15 @@ class TrainingConfigMP:
     clone_seat0_value_weight: float = 1.0
 
     def __post_init__(self):
+        # The smaller of the two limits ends the game, so an env cutoff below
+        # the driver's cap shortens every game silently.
+        if self.max_turns < self.max_game_moves:
+            logger.warning(
+                "max_turns=%d is below max_game_moves=%d, which would end every "
+                "game %d plies early; raising it to match.",
+                self.max_turns, self.max_game_moves,
+                self.max_game_moves - self.max_turns)
+            self.max_turns = self.max_game_moves
         if self.anchor_weight and not self.init_checkpoint:
             raise ValueError(
                 "anchor_weight requires init_checkpoint — the warm-start "

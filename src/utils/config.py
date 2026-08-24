@@ -168,6 +168,19 @@ def ply_budget_per_player(raw: Dict[str, Any], variant: str) -> float:
     return merged["max_game_moves"] / num_players
 
 
+def env_max_turns(raw: Dict[str, Any], variant: str) -> int:
+    """The env's no-winner cutoff for a run, which may never bind first.
+
+    The env stops at `max_turns`, the drivers stop rolling out at
+    `max_game_moves`, and the smaller wins. `max_rollout_depth` is shared while
+    `max_game_moves` is per-variant, so deriving the cutoff is what keeps the
+    pair from diverging.
+    """
+    merged = resolve_run_config(raw, variant)
+    return max(int(merged.get("max_rollout_depth", 0)),
+               int(merged["max_game_moves"]))
+
+
 def load_config(path: str = "configs/config_5x5.json") -> AppConfig:
     """
     Load a JSON config file and return a typed AppConfig.

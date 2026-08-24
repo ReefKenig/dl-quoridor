@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from src.utils.config import (ply_budget_per_player, resolve_run_config,
-                              resolve_variant)
+from src.utils.config import (env_max_turns, ply_budget_per_player,
+                              resolve_run_config, resolve_variant)
 
 CONFIG_9X9 = Path("configs/config_9x9.json")
 
@@ -213,3 +213,55 @@ def test_the_ui_entrypoint_defaults_to_no_root_noise():
     defaults = dict(zip([a.arg for a in fn.args.args][-len(fn.args.defaults):],
                         [ast.literal_eval(d) for d in fn.args.defaults]))
     assert defaults["dirichlet_epsilon"] == 0.0
+
+
+# --- the env cutoff vs the driver cap -----------------------------------------
+# The smaller of max_turns and max_game_moves ends the game. The pair was never
+# validated, so every 9x9 N=4 run from v5 to v10 played 200 plies against a
+# configured 320.
+
+
+def test_env_cutoff_is_never_below_the_driver_cap(cfg9):
+    """The invariant the pair 200/320 violated, as an executable rule."""
+    for variant in ("n2", "n4"):
+        cap = resolve_run_config(cfg9, variant)["max_game_moves"]
+        assert env_max_turns(cfg9, variant) >= cap, (
+            f"{variant}: the env would end a game before max_game_moves={cap}")
+
+
+def test_env_cutoff_lifts_the_n4_run_to_its_configured_cap(cfg9):
+    """Pins the fix: the shared 200 no longer shortens the four-player game."""
+    assert resolve_run_config(cfg9, "n4")["max_rollout_depth"] == 200
+    assert env_max_turns(cfg9, "n4") == 320
+
+
+def test_env_cutoff_leaves_n2_alone(cfg9):
+    """200 already exceeds the 160-ply cap, so N=2 was never affected."""
+    assert env_max_turns(cfg9, "n2") == 200
+
+
+def test_env_cutoff_keeps_a_rollout_depth_above_the_cap():
+    raw = {"mcts": {"max_rollout_depth": 400},
+           "training": {"max_game_moves": 160},
+           "variants": {"n2": {"num_players": 2}}}
+
+    assert env_max_turns(raw, "n2") == 400
+
+
+def test_training_config_raises_a_short_env_cutoff_to_the_cap(caplog):
+    """The backstop for the construction sites the notebooks do not own."""
+    import logging
+
+    from src.mcts.training_mp import TrainingConfigMP
+
+    with caplog.at_level(logging.WARNING):
+        cfg = TrainingConfigMP(num_players=4, max_game_moves=320, max_turns=200)
+
+    assert cfg.max_turns == 320
+    assert "max_turns=200" in caplog.text
+
+
+def test_training_config_leaves_a_sufficient_env_cutoff_alone():
+    from src.mcts.training_mp import TrainingConfigMP
+
+    assert TrainingConfigMP(max_game_moves=160, max_turns=200).max_turns == 200

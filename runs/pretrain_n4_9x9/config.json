@@ -1,0 +1,10 @@
+{
+  "spec_version": 2,
+  "num_players": 4,
+  "board_size": 9,
+  "max_walls_per_player": 5,
+  "max_game_moves": 320,
+  "eval_opening_plies": 4,
+  "mcts_wall_candidates": 0,
+  "_note": "Supervised greedy-distillation checkpoint, not an RL run. Fields recovered from pretrain_report (agreement 94.56%, opening wall mass 4e-06, 2000 games / 99178 samples, 4 epochs, seed 0). Recorded so read_frozen_config stops defaulting this spec-2 checkpoint to spec 1."
+}

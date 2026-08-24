@@ -54,24 +54,57 @@ OPPONENTS = [s for s in os.environ.get("OPPONENTS", "greedy,minimax").split(",")
 # Separate OUT_DIR keeps a focused side-run from overwriting the main table.
 OUT_DIR = os.environ.get("OUT_DIR", "outputs")
 
-# Newest first. spec and opening plies come from each run's frozen config.json
-# where it has one; a run with no spec_version recorded predates v2, so it is v1.
-CHECKPOINTS = [
-    ("runs/n2_9x9_v9/greedy_peak.pt", 2, 9),
-    ("runs/n2_9x9_v10/greedy_peak.pt", 2, 9),
-    ("runs/n4_9x9_v10/greedy_peak.pt", 4, 9),
-    ("runs/n4_9x9_v9/greedy_peak.pt", 4, 9),
-    ("runs/n2_9x9_v7/latest.pt", 2, 9),
-    ("runs/n4_9x9_v7/ship.pt", 4, 9),
-    ("runs/probe_n2_ramp/best.pt", 2, 9),
-    ("runs/probe_n4_ramp/best.pt", 4, 9),
-    ("runs/n2_9x9_v6/ship.pt", 2, 9),
-    ("runs/n4_9x9_v6/ship.pt", 4, 9),
-    ("runs/n2_9x9_v4/ship.pt", 2, 9),
-    ("runs/n4_9x9_v5/ship.pt", 4, 9),
-    ("runs/n2_5x5_v1/ship.pt", 2, 5),
-    ("runs/n4_5x5_v3/ship.pt", 4, 5),
-]
+# Discovered from runs/, not hand-listed: a new run joins the table by existing,
+# so scoring it no longer requires an edit here. spec and opening plies come from
+# each run's frozen config.json; a run with no spec_version recorded predates v2.
+# One checkpoint per run, by preference; greedy_peak.pt first because ship.pt has
+# twice been the wrong file (v8 shipped iteration 20 after the peak was lost,
+# v9's N=4 ship was the eroded model).
+PREFERRED = ("greedy_peak.pt", "ship.pt", "best.pt", "latest.pt", "pretrain.pt")
+# Runs the canonical table scores on a different file than PREFERRED would pick.
+OVERRIDES = {"n2_9x9_v7": "latest.pt"}
+# A killed run and the local CPU probes measure nothing comparable.
+EXCLUDED = {"legacy_2p", "n4_5x5_v2_killed", "local_9x9_v6",
+            "local_9x9_n4_masked"}
+
+
+def discover_checkpoints(root="runs"):
+    """(path, num_players, board) per run dir, newest checkpoint first.
+
+    Skips are printed, never silent: a run missing from the table should be
+    visible as a decision or a defect, not an absence.
+    """
+    found = []
+    for name in sorted(os.listdir(root)):
+        run_dir = os.path.join(root, name)
+        if name in EXCLUDED or not os.path.isdir(run_dir):
+            continue
+        frozen = read_frozen_config(run_dir) or {}
+        n, board = frozen.get("num_players"), frozen.get("board_size")
+        if not n or not board:
+            if os.path.exists(os.path.join(run_dir, "config.json")):
+                print(f"SKIP {run_dir} (config lacks num_players/board_size)")
+            continue
+        fname = OVERRIDES.get(name) or next(
+            (f for f in PREFERRED
+             if os.path.exists(os.path.join(run_dir, f))), None)
+        if fname is None or not os.path.exists(os.path.join(run_dir, fname)):
+            print(f"SKIP {run_dir} (no checkpoint among {', '.join(PREFERRED)})")
+            continue
+        path = os.path.join(run_dir, fname)
+        found.append((os.path.getmtime(path), path, int(n), int(board)))
+    return [(p, n, b) for _, p, n, b in sorted(found, reverse=True)]
+
+
+# Lazy: tests import helpers from this module and must not trigger a disk scan.
+_CHECKPOINTS = None
+
+
+def checkpoints():
+    global _CHECKPOINTS
+    if _CHECKPOINTS is None:
+        _CHECKPOINTS = discover_checkpoints()
+    return _CHECKPOINTS
 
 
 def geometry(num_players, board):
@@ -190,7 +223,7 @@ def score_greedy_vs_minimax(num_players, board):
 
 
 def selected():
-    return [(p, n, b) for p, n, b in CHECKPOINTS
+    return [(p, n, b) for p, n, b in checkpoints()
             if not ONLY or any(tag in p for tag in ONLY)]
 
 

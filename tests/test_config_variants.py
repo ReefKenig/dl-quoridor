@@ -140,7 +140,7 @@ def test_run_config_variant_overrides_win(cfg9):
     n2, n4 = resolve_run_config(cfg9, "n2"), resolve_run_config(cfg9, "n4")
 
     assert (n2["max_game_moves"], n4["max_game_moves"]) == (160, 320)
-    assert (n2["num_iterations"], n4["num_iterations"]) == (60, 40)
+    assert (n2["num_iterations"], n4["num_iterations"]) == (150, 40)
     # A variant key beats the section it also lives in — the two runs share a
     # 16-cpu quota, so neither may take the parallel section's worker count.
     assert n2["num_workers"] == n4["num_workers"] == 8

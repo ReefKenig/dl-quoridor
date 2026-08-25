@@ -263,6 +263,17 @@ def test_the_notebook_runs_dev(notebook):
         f"{notebook} does not run dev - a stale branch here runs old code.")
 
 
+@pytest.mark.parametrize("notebook", NOTEBOOKS)
+def test_a_dedicated_clone_runs_its_own_branch(notebook):
+    """The dev default steers only the shared clone: a separate clone checked
+    out to a feature branch runs that branch, so a feature run cannot swap code
+    under a live run in the shared clone (workers re-import src per iteration)."""
+    text = (_repo_root() / notebook).read_text()
+    assert "rev-parse --abbrev-ref HEAD" in text, (
+        f"{notebook} lost the dedicated-clone branch detection.")
+    assert "BRANCH = _cur[0]" in text
+
+
 def test_the_levers_this_work_added_are_all_configured():
     """Named explicitly so removing one from the config is a visible decision."""
     keys = _config_keys_that_are_training_fields("n2")

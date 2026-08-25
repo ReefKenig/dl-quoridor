@@ -8,7 +8,7 @@
             "num_players": 2,
             "board_size": 5,
             "tensor_spec": 1,
-            "eval_win_rate": "97.9% ± 1.9% vs random (fair share 50%)",
+            "eval_win_rate": "97.9% \u00b1 1.9% vs random (fair share 50%)",
             "eval_games": 240,
             "notes": "Trained with max^n MCTS (= negamax at N=2), 30 iterations, augmentation + gamma=0.99. 40/40 vs the greedy racer at 200 sims (20 games/seat, tensor spec v1) and plays the seat asymmetry optimally: seat 1 wins in 3 turns with ZERO walls (a pure race - two racers meet head-on and the second jumps the first, gaining a tempo), seat 0 wins in 4 turns with exactly 1 wall, the minimum investment that beats the deficit. Strongest model in the repo. Its gamma=0.97 sibling (runs/n2_5x5_g097_v1) scores 20/40 - identical seat 1, but 0/20 in seat 0 where it over-walls (3/game): a steeper discount suppresses paying a tempo now to win later."
         },
@@ -19,9 +19,9 @@
             "num_players": 4,
             "board_size": 5,
             "tensor_spec": 1,
-            "eval_win_rate": "84.2% ± 4.6% vs random (fair share 25%)",
+            "eval_win_rate": "84.2% \u00b1 4.6% vs random (fair share 25%)",
             "eval_games": 240,
-            "notes": "Trained with max^n MCTS, 70 iterations, augmentation + γ=0.99. Peak checkpoint iter 68."
+            "notes": "Trained with max^n MCTS, 70 iterations, augmentation + \u03b3=0.99. Peak checkpoint iter 68."
         },
         "2p_legacy": {
             "path": "runs/legacy_2p/best/model.pt",
@@ -58,7 +58,7 @@
             "tensor_spec": 1,
             "eval_win_rate": "~88-96% vs random (fair share 25%) BUT 0% vs a greedy pawn-rush",
             "eval_games": 40,
-            "notes": "Full-size 9x9, 5 walls/player. max^n MCTS, 600 sims, γ=0.99. best.pt = accept-gated peak of n4_9x9_v5. NOT DEMO-READY: 0/40 vs the greedy racer on all 14 training evals. Same pathology as 2p_9x9. The vs-random number is saturated - do not quote it alone."
+            "notes": "Full-size 9x9, 5 walls/player. max^n MCTS, 600 sims, \u03b3=0.99. best.pt = accept-gated peak of n4_9x9_v5. NOT DEMO-READY: 0/40 vs the greedy racer on all 14 training evals. Same pathology as 2p_9x9. The vs-random number is saturated - do not quote it alone."
         },
         "2p_9x9_v9": {
             "path": "runs/n2_9x9_v9/greedy_peak.pt",
@@ -97,7 +97,20 @@
             "tensor_spec": 2,
             "eval_win_rate": "12.5% pooled vs the greedy racer (iter 8, 80 games); seat 0 10/20 = 50%, seats 1-3 0/20",
             "eval_games": 80,
-            "notes": "THE N=4 DELIVERABLE. Full-size 9x9, 5 walls/player, warm-started from runs/pretrain_n4_9x9. Best N=4 result to date - seat 0 at 50% is 6x anything the six pre-warm-start runs managed (none passed 2/80). Pooled 12.5% is below the 25% fair share because only seat 0 ever wins. Identical to that run's ship.pt. Pinned by path: the gate accepted at iter 20, where the racer scores 0/80, so best.pt holds a dead model."
+            "notes": "Superseded by 4p_9x9_v12 (repinned 2026-08-25); kept as the record. Full-size 9x9, 5 walls/player, warm-started from runs/pretrain_n4_9x9. Best N=4 result to date - seat 0 at 50% is 6x anything the six pre-warm-start runs managed (none passed 2/80). Pooled 12.5% is below the 25% fair share because only seat 0 ever wins. Identical to that run's ship.pt. Pinned by path: the gate accepted at iter 20, where the racer scores 0/80, so best.pt holds a dead model."
+        },
+        "4p_9x9_v12": {
+            "path": "runs/n4_9x9_v12/greedy_peak.pt",
+            "architecture": "QuoridorModelMP (vector value head, N=4)",
+            "in_channels": 15,
+            "num_players": 4,
+            "board_size": 9,
+            "num_channels": 128,
+            "num_res_blocks": 8,
+            "tensor_spec": 2,
+            "eval_win_rate": "15.0% pooled vs the greedy racer at the held-out protocol (K=16, 200 sims, 40 games/seat); seat 0 24/40 = 60%, seats 1-3 0/40",
+            "eval_games": 160,
+            "notes": "THE N=4 DELIVERABLE. v12 = v11 + the clone seat-0 value defense (clone_seat0_value_weight 0.0): the first N=4 run that never eroded to zero - it dipped to 3/20 at iter 16 and RECOVERED to 15/20. Repinned 2026-08-25 on the matched 40/seat ladder: pretrain 34/40 > v12 24/40 > v10 14/40, each step significant (v12>v10 z~2.2 p~.03 on seat 0). Still below the supervised warm start it was trained from (RL retains, does not yet add); only RL-trained checkpoints ship. greedy_peak.pt = iteration 8; identical to that run's ship.pt. Serve at K=16 (wall_candidates on the variant)."
         }
     },
     "usage": {
@@ -132,7 +145,7 @@
             "wall_candidates": 16
         },
         "9x9_4p": {
-            "model": "4p_9x9_v10",
+            "model": "4p_9x9_v12",
             "max_walls": 5,
             "max_turns": 320,
             "wall_candidates": 16

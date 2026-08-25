@@ -1,0 +1,11 @@
+{
+  "spec_version": 2,
+  "num_players": 4,
+  "board_size": 9,
+  "max_walls_per_player": 5,
+  "max_game_moves": 320,
+  "eval_opening_plies": 4,
+  "mcts_wall_candidates": 0,
+  "policy_head": "factored",
+  "_note": "Supervised greedy-distillation checkpoint (factored policy head), not an RL run. Fields recovered from pretrain_report.json (agreement 94.56%, opening wall mass 2.8e-05, opening wall mass before training 0.5442, 2000 games / 99178 samples, 4 epochs, seed 0, raw-policy eval seat0 20/20 vs 3 greedies). Locally validated 2026-08-25 as the v13 factored-policy-head gate before remote GPU spend. Recorded so read_frozen_config stops defaulting this spec-2 checkpoint to spec 1."
+}

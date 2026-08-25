@@ -53,7 +53,7 @@ DERIVED_CONFIG_KEYS = {
 # configure the model, the optimizer or the raw MCTSConfig instead.
 NON_TRAINING_CONFIG_KEYS = frozenset({
     "is_poc", "num_channels", "num_res_blocks", "learning_rate", "weight_decay",
-    "temperature", "init_seed",
+    "temperature", "init_seed", "policy_head",
 })
 
 # Settings where a hardcoded literal in the notebook would be an expensive,

@@ -63,6 +63,9 @@ def main():
     ap.add_argument("--discount-unit", default="ply", choices=["ply", "round"])
     ap.add_argument("--channels", type=int, default=128)
     ap.add_argument("--blocks", type=int, default=8)
+    ap.add_argument("--policy-head", choices=["flat", "factored"], default="flat",
+                    help="must match the run's network.policy_head - a "
+                         "flat-head pretrain will not load into a factored run")
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--weight-decay", type=float, default=1e-4)
     ap.add_argument("--batch-size", type=int, default=128)
@@ -99,7 +102,8 @@ def main():
         action_space_size=compute_action_space_size(args.board),
         in_channels=3 * args.players + 3, num_channels=args.channels,
         num_res_blocks=args.blocks, num_players=args.players,
-        lr=args.lr, weight_decay=args.weight_decay, device=args.device)
+        lr=args.lr, weight_decay=args.weight_decay, device=args.device,
+        policy_head=args.policy_head)
     print(f"device={model.device} | opening wall mass before: "
           f"{opening_wall_mass(model, env):.4f}")
 
@@ -128,7 +132,7 @@ def main():
               "board": args.board, "spec_version": CURRENT_SPEC,
               "channels": args.channels, "blocks": args.blocks,
               "discount": args.discount, "discount_unit": args.discount_unit,
-              "seed": args.seed}
+              "seed": args.seed, "policy_head": args.policy_head}
     if args.eval_games:
         print(f"Raw-policy eval vs greedy ({args.eval_games} games/seat)...")
         # The same harness and RNG scheme as every other eval in the repo, so

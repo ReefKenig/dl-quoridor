@@ -16,7 +16,9 @@
     },
     "network": {
         "num_res_blocks": 8,
-        "num_channels": 128
+        "num_channels": 128,
+        "_policy_head_note": "flat splits nothing; factored splits move-vs-wall from placement so the wall class cannot dominate the prior by count. v13's future-work item: attack the prior directly.",
+        "policy_head": "flat"
     },
     "training": {
         "_iters_note": "num_iterations/games_per_iteration are per variant; N=4 games run ~3x longer so it buys fewer of them for the same wall clock",
@@ -143,7 +145,9 @@
             "_eval_greedy_note": "80, not 40: the greedy eval rotates the candidate through all N seats, so at N=4 a 40-game eval is only 10 games per seat - and greedy_stop_patience keys on the BEST per-seat rate, which at n=10 has SE ~0.095, making the 20-pt abort threshold barely 2 sigma. 80 gives 20/seat, matching n2, where 20-pt is ~4 sigma. Costs ~20s an eval against a ~500s iteration.",
             "_sizing_note": "40 x 40, smaller than n2's 60 x 80 because N=4 games run to a 320-ply cap and cost roughly twice as much per game. Both earlier N=4 probes used the phase/ramp curriculum now known to be inert, so the mixed curriculum is untried here - this run is a real test, not a repeat. The racing-decay and never-acquired stops bound it.",
             "anchored_seat0_share": 0.5,
-            "init_checkpoint": "runs/pretrain_n4_9x9/pretrain.pt",
+            "_policy_head_note": "v13 = v12's config plus the factored head. Its pretrain is regenerated under the new architecture (a flat-head pretrain will not load); the clone seat-0 value defense stays on.",
+            "policy_head": "factored",
+            "init_checkpoint": "runs/pretrain_n4_9x9_factored/pretrain.pt",
             "anchor_weight": 0.2,
             "clone_seat0_value_weight": 0.0
         }

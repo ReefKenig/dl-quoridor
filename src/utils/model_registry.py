@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import torch
+
 from src.utils.checkpoint import resolve_ship_checkpoint
 
 REGISTRY_PATH = Path(__file__).resolve().parents[2] / "runs" / "MODELS.json"
@@ -128,7 +130,7 @@ def build_env(spec: VariantSpec):
                          spec_version=spec.tensor_spec)
 
 
-def build_model(spec: VariantSpec, action_space_size: int):
+def build_model(spec: VariantSpec, action_space_size: int, policy_head="flat"):
     from src.model.network_mp import QuoridorModelMP
 
     return QuoridorModelMP(board_size=spec.board_size,
@@ -136,7 +138,17 @@ def build_model(spec: VariantSpec, action_space_size: int):
                            in_channels=spec.in_channels,
                            num_channels=spec.num_channels,
                            num_res_blocks=spec.num_res_blocks,
-                           num_players=spec.num_players)
+                           num_players=spec.num_players,
+                           policy_head=policy_head)
+
+
+def checkpoint_policy_head(path):
+    """policy_head recorded on a checkpoint, so the demo builds the matching
+    architecture before loading rather than guessing "flat" and crashing."""
+    from src.model.network_mp import head_type_from_state
+
+    ck = torch.load(path, map_location="cpu", weights_only=False)
+    return ck.get("policy_head") or head_type_from_state(ck["network_state"])
 
 
 def load_variant(board_size: int, num_players: int, registry=None, root=None,
@@ -149,7 +161,8 @@ def load_variant(board_size: int, num_players: int, registry=None, root=None,
     """
     spec = variant_spec(board_size, num_players, registry=registry, root=root)
     env = build_env(spec)
-    model = build_model(spec, env.action_space_size)
+    policy_head = checkpoint_policy_head(spec.checkpoint) if spec.is_loadable else "flat"
+    model = build_model(spec, env.action_space_size, policy_head=policy_head)
 
     if spec.is_loadable:
         model.load(spec.checkpoint)

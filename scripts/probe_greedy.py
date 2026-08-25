@@ -14,11 +14,13 @@ import argparse
 import json
 import os
 
+import torch
+
 from src.env.quoridor_env_mp import QuoridorEnvMP, compute_action_space_size
 from src.mcts.evaluator_mp import (NUM_MOVE_ACTIONS, eval_rng, greedy_agent,
                                    mcts_agent_mp, play_eval_game)
 from src.mcts.training_mp import TrainingConfigMP, _mcts
-from src.model.network_mp import QuoridorModelMP
+from src.model.network_mp import QuoridorModelMP, head_type_from_state
 from src.utils.config import read_frozen_config
 from src.utils.checkpoint import resolve_ship_checkpoint
 
@@ -128,10 +130,15 @@ def main():
                         max_turns=rc["max_game_moves"],
                         max_walls_per_player=rc["max_walls_per_player"],
                         spec_version=rc["spec_version"])
+    # Read the checkpoint's own head type rather than assume flat - a factored
+    # run (e.g. n4_9x9_v13) would otherwise fail to load with a mismatch error.
+    ck = torch.load(path, map_location="cpu", weights_only=False)
+    policy_head = ck.get("policy_head") or head_type_from_state(ck["network_state"])
     model = QuoridorModelMP(
         board_size=board, action_space_size=compute_action_space_size(board),
         in_channels=3 * N + 3, num_channels=channels,
-        num_res_blocks=blocks, num_players=N, device="auto")
+        num_res_blocks=blocks, num_players=N, policy_head=policy_head,
+        device="auto")
     model.load(path)
 
     # Without this the probe searches all 131 opening actions while the model

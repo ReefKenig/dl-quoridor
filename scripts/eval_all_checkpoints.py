@@ -35,7 +35,7 @@ from src.env.quoridor_env_mp import (NUM_MOVE_ACTIONS, QuoridorEnvMP,
 from src.mcts.evaluator_mp import (DEFAULT_EVAL_OPENING_PLIES, evaluate_mp,
                                    greedy_agent, mcts_agent_mp, minimax_agent)
 from src.mcts.mcts_maxn import MCTSConfig, MCTSMaxN
-from src.model.network_mp import QuoridorModelMP
+from src.model.network_mp import QuoridorModelMP, head_type_from_state
 from src.utils.config import read_frozen_config
 
 GAMES_PER_SEAT = int(os.environ.get("GAMES_PER_SEAT", 20))
@@ -153,10 +153,12 @@ def load(path, num_players, board):
     ck = torch.load(path, map_location="cpu", weights_only=False)
     state = ck["network_state"]
     channels, blocks = infer_shape(state)
+    policy_head = ck.get("policy_head") or head_type_from_state(state)
     model = QuoridorModelMP(
         board_size=board, action_space_size=compute_action_space_size(board),
         in_channels=3 * num_players + 3, num_channels=channels,
         num_res_blocks=blocks, num_players=num_players,
+        policy_head=policy_head,
         device=os.environ.get("DEVICE", "auto"))
     model.network.load_state_dict(state)
     return model, channels, blocks

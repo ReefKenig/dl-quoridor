@@ -68,3 +68,27 @@ def test_idle_sessions_expire(monkeypatch):
 
     assert "stale" not in server_app.SESSION_GAMES
     assert "fresh" in server_app.SESSION_GAMES
+
+
+def test_state_does_not_create_an_evicted_session():
+    server_app.SESSION_GAMES.clear()
+
+    response = app.test_client().get(
+        f"/api/{BOARD_2P}/state?game_id=evicted"
+    )
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "No active game"}
+
+
+def test_reset_normalizes_player_count_and_invalid_seat():
+    server_app.SESSION_GAMES.clear()
+    response = app.test_client().post(
+        f"/api/{BOARD_2P}/reset",
+        json={"num_players": 3, "human_seat": None, "game_id": "invalid"},
+    )
+
+    assert response.status_code == 200
+    state = response.get_json()
+    assert state["num_players"] == 2
+    assert state["human_seat"] == 0

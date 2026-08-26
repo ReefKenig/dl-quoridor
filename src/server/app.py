@@ -274,11 +274,12 @@ def get_state(board_size):
         or request.headers.get(GAME_ID_HEADER)
         or _get_request_game_id()
     )
-    runtime = _get_session_runtime(
-        board_size=5, num_players=2, difficulty=DEFAULT_DIFFICULTY, game_id=game_id
-    )
-    if runtime["state"] is None:
+    session_id = _resolve_session_id(game_id)
+    runtime = SESSION_GAMES.get(session_id)
+    if runtime is None or runtime["state"] is None:
         return jsonify({"error": "No active game"}), 404
+    runtime["last_seen"] = time.monotonic()
+    SESSION_GAMES.move_to_end(session_id)
     response = _extract_positions(runtime["env"], runtime["state"])
     response["game_id"] = _resolve_session_id(game_id)
     response["human_seat"] = runtime.get("human_seat", 0)

@@ -71,7 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Hide/show seats 3 and 4
       Array.from(seatSelect.options).forEach(option => {
         if (option.value === '2' || option.value === '3') {
-          option.style.display = is4p ? 'block' : 'none';
+          option.disabled = !is4p;
         }
       });
 

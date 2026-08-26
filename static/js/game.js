@@ -29,6 +29,14 @@ function createInitialGameState() {
   };
 }
 
+async function readResponseData(response) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) {
+    throw new Error(data.error || `Request failed (${response.status})`);
+  }
+  return data;
+}
+
 async function startGame() {
   if (moveController) {
     moveController.abort();
@@ -63,6 +71,7 @@ async function startGame() {
 
   drawWallsInfo();
   resizeCanvas();
+  drawBoard();
 
   try {
     const response = await fetch(
@@ -83,7 +92,7 @@ async function startGame() {
     );
 
     if (signal.aborted) return;
-    const data = await response.json();
+    const data = await readResponseData(response);
     currentGameId = data.game_id || currentGameId;
     gameState = data;
     userSeat = Number.isInteger(data.human_seat) ? data.human_seat : userSeat;
@@ -102,6 +111,7 @@ async function startGame() {
   } catch (error) {
     if (error.name === "AbortError") return;
     console.log("Failed to start game:", error);
+    isPlayerTurn = false;
     statusText.innerText = "❌ Server connection lost.";
   }
 }
@@ -147,7 +157,7 @@ async function restartGame() {
     );
 
     if (signal.aborted) return;
-    const data = await response.json();
+    const data = await readResponseData(response);
     currentGameId = data.game_id || currentGameId;
     gameState = data;
     userSeat = Number.isInteger(data.human_seat) ? data.human_seat : userSeat;
@@ -164,6 +174,7 @@ async function restartGame() {
   } catch (error) {
     if (error.name === "AbortError") return;
     console.error("Failed to restart:", error);
+    isPlayerTurn = false;
     statusText.innerText = "❌ Server connection lost.";
   }
 }

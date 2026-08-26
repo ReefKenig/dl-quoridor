@@ -13,6 +13,7 @@ let numPlayers = parseInt(document.getElementById("num-players").value);
 let currentDifficulty = document.getElementById("difficulty").value;
 let cellSize = 0;
 let isPlayerTurn = true;
+let userSeat = 0;
 let hoverState = null;
 
 let gameState = {
@@ -58,3 +59,26 @@ function resizeCanvas() {
 
 resizeCanvas();
 window.addEventListener("resize", resizeCanvas);
+
+document.addEventListener("DOMContentLoaded", () => {
+  const playerCountSelect = document.getElementById('num-players');
+  const seatSelect = document.getElementById('seat-select');
+
+  if (playerCountSelect && seatSelect) {
+    playerCountSelect.addEventListener('change', (e) => {
+      const is4p = e.target.value === '4';
+
+      // Hide/show seats 3 and 4
+      Array.from(seatSelect.options).forEach(option => {
+        if (option.value === '2' || option.value === '3') {
+          option.style.display = is4p ? 'block' : 'none';
+        }
+      });
+
+      // If switching to 2-player while holding seat 3 or 4, reset to Random
+      if (!is4p && parseInt(seatSelect.value) > 1) {
+        seatSelect.value = '-1';
+      }
+    });
+  }
+});

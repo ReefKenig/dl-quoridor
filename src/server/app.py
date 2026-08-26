@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import random
 from collections import OrderedDict
 
 import numpy as np
@@ -114,6 +115,7 @@ def _make_session_runtime(board_size=5, num_players=2, difficulty=DEFAULT_DIFFIC
         "mcts": mcts,
         "temperature": settings["temperature"],
         "state": env.reset(),
+        "human_seat": 0,
     }
 
 
@@ -185,16 +187,55 @@ def reset_game(board_size):
         or request.headers.get(GAME_ID_HEADER)
     )
 
+    # 1. Extracted requested seat (default to random if -1 or not provided)
+    raw_seat = data.get("human_seat", -1)
+
     try:
         bs = int(str(board_size).lower().split("x")[0])
     except (ValueError, IndexError):
         bs = 5
 
+    # 2. Resolve random seat
+    if str(raw_seat).lower() == 'random' or int(raw_seat) < 0:
+        human_seat = random.randint(0, num_players - 1)
+    else:
+        human_seat = int(raw_seat) % num_players
+
+    # Sync the session to get fresh environment and MCTS instance
     runtime = _sync_session_runtime(
         board_size=bs, num_players=num_players, difficulty=difficulty, game_id=game_id
     )
-    response = _extract_positions(runtime["env"], runtime["state"])
+    runtime["human_seat"] = human_seat
+
+    env = runtime["env"]
+    mcts = runtime["mcts"]
+    state = runtime["state"]
+    initial_state = state
+    temperature = runtime["temperature"]
+
+    initial_ai_steps = []
+
+    # 3. Stea the AI until it reaches the human's seat
+    while env.get_current_player(state) != human_seat and not state.game_over:
+        action_probs = mcts.search(env, state, temperature=temperature)
+        if temperature < 0.1:
+            ai_action = int(np.argmax(action_probs))
+        else:
+            ai_action = int(np.random.choice(len(action_probs), p=action_probs))
+
+        state, reward, done, info = env.step(state, ai_action)
+        runtime["state"] = state
+
+        # Package the intermediate step for the frontend animation
+        step_data = _extract_positions(env, state)
+        initial_ai_steps.append(step_data)
+
+    # 4. Return the initial state alongside the AI's opening moves
+    response = _extract_positions(runtime["env"], initial_state)
     response["game_id"] = _resolve_session_id(game_id)
+    response["human_seat"] = human_seat
+    response["initial_ai_steps"] = initial_ai_steps
+
     return jsonify(response)
 
 
@@ -212,6 +253,7 @@ def get_state(board_size):
         return jsonify({"error": "No active game"}), 404
     response = _extract_positions(runtime["env"], runtime["state"])
     response["game_id"] = _resolve_session_id(game_id)
+    response["human_seat"] = runtime.get("human_seat", 0)
     return jsonify(response)
 
 
@@ -231,6 +273,7 @@ def process_move(board_size):
     env = runtime["env"]
     mcts = runtime["mcts"]
     temperature = runtime["temperature"]
+    human_seat = runtime.get("human_seat", 0)
 
     try:
         if state is None:
@@ -243,7 +286,7 @@ def process_move(board_size):
         human_action = None
 
         if action_type == "pawn":
-            curr_r, curr_c = state.positions[0]
+            curr_r, curr_c = state.positions[human_seat]
             dr = target["row"] - curr_r
             dc = target["col"] - curr_c
             human_action = MOVE_MAP.get((dr, dc))
@@ -279,7 +322,7 @@ def process_move(board_size):
             return jsonify(response)
 
         ai_steps = []
-        while env.get_current_player(state) != 0 and not state.game_over:
+        while env.get_current_player(state) != human_seat and not state.game_over:
             action_probs = mcts.search(env, state, temperature=temperature)
             if temperature < 0.1:
                 ai_action = int(np.argmax(action_probs))

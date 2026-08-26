@@ -53,7 +53,7 @@ function drawBoard() {
     ctx.globalAlpha = 0.4;
 
     if (hoverState.type === "pawn") {
-      drawPawn(hoverState.row, hoverState.col, PLAYER_COLORS[0], null);
+      drawPawn(hoverState.row, hoverState.col, PLAYER_COLORS[userSeat], null);
     } else if (hoverState.type === "h_wall") {
       ctx.fillStyle = "#e94560";
       ctx.fillRect(
@@ -116,7 +116,7 @@ function drawWallsInfo() {
     : Array(np).fill(0);
   const cp = gameState.current_player || 0;
 
-  const infoKey = walls.join(",") + ":" + cp;
+  const infoKey = walls.join(",") + ":" + cp + ":" + userSeat;
   if (infoKey === lastWallsInfoKey) return;
   lastWallsInfoKey = infoKey;
 
@@ -124,7 +124,7 @@ function drawWallsInfo() {
   let html = "";
   for (let i = 0; i < np; i++) {
     const color = PLAYER_COLORS[i];
-    const label = i === 0 ? "You" : `P${i + 1}`;
+    const label = i === userSeat ? "You" : `P${i + 1}`;
     const count = walls[i];
     const bricks = [];
     for (let w = 0; w < maxWalls; w++) {

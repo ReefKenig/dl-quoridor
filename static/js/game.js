@@ -3,14 +3,45 @@
 let moveController = null;
 let currentGameId = null;
 
+function createInitialGameState() {
+  const mid = Math.floor(currentGridSize / 2);
+  const walls = currentGridSize === 5
+    ? (numPlayers === 2 ? 3 : 2)
+    : (numPlayers === 2 ? 10 : 5);
+  const players = [
+    { row: currentGridSize - 1, col: mid },
+    { row: 0, col: mid },
+  ];
+  if (numPlayers > 2) {
+    players.push(
+      { row: mid, col: 0 },
+      { row: mid, col: currentGridSize - 1 },
+    );
+  }
+  return {
+    players,
+    h_walls: [],
+    v_walls: [],
+    valid_moves: [],
+    walls_remaining: Array(numPlayers).fill(walls),
+    num_players: numPlayers,
+    current_player: 0,
+  };
+}
+
 async function startGame() {
   if (moveController) {
     moveController.abort();
     moveController = null;
   }
+
   const newGridSize = parseInt(document.getElementById("board-size").value);
   numPlayers = parseInt(document.getElementById("num-players").value);
   currentDifficulty = document.getElementById("difficulty").value;
+
+  const seatSelect = document.getElementById("seat-select");
+  const rawSeat = seatSelect ? parseInt(seatSelect.value) : -1;
+  userSeat = rawSeat >= 0 ? rawSeat % numPlayers : Math.floor(Math.random() * numPlayers);
 
   if (newGridSize !== currentGridSize) {
     currentGridSize = newGridSize;
@@ -21,7 +52,11 @@ async function startGame() {
   gameScreen.classList.remove("hidden");
   updateDifficultySwitcher();
   resetWallsInfoCache();
-  gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
+
+  gameState = createInitialGameState();
+  isPlayerTurn = false; // Lock board while loading
+  statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}. ${userSeat === 0 ? "Your turn." : "Waiting for your turn..."}`;
+
   drawWallsInfo();
   resizeCanvas();
 
@@ -31,17 +66,32 @@ async function startGame() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty, game_id: currentGameId }),
-      },
+        body: JSON.stringify(
+          {
+            num_players: numPlayers,
+            difficulty: currentDifficulty,
+            game_id: currentGameId,
+            human_seat: userSeat
+          }
+        ),
+      }
     );
 
     const data = await response.json();
     currentGameId = data.game_id || currentGameId;
-    isPlayerTurn = true;
     gameState = data;
+    userSeat = data.human_seat; // Capture randomized/selected seat
 
-    statusText.innerText = `🎮 ${numPlayers}-player game on ${currentGridSize}×${currentGridSize} - Your turn!`;
     drawBoard();
+
+    // Play AI opening moves if human is not Seat 0
+    if (data.initial_ai_steps && data.initial_ai_steps.length > 0) {
+      await playAiSequence(data.initial_ai_steps);
+    }
+
+    statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}! Your turn.`;
+    isPlayerTurn = true; // Unlock board
+
   } catch (error) {
     console.log("Failed to start game:", error);
     statusText.innerText = "❌ Server connection lost.";
@@ -55,8 +105,15 @@ async function restartGame() {
   }
   restartBtn.classList.add("btn-hidden");
   resetWallsInfoCache();
+
+  const seatSelect = document.getElementById("seat-select");
+  const rawSeat = seatSelect ? parseInt(seatSelect.value) : -1;
+  userSeat = rawSeat >= 0 ? rawSeat % numPlayers : Math.floor(Math.random() * numPlayers);
+
   isPlayerTurn = false;
-  gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
+  gameState = createInitialGameState();
+  statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}. ${userSeat === 0 ? "Your turn." : "Waiting for your turn..."}`;
+
   drawWallsInfo();
   drawBoard();
 
@@ -66,17 +123,29 @@ async function restartGame() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty, game_id: currentGameId }),
-      },
+        body: JSON.stringify(
+          {
+            num_players: numPlayers,
+            difficulty: currentDifficulty,
+            game_id: currentGameId,
+            human_seat: userSeat
+          }),
+      }
     );
+
     const data = await response.json();
-
     currentGameId = data.game_id || currentGameId;
-    isPlayerTurn = true;
     gameState = data;
+    userSeat = data.human_seat;
 
-    statusText.innerText = `🎮 New game! Your turn (Player 1).`;
     drawBoard();
+
+    if (data.initial_ai_steps && data.initial_ai_steps.length > 0) {
+      await playAiSequence(data.initial_ai_steps);
+    }
+    statusText.innerText = `🎮 New game! You are Player ${userSeat + 1}. Your turn.`;
+    isPlayerTurn = true;
+
   } catch (error) {
     console.error("Failed to restart:", error);
     statusText.innerText = "❌ Server connection lost.";
@@ -120,31 +189,32 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
   // Optimistically show the player's move immediately
   if (type === "pawn" && gameState.players && gameState.players.length > 0) {
-    gameState.players[0] = { row: targetRow, col: targetCol };
+    gameState.players[userSeat] = { row: targetRow, col: targetCol };
   } else if (type === "h_wall") {
     if (!gameState.h_walls) gameState.h_walls = [];
     gameState.h_walls.push({ row: targetRow, col: targetCol });
-    if (gameState.walls_remaining && gameState.walls_remaining[0] > 0) {
-      gameState.walls_remaining[0]--;
+    if (gameState.walls_remaining && gameState.walls_remaining[userSeat] > 0) {
+      gameState.walls_remaining[userSeat]--;
     }
   } else if (type === "v_wall") {
     if (!gameState.v_walls) gameState.v_walls = [];
     gameState.v_walls.push({ row: targetRow, col: targetCol });
-    if (gameState.walls_remaining && gameState.walls_remaining[0] > 0) {
-      gameState.walls_remaining[0]--;
+    if (gameState.walls_remaining && gameState.walls_remaining[userSeat] > 0) {
+      gameState.walls_remaining[userSeat]--;
     }
   }
+
+  gameState.current_player = (gameState.current_player + 1) % numPlayers;
+
   drawBoard();
 
+  const thinkingText = numPlayers === 2 ? "🤖 Opponent thinking..." : "🤖 Opponents thinking...";
+
   if (type === "pawn") {
-    statusText.innerText = numPlayers === 2
-      ? "P2 thinking..."
-      : "P2, P3, P4 thinking...";
+    statusText.innerText = thinkingText;
   } else {
     showToast("Wall placed", 1500);
-    statusText.innerText = numPlayers === 2
-      ? "P2 thinking..."
-      : "P2, P3, P4 thinking...";
+    statusText.innerText = thinkingText;
   }
 
   if (moveController) moveController.abort();
@@ -175,7 +245,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
     if (data.error) {
       showToast("⚠️ " + data.error);
-      statusText.innerText = "🎯 Your turn (Player 1)";
+      statusText.innerText = `🎯 Your turn (Player ${userSeat + 1})`;
       isPlayerTurn = true;
 
       document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
@@ -196,31 +266,32 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
     // Animate AI moves one by one
     if (data.ai_steps && data.ai_steps.length > 0) {
-      let prevWallCount = (gameState.h_walls ? gameState.h_walls.length : 0)
-        + (gameState.v_walls ? gameState.v_walls.length : 0);
-
-      for (let i = 0; i < data.ai_steps.length; i++) {
-        if (signal.aborted) return;
-        const step = data.ai_steps[i];
-        const playerNum = i + 2;
-        const newWallCount = (step.h_walls ? step.h_walls.length : 0)
-          + (step.v_walls ? step.v_walls.length : 0);
-        const placedWall = newWallCount > prevWallCount;
-        prevWallCount = newWallCount;
-
-        if (numPlayers > 2) {
-          statusText.innerText = placedWall
-            ? `P${playerNum} placed a wall`
-            : `P${playerNum} moved`;
-        }
-        await sleep(400);
-        if (signal.aborted) return;
-        gameState = step;
-        drawBoard();
-        if (i < data.ai_steps.length - 1) {
-          await sleep(300);
-        }
+      if (data.ai_steps && data.ai_steps.length > 0) {
+        await playAiSequence(data.ai_steps, signal);
       }
+
+      // for (let i = 0; i < data.ai_steps.length; i++) {
+      //   if (signal.aborted) return;
+      //   const step = data.ai_steps[i];
+      //   const playerNum = i + 2;
+      //   const newWallCount = (step.h_walls ? step.h_walls.length : 0)
+      //     + (step.v_walls ? step.v_walls.length : 0);
+      //   const placedWall = newWallCount > prevWallCount;
+      //   prevWallCount = newWallCount;
+
+      //   if (numPlayers > 2) {
+      //     statusText.innerText = placedWall
+      //       ? `P${playerNum} placed a wall`
+      //       : `P${playerNum} moved`;
+      //   }
+      //   await sleep(400);
+      //   if (signal.aborted) return;
+      //   gameState = step;
+      //   drawBoard();
+      //   if (i < data.ai_steps.length - 1) {
+      //     await sleep(300);
+      //   }
+      // }
     }
 
     // Always use newState as the authoritative final state
@@ -233,13 +304,12 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
     if (data.status === "game_over") {
       const winner = data.winner;
-      if (winner === "human" || winner === 0) {
+      if (winner === "human" || winner === userSeat) {
         statusText.innerText = "🏆 You win! Well played!";
       } else if (winner === null || winner === undefined) {
         statusText.innerText = "🤝 It's a draw!";
       } else {
-        const pNum = data.ai_steps ? data.ai_steps.length + 1 : 2;
-        statusText.innerText = `😤 Player ${pNum} (AI) beat you this time!`;
+        statusText.innerText = `😤 An AI beat you this time!`;
       }
       isPlayerTurn = false;
       restartBtn.classList.remove("btn-hidden");
@@ -249,7 +319,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       return;
     }
 
-    statusText.innerText = "🎯 Your turn (Player 1)";
+    statusText.innerText = `🎯 Your turn (Player ${userSeat + 1})`;
     isPlayerTurn = true;
 
     document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
@@ -279,4 +349,31 @@ function switchDifficulty(diff) {
   }
   updateDifficultySwitcher();
   restartGame();
+}
+
+async function playAiSequence(steps, signal = null) {
+  let prevWallCount = (gameState.h_walls ? gameState.h_walls.length : 0) + (gameState.v_walls ? gameState.v_walls.length : 0);
+
+  for (let i = 0; i < steps.length; i++) {
+    if (signal && signal.aborted) return;
+
+    const step = steps[i];
+    const pNum = step.current_player === 0 ? numPlayers : step.current_player; // Get the player who just moved
+
+    const newWallCount = (step.h_walls ? step.h_walls.length : 0) + (step.v_walls ? step.v_walls.length : 0);
+    const placedWall = newWallCount > prevWallCount;
+    prevWallCount = newWallCount;
+
+    statusText.innerText = placedWall ? `P${pNum} placed a wall` : `P${pNum} moved`;
+
+    await sleep(400)
+    if (signal && signal.aborted) return;
+
+    gameState = step;
+    drawBoard();
+
+    if (i < steps.length - 1) {
+      await sleep(300);
+    }
+  }
 }

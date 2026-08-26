@@ -351,7 +351,14 @@ def process_move(board_size):
             }
             return jsonify(response)
 
-        state, ai_steps = _advance_ai_until_human(runtime, state, human_seat)
+        state_after_human = state
+        try:
+            state, ai_steps = _advance_ai_until_human(
+                runtime, state, human_seat
+            )
+        except Exception as error:
+            runtime["state"] = state_after_human
+            return jsonify({"error": str(error)}), 500
         if state.game_over:
             response = {
                 "status": "game_over",

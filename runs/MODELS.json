@@ -110,7 +110,20 @@
             "tensor_spec": 2,
             "eval_win_rate": "15.0% pooled vs the greedy racer at the held-out protocol (K=16, 200 sims, 40 games/seat); seat 0 24/40 = 60%, seats 1-3 0/40",
             "eval_games": 160,
-            "notes": "THE N=4 DELIVERABLE. v12 = v11 + the clone seat-0 value defense (clone_seat0_value_weight 0.0): the first N=4 run that never eroded to zero - it dipped to 3/20 at iter 16 and RECOVERED to 15/20. Repinned 2026-08-25 on the matched 40/seat ladder: pretrain 34/40 > v12 24/40 > v10 14/40, each step significant (v12>v10 z~2.2 p~.03 on seat 0). Still below the supervised warm start it was trained from (RL retains, does not yet add); only RL-trained checkpoints ship. greedy_peak.pt = iteration 8; identical to that run's ship.pt. Serve at K=16 (wall_candidates on the variant)."
+            "notes": "Superseded by 4p_9x9_v13 (repinned 2026-08-26); kept as the record. v12 = v11 + the clone seat-0 value defense (clone_seat0_value_weight 0.0): the first N=4 run that never eroded to zero - it dipped to 3/20 at iter 16 and RECOVERED to 15/20. Repinned 2026-08-25 on the matched 40/seat ladder: pretrain 34/40 > v12 24/40 > v10 14/40, each step significant (v12>v10 z~2.2 p~.03 on seat 0). Still below the supervised warm start it was trained from (RL retains, does not yet add); only RL-trained checkpoints ship. greedy_peak.pt = iteration 8; identical to that run's ship.pt. Serve at K=16 (wall_candidates on the variant)."
+        },
+        "4p_9x9_v13": {
+            "path": "runs/n4_9x9_v13/greedy_peak.pt",
+            "architecture": "QuoridorModelMP (vector value head, N=4, factored policy head)",
+            "in_channels": 15,
+            "num_players": 4,
+            "board_size": 9,
+            "num_channels": 128,
+            "num_res_blocks": 8,
+            "tensor_spec": 2,
+            "eval_win_rate": "20.6% pooled vs the greedy racer at the held-out protocol (K=16, 200 sims, 40 games/seat); seat 0 33/40 = 82.5%, seats 1-3 0/40",
+            "eval_games": 160,
+            "notes": "THE N=4 DELIVERABLE. v13 = v12 + the factored policy head (move-vs-wall gate): statistically ties the supervised prior (82.5% vs 85% seat 0, z~0.3) and beats every RL predecessor (v13>v12 z~2.0 p~.04; ladder pretrain 34/40 ~ v13 33/40 > v12 55/85 > v10 37/85). In-run iteration 4 was a PERFECT eval: seat 0 20/20, pooled 25.0% = the racer ceiling. Lowest RL wall mass ever (0.078). greedy_peak.pt = iteration 4. REQUIRES the factored-head loaders from PR #69 - do not deploy this pin before that merges. Serve at K=16 (wall_candidates on the variant)."
         }
     },
     "usage": {
@@ -145,7 +158,7 @@
             "wall_candidates": 16
         },
         "9x9_4p": {
-            "model": "4p_9x9_v12",
+            "model": "4p_9x9_v13",
             "max_walls": 5,
             "max_turns": 320,
             "wall_candidates": 16

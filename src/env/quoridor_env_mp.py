@@ -25,7 +25,7 @@ MOVE_MAP = {
 }
 ACTION_TO_MOVE = {v: k for k, v in MOVE_MAP.items()}
 
-NUM_MOVE_ACTIONS = 12
+from src.env.constants import NUM_MOVE_ACTIONS  # noqa: E402 - kept importable from here
 
 
 def compute_action_space_size(board_size: int) -> int:

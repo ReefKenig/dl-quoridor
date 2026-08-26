@@ -11,6 +11,12 @@ Saves:
     - Replay buffer contents
     - Training metrics history
 
+model.pt schema (see network_mp.py QuoridorModelMP.save/load):
+    network_state, optimizer_state, num_players, and "policy_head" - one of
+    "flat" | "factored". "policy_head" is absent in checkpoints written before
+    2026-08-25; head_type_from_state(network_state) infers it from the
+    state-dict key names in that case.
+
 Usage:
     from src.utils.checkpoint import CheckpointManager
 

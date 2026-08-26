@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from src.env.quoridor_env_mp import NUM_MOVE_ACTIONS
+from src.env.constants import NUM_MOVE_ACTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -230,16 +230,19 @@ class QuoridorModelMP:
                     "num_players": self.num_players,
                     "policy_head": self.policy_head}, path)
 
-    def load(self, path):
+    def load(self, path, strict_head_check=True):
         ck = torch.load(path, map_location=self.device, weights_only=False)
-        ckpt_head = ck.get("policy_head")
-        if ckpt_head is None:
-            # Old checkpoint, predates the "policy_head" key.
-            ckpt_head = head_type_from_state(ck["network_state"])
-        if ckpt_head != self.policy_head:
-            raise ValueError(
-                f"checkpoint policy_head={ckpt_head!r} does not match "
-                f"model policy_head={self.policy_head!r}")
+        if strict_head_check:
+            ckpt_head = ck.get("policy_head")
+            if ckpt_head is None:
+                # Old checkpoint, predates the "policy_head" key.
+                ckpt_head = head_type_from_state(ck["network_state"])
+            if ckpt_head != self.policy_head:
+                raise ValueError(
+                    f"checkpoint policy_head={ckpt_head!r} does not match "
+                    f"model policy_head={self.policy_head!r}")
+        # strict_head_check=False skips the check above; a real mismatch then
+        # fails naturally in load_state_dict. Used by inspection/conversion tools.
         self.network.load_state_dict(ck["network_state"])
         if "optimizer_state" in ck:
             self.optimizer.load_state_dict(ck["optimizer_state"])

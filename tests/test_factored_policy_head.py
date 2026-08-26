@@ -225,4 +225,40 @@ def test_flat_train_step_matches_pre_change_losses_for_a_fixed_seed():
     losses_a = [model_a.train_step(S, P, V) for _ in range(5)]
     losses_b = [model_b.train_step(S, P, V) for _ in range(5)]
 
-    assert losses_a == pytest.approx(losses_b)
+    assert losses_a == pytest.approx(losses_b, rel=1e-6)
+
+
+# --- loader-path coverage: eval_all_checkpoints and model_registry read policy_head ---
+
+def test_eval_all_checkpoints_load_recovers_factored_head(tmp_path):
+    import scripts.eval_all_checkpoints as eval_all_checkpoints
+
+    model = _model("factored", board_size=9, num_players=4, seed=10)
+    path = str(tmp_path / "ckpt.pt")
+    model.save(path)
+
+    loaded, _channels, _blocks = eval_all_checkpoints.load(path, 4, 9)
+    assert loaded.policy_head == "factored"
+
+
+def test_checkpoint_policy_head_reads_factored_from_disk(tmp_path):
+    from src.utils.model_registry import checkpoint_policy_head
+
+    model = _model("factored", board_size=9, num_players=4, seed=11)
+    path = str(tmp_path / "ckpt.pt")
+    model.save(path)
+
+    assert checkpoint_policy_head(path) == "factored"
+
+
+def test_load_with_strict_head_check_false_skips_the_mismatch_raise(tmp_path):
+    """factored vs flat state dicts have disjoint key sets, so load_state_dict
+    itself raises RuntimeError - the point is that it is NOT the head-mismatch
+    ValueError, since strict_head_check=False skips that check entirely."""
+    model = _model("factored", seed=12)
+    path = str(tmp_path / "ckpt.pt")
+    model.save(path)
+
+    flat_model = _model("flat", seed=13)
+    with pytest.raises(RuntimeError):
+        flat_model.load(path, strict_head_check=False)

@@ -6,7 +6,7 @@ let currentGameId = null;
 function createInitialGameState() {
   const mid = Math.floor(currentGridSize / 2);
   const walls = currentGridSize === 5
-    ? (numPlayers === 2 ? 3 : 2)
+    ? (numPlayers === 2 ? 3 : 4)
     : (numPlayers === 2 ? 10 : 5);
   const players = [
     { row: currentGridSize - 1, col: mid },
@@ -274,6 +274,9 @@ async function sendMoveToServer(type, targetRow, targetCol) {
           const syncState = await sync.json();
           currentGameId = syncState.game_id || currentGameId;
           gameState = syncState;
+          if (Number.isInteger(syncState.human_seat)) {
+            userSeat = syncState.human_seat;
+          }
           drawBoard();
         }
       } catch (_) {}
@@ -282,6 +285,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
     if (data.ai_steps && data.ai_steps.length > 0) {
       await playAiSequence(data.ai_steps, signal);
+      if (signal.aborted) return;
     }
 
     // Always use newState as the authoritative final state
@@ -348,7 +352,9 @@ async function playAiSequence(steps, signal = null) {
     if (signal && signal.aborted) return;
 
     const step = steps[i];
-    const pNum = step.current_player === 0 ? numPlayers : step.current_player; // Get the player who just moved
+    const pNum = Number.isInteger(step.moved_player)
+      ? step.moved_player + 1
+      : (step.current_player === 0 ? numPlayers : step.current_player);
 
     const newWallCount = (step.h_walls ? step.h_walls.length : 0) + (step.v_walls ? step.v_walls.length : 0);
     const placedWall = newWallCount > prevWallCount;

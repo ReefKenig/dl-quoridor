@@ -164,6 +164,32 @@ def _sync_session_runtime(
     return runtime
 
 
+def _advance_ai_until_human(runtime, state, human_seat):
+    """Advance AI turns and return each resulting state with its mover."""
+    env = runtime["env"]
+    mcts = runtime["mcts"]
+    temperature = runtime["temperature"]
+    ai_steps = []
+
+    while env.get_current_player(state) != human_seat and not state.game_over:
+        mover = env.get_current_player(state)
+        action_probs = mcts.search(env, state, temperature=temperature)
+        if temperature < 0.1:
+            ai_action = int(np.argmax(action_probs))
+        else:
+            ai_action = int(np.random.choice(len(action_probs), p=action_probs))
+
+        state, _reward, done, _info = env.step(state, ai_action)
+        runtime["state"] = state
+        step_data = _extract_positions(env, state)
+        step_data["moved_player"] = mover
+        ai_steps.append(step_data)
+        if done:
+            break
+
+    return state, ai_steps
+
+
 # --- WEB ROUTES ---
 @app.route("/")
 def inedx():
@@ -223,20 +249,14 @@ def reset_game(board_size):
 
     initial_ai_steps = []
 
-    # 3. Stea the AI until it reaches the human's seat
-    while env.get_current_player(state) != human_seat and not state.game_over:
-        action_probs = mcts.search(env, state, temperature=temperature)
-        if temperature < 0.1:
-            ai_action = int(np.argmax(action_probs))
-        else:
-            ai_action = int(np.random.choice(len(action_probs), p=action_probs))
-
-        state, reward, done, info = env.step(state, ai_action)
-        runtime["state"] = state
-
-        # Package the intermediate step for the frontend animation
-        step_data = _extract_positions(env, state)
-        initial_ai_steps.append(step_data)
+    # 3. Steer the AI until it reaches the human's seat
+    try:
+        _state, initial_ai_steps = _advance_ai_until_human(
+            runtime, state, human_seat
+        )
+    except Exception as error:
+        runtime["state"] = env.clone_state(initial_state)
+        return jsonify({"error": str(error)}), 500
 
     # 4. Return the initial state alongside the AI's opening moves
     response = _extract_positions(runtime["env"], initial_state)
@@ -331,25 +351,16 @@ def process_move(board_size):
             }
             return jsonify(response)
 
-        ai_steps = []
-        while env.get_current_player(state) != human_seat and not state.game_over:
-            action_probs = mcts.search(env, state, temperature=temperature)
-            if temperature < 0.1:
-                ai_action = int(np.argmax(action_probs))
-            else:
-                ai_action = int(np.random.choice(len(action_probs), p=action_probs))
-            state, reward, done, info = env.step(state, ai_action)
-            runtime["state"] = state
-            ai_steps.append(_extract_positions(env, state))
-            if done:
-                response = {
-                    "status": "game_over",
-                    "newState": _extract_positions(env, state),
-                    "ai_steps": ai_steps,
-                    "winner": "ai",
-                    "game_id": _resolve_session_id(game_id),
-                }
-                return jsonify(response)
+        state, ai_steps = _advance_ai_until_human(runtime, state, human_seat)
+        if state.game_over:
+            response = {
+                "status": "game_over",
+                "newState": _extract_positions(env, state),
+                "ai_steps": ai_steps,
+                "winner": "ai",
+                "game_id": _resolve_session_id(game_id),
+            }
+            return jsonify(response)
 
         runtime["state"] = state
         response = {

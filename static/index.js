@@ -65,8 +65,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const seatSelect = document.getElementById('seat-select');
 
   if (playerCountSelect && seatSelect) {
-    playerCountSelect.addEventListener('change', (e) => {
-      const is4p = e.target.value === '4';
+    const updateSeatOptions = () => {
+      const is4p = playerCountSelect.value === '4';
 
       // Hide/show seats 3 and 4
       Array.from(seatSelect.options).forEach(option => {
@@ -79,6 +79,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!is4p && parseInt(seatSelect.value) > 1) {
         seatSelect.value = '-1';
       }
-    });
+    };
+
+    playerCountSelect.addEventListener('change', updateSeatOptions);
+    updateSeatOptions();
   }
 });

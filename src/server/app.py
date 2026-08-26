@@ -179,7 +179,11 @@ def serve_static(path):
 @app.route("/api/<board_size>/reset", methods=["POST"])
 def reset_game(board_size):
     data = request.json or {}
-    num_players = data.get("num_players", 2)
+    requested_num_players = data.get("num_players", 2)
+    try:
+        num_players = 4 if int(requested_num_players) == 4 else 2
+    except (TypeError, ValueError):
+        num_players = 2
     difficulty = data.get("difficulty", DEFAULT_DIFFICULTY)
     game_id = (
         data.get("game_id")
@@ -187,8 +191,8 @@ def reset_game(board_size):
         or request.headers.get(GAME_ID_HEADER)
     )
 
-    # 1. Extracted requested seat (default to random if -1 or not provided)
-    raw_seat = data.get("human_seat", -1)
+    # 1. Extract the requested seat; negative values request random assignment.
+    raw_seat = data.get("human_seat", 0)
 
     try:
         bs = int(str(board_size).lower().split("x")[0])
@@ -196,10 +200,14 @@ def reset_game(board_size):
         bs = 5
 
     # 2. Resolve random seat
-    if str(raw_seat).lower() == 'random' or int(raw_seat) < 0:
+    try:
+        parsed_seat = int(raw_seat)
+    except (TypeError, ValueError):
+        parsed_seat = 0
+    if str(raw_seat).lower() == 'random' or parsed_seat < 0:
         human_seat = random.randint(0, num_players - 1)
     else:
-        human_seat = int(raw_seat) % num_players
+        human_seat = parsed_seat % num_players
 
     # Sync the session to get fresh environment and MCTS instance
     runtime = _sync_session_runtime(
@@ -278,6 +286,8 @@ def process_move(board_size):
     try:
         if state is None:
             return jsonify({"error": "Game state not found"})
+        if env.get_current_player(state) != human_seat:
+            return jsonify({"error": "It is not your turn."}), 409
 
         data = request.json
         action_type = data.get("type", "pawn")

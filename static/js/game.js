@@ -40,8 +40,10 @@ async function startGame() {
   currentDifficulty = document.getElementById("difficulty").value;
 
   const seatSelect = document.getElementById("seat-select");
-  const rawSeat = seatSelect ? parseInt(seatSelect.value) : -1;
-  userSeat = rawSeat >= 0 ? rawSeat % numPlayers : Math.floor(Math.random() * numPlayers);
+  const rawSeat = seatSelect ? Number.parseInt(seatSelect.value, 10) : -1;
+  userSeat = Number.isInteger(rawSeat) && rawSeat >= 0
+    ? rawSeat % numPlayers
+    : Math.floor(Math.random() * numPlayers);
 
   if (newGridSize !== currentGridSize) {
     currentGridSize = newGridSize;
@@ -56,6 +58,8 @@ async function startGame() {
   gameState = createInitialGameState();
   isPlayerTurn = false; // Lock board while loading
   statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}. ${userSeat === 0 ? "Your turn." : "Waiting for your turn..."}`;
+  moveController = new AbortController();
+  const signal = moveController.signal;
 
   drawWallsInfo();
   resizeCanvas();
@@ -74,25 +78,29 @@ async function startGame() {
             human_seat: userSeat
           }
         ),
+        signal,
       }
     );
 
+    if (signal.aborted) return;
     const data = await response.json();
     currentGameId = data.game_id || currentGameId;
     gameState = data;
-    userSeat = data.human_seat; // Capture randomized/selected seat
+    userSeat = Number.isInteger(data.human_seat) ? data.human_seat : userSeat;
 
     drawBoard();
 
     // Play AI opening moves if human is not Seat 0
     if (data.initial_ai_steps && data.initial_ai_steps.length > 0) {
-      await playAiSequence(data.initial_ai_steps);
+      await playAiSequence(data.initial_ai_steps, signal);
     }
+    if (signal.aborted) return;
 
     statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}! Your turn.`;
     isPlayerTurn = true; // Unlock board
 
   } catch (error) {
+    if (error.name === "AbortError") return;
     console.log("Failed to start game:", error);
     statusText.innerText = "❌ Server connection lost.";
   }
@@ -107,12 +115,16 @@ async function restartGame() {
   resetWallsInfoCache();
 
   const seatSelect = document.getElementById("seat-select");
-  const rawSeat = seatSelect ? parseInt(seatSelect.value) : -1;
-  userSeat = rawSeat >= 0 ? rawSeat % numPlayers : Math.floor(Math.random() * numPlayers);
+  const rawSeat = seatSelect ? Number.parseInt(seatSelect.value, 10) : -1;
+  userSeat = Number.isInteger(rawSeat) && rawSeat >= 0
+    ? rawSeat % numPlayers
+    : Math.floor(Math.random() * numPlayers);
 
   isPlayerTurn = false;
   gameState = createInitialGameState();
   statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}. ${userSeat === 0 ? "Your turn." : "Waiting for your turn..."}`;
+  moveController = new AbortController();
+  const signal = moveController.signal;
 
   drawWallsInfo();
   drawBoard();
@@ -130,23 +142,27 @@ async function restartGame() {
             game_id: currentGameId,
             human_seat: userSeat
           }),
+        signal,
       }
     );
 
+    if (signal.aborted) return;
     const data = await response.json();
     currentGameId = data.game_id || currentGameId;
     gameState = data;
-    userSeat = data.human_seat;
+    userSeat = Number.isInteger(data.human_seat) ? data.human_seat : userSeat;
 
     drawBoard();
 
     if (data.initial_ai_steps && data.initial_ai_steps.length > 0) {
-      await playAiSequence(data.initial_ai_steps);
+      await playAiSequence(data.initial_ai_steps, signal);
     }
+    if (signal.aborted) return;
     statusText.innerText = `🎮 New game! You are Player ${userSeat + 1}. Your turn.`;
     isPlayerTurn = true;
 
   } catch (error) {
+    if (error.name === "AbortError") return;
     console.error("Failed to restart:", error);
     statusText.innerText = "❌ Server connection lost.";
   }
@@ -264,34 +280,8 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       return;
     }
 
-    // Animate AI moves one by one
     if (data.ai_steps && data.ai_steps.length > 0) {
-      if (data.ai_steps && data.ai_steps.length > 0) {
-        await playAiSequence(data.ai_steps, signal);
-      }
-
-      // for (let i = 0; i < data.ai_steps.length; i++) {
-      //   if (signal.aborted) return;
-      //   const step = data.ai_steps[i];
-      //   const playerNum = i + 2;
-      //   const newWallCount = (step.h_walls ? step.h_walls.length : 0)
-      //     + (step.v_walls ? step.v_walls.length : 0);
-      //   const placedWall = newWallCount > prevWallCount;
-      //   prevWallCount = newWallCount;
-
-      //   if (numPlayers > 2) {
-      //     statusText.innerText = placedWall
-      //       ? `P${playerNum} placed a wall`
-      //       : `P${playerNum} moved`;
-      //   }
-      //   await sleep(400);
-      //   if (signal.aborted) return;
-      //   gameState = step;
-      //   drawBoard();
-      //   if (i < data.ai_steps.length - 1) {
-      //     await sleep(300);
-      //   }
-      // }
+      await playAiSequence(data.ai_steps, signal);
     }
 
     // Always use newState as the authoritative final state

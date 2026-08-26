@@ -147,8 +147,12 @@ def checkpoint_policy_head(path):
     architecture before loading rather than guessing "flat" and crashing."""
     from src.model.network_mp import head_type_from_state
 
-    ck = torch.load(path, map_location="cpu", weights_only=False)
-    return ck.get("policy_head") or head_type_from_state(ck["network_state"])
+    try:
+        ck = torch.load(path, map_location="cpu", weights_only=False)
+        return ck.get("policy_head") or head_type_from_state(ck["network_state"])
+    except Exception as exc:
+        raise ValueError(
+            f"could not read policy_head from checkpoint {path}: {exc}") from exc
 
 
 def load_variant(board_size: int, num_players: int, registry=None, root=None,

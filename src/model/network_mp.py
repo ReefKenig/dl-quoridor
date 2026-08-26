@@ -73,8 +73,15 @@ class QuoridorNetworkMP(nn.Module):
         if policy_head == "flat":
             self.policy_fc = nn.Linear(policy_feat, action_space_size)
         else:
+            if action_space_size < NUM_MOVE_ACTIONS + 1:
+                raise ValueError(
+                    f"factored head needs action_space_size >= "
+                    f"{NUM_MOVE_ACTIONS + 1} ({NUM_MOVE_ACTIONS} move actions "
+                    f"plus at least one wall action), got {action_space_size}")
             # Move-vs-wall gate plus per-class placement logits, so the wall
             # class (128 of 140 raw actions at 9x9) can't dominate by count.
+            # policy_type_head logits are ordered [move, wall]: index 0 gates
+            # the first NUM_MOVE_ACTIONS actions, index 1 gates the rest.
             self.policy_type_head = nn.Linear(policy_feat, 2)
             self.policy_move_head = nn.Linear(policy_feat, NUM_MOVE_ACTIONS)
             self.policy_wall_head = nn.Linear(
@@ -88,7 +95,9 @@ class QuoridorNetworkMP(nn.Module):
 
     def _policy_log_probs(self, p):
         """p: pooled policy-trunk features (B, 2*H*W). Returns log-probs over
-        the full action space, summing to 1 in probability either way."""
+        the full action space, summing to 1 in probability either way.
+        Factored ordering: type index 0 => "move" (actions [0, NUM_MOVE_ACTIONS)),
+        index 1 => "wall" (the rest), concatenated in that order."""
         if self.policy_head == "flat":
             return F.log_softmax(self.policy_fc(p), dim=1)
         # Numerically stable composition: log(P(type) * P(action|type)), never
@@ -116,8 +125,10 @@ class QuoridorNetworkMP(nn.Module):
 
 def head_type_from_state(state_dict) -> str:
     """Infer "factored" vs "flat" from state-dict key names alone, for old
-    checkpoints and loaders that only have the state dict, not the config."""
-    if any(k.startswith("policy_type_head") for k in state_dict):
+    checkpoints and loaders that only have the state dict, not the config.
+    Matches on substring so wrapped keys ("module.policy_type_head.weight",
+    from DataParallel and friends) are recognised too."""
+    if any("policy_type_head" in k for k in state_dict):
         return "factored"
     return "flat"
 

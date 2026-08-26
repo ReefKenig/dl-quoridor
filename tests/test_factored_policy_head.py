@@ -150,6 +150,15 @@ def test_head_type_from_state_detects_factored():
     assert head_type_from_state(net.state_dict()) == "factored"
 
 
+def test_head_type_from_state_detects_wrapped_factored_keys():
+    """DataParallel and friends prefix every key with "module."."""
+    net = QuoridorNetworkMP(board_size=5, action_space_size=44,
+                            num_channels=8, num_res_blocks=1,
+                            policy_head="factored")
+    wrapped = {"module." + k: v for k, v in net.state_dict().items()}
+    assert head_type_from_state(wrapped) == "factored"
+
+
 def test_head_type_from_state_detects_flat():
     net = QuoridorNetworkMP(board_size=5, action_space_size=44,
                             num_channels=8, num_res_blocks=1,
@@ -262,3 +271,28 @@ def test_load_with_strict_head_check_false_skips_the_mismatch_raise(tmp_path):
     flat_model = _model("flat", seed=13)
     with pytest.raises(RuntimeError):
         flat_model.load(path, strict_head_check=False)
+
+
+def test_factored_head_puts_moves_first_in_the_concatenation():
+    """The type gate is ordered [move, wall]: driving the gate to one class
+    must move mass onto that class's slice of the action space."""
+    net = QuoridorNetworkMP(board_size=5, action_space_size=44,
+                            num_channels=8, num_res_blocks=1,
+                            policy_head="factored")
+    net.eval()
+    p = torch.zeros(1, 2 * 5 * 5)
+    with torch.no_grad():
+        # index 0 => move, index 1 => wall
+        net.policy_type_head.bias.copy_(torch.tensor([20.0, -20.0]))
+        move_mass = net._policy_log_probs(p).exp()[0, :NUM_MOVE_ACTIONS].sum()
+        net.policy_type_head.bias.copy_(torch.tensor([-20.0, 20.0]))
+        wall_mass = net._policy_log_probs(p).exp()[0, NUM_MOVE_ACTIONS:].sum()
+    assert move_mass.item() > 0.99
+    assert wall_mass.item() > 0.99
+
+
+def test_factored_head_rejects_an_action_space_with_no_wall_actions():
+    with pytest.raises(ValueError, match="factored head needs action_space_size"):
+        QuoridorNetworkMP(board_size=5, action_space_size=NUM_MOVE_ACTIONS,
+                          num_channels=8, num_res_blocks=1,
+                          policy_head="factored")

@@ -13,6 +13,7 @@ from typing import List, Optional, Set, Tuple
 
 import numpy as np
 
+from src.env.constants import NUM_MOVE_ACTIONS
 from src.env.env_interface import QuoridorEnvInterface
 from src.env.pathing import CURRENT_SPEC
 from src.env.tensor_spec_mp import build_tensor_mp
@@ -24,8 +25,6 @@ MOVE_MAP = {
     (-1, -1): 8, (-1, 1): 9, (1, -1): 10, (1, 1): 11,
 }
 ACTION_TO_MOVE = {v: k for k, v in MOVE_MAP.items()}
-
-from src.env.constants import NUM_MOVE_ACTIONS  # noqa: E402 - kept importable from here
 
 
 def compute_action_space_size(board_size: int) -> int:

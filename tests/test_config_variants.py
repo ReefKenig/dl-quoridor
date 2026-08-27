@@ -140,7 +140,7 @@ def test_run_config_variant_overrides_win(cfg9):
     n2, n4 = resolve_run_config(cfg9, "n2"), resolve_run_config(cfg9, "n4")
 
     assert (n2["max_game_moves"], n4["max_game_moves"]) == (160, 320)
-    assert (n2["num_iterations"], n4["num_iterations"]) == (150, 40)
+    assert (n2["num_iterations"], n4["num_iterations"]) == (60, 40)
     # A variant key beats the section it also lives in - the two runs share a
     # 16-cpu quota, so neither may take the parallel section's worker count.
     assert n2["num_workers"] == n4["num_workers"] == 8
@@ -265,3 +265,29 @@ def test_training_config_leaves_a_sufficient_env_cutoff_alone():
     from src.mcts.training_mp import TrainingConfigMP
 
     assert TrainingConfigMP(max_game_moves=160, max_turns=200).max_turns == 200
+
+
+def test_the_default_n2_variant_keeps_its_safety_rails(cfg9):
+    """n2 is what an unmodified launch gets, so it may not carry a one-run recipe.
+
+    The v4 seed replication needed both tripwires off, an unarmed gate, a cold
+    start and a pinned seed. Those lived in n2 itself until the run finished,
+    which left a fresh launch with no erosion stop and a silent init_seed 2.
+    """
+    n2 = resolve_run_config(cfg9, "n2")
+
+    assert n2["greedy_min_seat"] > 0 and n2["peak_stall_evals"] > 0
+    assert n2["gate_arm_on_greedy"] is True
+    assert n2["init_checkpoint"], "a fresh n2 run must warm-start, not cold-start"
+    assert "init_seed" not in n2, "a pinned seed would repeat one replication"
+
+
+def test_the_v4_replication_recipe_is_still_reachable(cfg9):
+    """Moving it out of n2 must not lose it - a third seed still needs it."""
+    seed = resolve_run_config(cfg9, "n2_v4_seed")
+
+    assert seed["greedy_min_seat"] == 0 and seed["peak_stall_evals"] == 0
+    assert seed["gate_arm_on_greedy"] is False
+    assert seed["init_checkpoint"] == ""
+    assert seed["mcts_wall_candidates"] == 0 and seed["wall_mask_fraction"] == 0.0
+    assert seed["num_iterations"] == 150 and seed["init_seed"] == 2

@@ -4,7 +4,7 @@ Deep Reinforcement Learning final project (Group 501, Colman College).
 
 An autonomous AI agent for the board game Quoridor, using a dual-headed neural network + MCTS trained via self-play. Supports 2 and 4 players: the 2-player path uses negamax MCTS with a scalar value head; the N-player path uses max^n MCTS with a vector value head.
 
-The project runs at two scales: a **5×5 proof-of-concept** that validated the architecture and training dynamics, and **full-size 9×9 Quoridor** (10 walls/player at N=2, 5 at N=4), which took eleven run generations to produce an agent that both races and walls.
+The project runs at two scales: a **5×5 proof-of-concept** that validated the architecture and training dynamics, and **full-size 9×9 Quoridor** (10 walls/player at N=2, 5 at N=4), which took thirteen run generations to produce an agent that both races and walls.
 
 ## Results
 
@@ -14,14 +14,23 @@ Measured against a fixed shortest-path opponent ("greedy": always take the move 
 |---|---|---|---|---|
 | 5×5 | 2 | `runs/n2_5x5_v1/ship.pt` | 40/40 | 97.9% ± 1.9% |
 | 5×5 | 4 | `runs/n4_5x5_v3/ship.pt` | not measured | 84.2% ± 4.6% |
-| 9×9 | 2 | `runs/n2_9x9_v9/greedy_peak.pt` | **93.8%** (seat 0 39/40, seat 1 36/40) | 100% |
-| 9×9 | 4 | `runs/n4_9x9_v10/greedy_peak.pt` | **seat 0 10/20**; seats 1–3 structurally unwinnable by racing | 100% |
+| 9×9 | 2 | `runs/n2_9x9_v4/ship.pt` | **97.5%** (seat 0 40/40, seat 1 38/40) | 100% |
+| 9×9 | 4 | `runs/n4_9x9_v13/greedy_peak.pt` | **seat 0 33/40 (82.5%)**; seats 1–3 structurally unwinnable by racing | 100% |
 
-Fair share vs. random is 50% at N=2 and 25% at N=4.
+Fair share vs. random is 50% at N=2 and 25% at N=4. The 9×9 rows are the
+held-out rescore at 40 games/seat, `wall_candidates=16` at inference; both are
+the checkpoints `runs/MODELS.json` actually serves. `n2_9x9_v4/ship.pt` is also
+the only 9×9 model that scores above zero against depth-2 minimax (8.3%).
 
-Two findings worth knowing before reading any number in this repo:
+Three findings worth knowing before reading any number in this repo:
 
 - **A saturated baseline is worse than no baseline.** Through most of the 9×9 work the accept gate reported steady improvement and vs-random read 96–100% while the models scored **0% against the greedy racer** - relative strength with zero absolute competence.
+- **Two of these numbers rest on one seed each.** Re-running the 9×9 N=2 recipe
+  on a second recorded seed scored **35.0%**, not 97.5% (Fisher p=4e-14), so the
+  headline is a property of that run and not of the recipe; the style it learned
+  did replicate. And at N=4 a plain greedy racer in seat 0 scores 25% by move
+  order alone, which is within noise of v13's pooled 21.2% (p=0.71) - quote the
+  seat-0 rate for racing skill, never the pooled number.
 - **`best.pt` is not the best model.** It is written by the accept gate, which at 9×9 either never fired (leaving the untrained initialization) or fired on the iteration where strength collapsed. The shipped 9×9 models are `greedy_peak.pt`, ratcheted on score against the racer. Always resolve checkpoints through `runs/MODELS.json`, never by hardcoding a filename.
 
 ## Project Structure
@@ -67,8 +76,9 @@ dl-quoridor/
 │   └── <arch>_<board>_<vN>/    #   One self-contained dir per run:
 │       ├── config.json         #     frozen hyperparams (tracked)
 │       ├── meta.json           #     per-iteration progress history (tracked)
-│       ├── train.log           #     run log (tracked)
-│       ├── figures/            #     plots from THIS run's metrics (tracked)
+│       ├── games.log           #     per-game run log (tracked)
+│       ├── notebook.log        #     launcher log (tracked)
+│       ├── training_curves.png #     plots from THIS run's metrics (tracked)
 │       ├── greedy_peak.pt      #     best score vs the racer - what 9×9
 │       │                       #       ships (git-ignored)
 │       ├── best.pt / latest.pt #     gate champion / most recent (git-ignored)
@@ -76,6 +86,8 @@ dl-quoridor/
 ├── outputs/                    # Cross-run artifacts only
 │   ├── model_comparison.png    #   2p vs 4p summary
 │   ├── held_out_eval.json      #   held-out scoring vs greedy + depth-2 minimax
+│   ├── round_robin/            #   cross-model round robin + Bradley-Terry ladder
+│   ├── trailing_seat_existence/#   can ANY wall-user win from seats 1-3? (no)
 │   └── results/                #   model-vs-model eval dumps
 ├── requirements.txt
 └── README.md
@@ -133,7 +145,12 @@ tail -f runs/<run_dir>/notebook.log        # monitor
 kill $(cat runs/<run_dir>/notebook.pid)    # stop
 ```
 
-There is no default variant - `n2` or `n4` must be passed explicitly. Runs resume from `latest.pt` + `meta.json`.
+There is no default variant - `n2` or `n4` must be passed explicitly. Runs resume from `latest.pt` + `meta.json`, so a fresh run needs a fresh run dir.
+
+`configs/config_9x9.json` carries three variants. `n2` and `n4` are the current
+recipes and are what a new run should get. `n2_v4_seed` holds the older v4
+replication recipe verbatim - cold start, no anchor, both erosion tripwires off -
+kept runnable so the single-seed result above can be tested on a third seed.
 
 **Do not run 9×9 training on a laptop.** The inference batcher probes only for CUDA and otherwise falls back to CPU, which measured ~66× slower than the GPU server (810 s/game vs 12.3) - a 60-iteration run would take about 90 days. Check the `resources:` line in `games.log` before letting a run proceed.
 
@@ -141,6 +158,7 @@ Two settings are load-bearing and easy to get wrong:
 
 - `wall_candidates=16` restricts which wall placements MCTS expands. Unrestricted, search spreads across 128 wall actions at 4.6 visits each and the resulting policy walls instead of racing; restricting it raises resolution to 31.6 visits/action. This is not an optimization - it is the difference between a model that scores 0% and one that scores 85%+.
 - A warm start (`scripts/pretrain_greedy.py`) imitates the racer before self-play begins. Six cold runs never passed 2/80 at N=4; thirty minutes of imitation reaches 20/20 in seat 0 with no search at all.
+- At N=4, `policy_head: "factored"` splits the policy into a move-vs-wall gate and then a placement, so the wall class cannot dominate the prior by sheer action count (128 wall actions against 12 moves). Flat-headed runs erode the racing prior they were warm-started from; the factored head is what let v13 match its prior instead of falling below it. A factored checkpoint will not load into a flat network, and its pretrain has to be regenerated under the same architecture.
 
 ### Validation scripts
 
@@ -153,12 +171,13 @@ Two settings are load-bearing and easy to get wrong:
 | `scripts/probe_greedy.py` | Per-seat scoring vs the greedy racer; `--trace` prints a game move by move |
 | `scripts/eval_all_checkpoints.py` | Held-out table: every registered checkpoint vs greedy and depth-2 minimax |
 | `scripts/pretrain_greedy.py` | Supervised warm start - imitate the racer before self-play |
+| `scripts/round_robin.py` | Every checkpoint against every other + the scripted anchors; Bradley-Terry ladder, and the `greedy::greedy` null that says what the vs-racer eval can measure |
 
 ## Play vs AI
 
 ```bash
 python -m src.ui.game_ui                          # 5×5, 4 players (default)
-python -m src.ui.game_ui --board 9 --players 2    # full-size, the 93.8% model
+python -m src.ui.game_ui --board 9 --players 2    # full-size, the 97.5% model
 python -m src.ui.game_ui --board 9 --players 4    # full-size, 4 players
 ```
 

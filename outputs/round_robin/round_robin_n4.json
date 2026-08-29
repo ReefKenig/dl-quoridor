@@ -1,0 +1,844 @@
+{
+  "meta": {
+    "protocol": "round-robin: model entities play at K=16, 200 sims, their own frozen tensor spec and opening plies (canonical protocol, see eval_all_checkpoints); scripted anchors greedy and minimax_d2(depth=2, max_wall_candidates=16)",
+    "board": 9,
+    "players": 4,
+    "games_per_seat": 20,
+    "sims": 200,
+    "k": 16,
+    "minimax_depth": 2,
+    "minimax_wall_candidates": 16,
+    "smoothing": 0.5,
+    "bt_method": "iterative MM (Zermelo) Bradley-Terry, plain numpy",
+    "bt_n4_note": "N=4 treats each ordered A-vs-field(B) cell as pairwise A/B evidence (A's wins = candidate wins, B's wins = decided - candidate wins): a field-strength approximation, not true multiplayer Elo.",
+    "cells_played": 21,
+    "total_pairs": 64,
+    "complete": false
+  },
+  "entities": [
+    {
+      "name": "n4_9x9_v13",
+      "kind": "model",
+      "path": "runs/n4_9x9_v13/greedy_peak.pt",
+      "spec": 2,
+      "opening_plies": 4,
+      "trained_wall_candidates": 16,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.0778
+    },
+    {
+      "name": "n4_9x9_v12",
+      "kind": "model",
+      "path": "runs/n4_9x9_v12/greedy_peak.pt",
+      "spec": 2,
+      "opening_plies": 4,
+      "trained_wall_candidates": 16,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.2332
+    },
+    {
+      "name": "n4_9x9_v11",
+      "kind": "model",
+      "path": "runs/n4_9x9_v11/greedy_peak.pt",
+      "spec": 2,
+      "opening_plies": 4,
+      "trained_wall_candidates": 16,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.3055
+    },
+    {
+      "name": "n4_9x9_v10",
+      "kind": "model",
+      "path": "runs/n4_9x9_v10/greedy_peak.pt",
+      "spec": 2,
+      "opening_plies": 4,
+      "trained_wall_candidates": 16,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.5424
+    },
+    {
+      "name": "n4_9x9_v9",
+      "kind": "model",
+      "path": "runs/n4_9x9_v9/greedy_peak.pt",
+      "spec": 2,
+      "opening_plies": 4,
+      "trained_wall_candidates": 16,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.4123
+    },
+    {
+      "name": "pretrain_n4_9x9",
+      "kind": "model",
+      "path": "runs/pretrain_n4_9x9/pretrain.pt",
+      "spec": 2,
+      "opening_plies": 4,
+      "trained_wall_candidates": 0,
+      "run_eval_simulations": null,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.0
+    },
+    {
+      "name": "greedy",
+      "kind": "scripted"
+    },
+    {
+      "name": "minimax_d2",
+      "kind": "scripted",
+      "depth": 2,
+      "max_wall_candidates": 16
+    }
+  ],
+  "cells": {
+    "greedy::greedy": {
+      "seats": {
+        "0": [
+          20,
+          20
+        ],
+        "1": [
+          0,
+          20
+        ],
+        "2": [
+          0,
+          20
+        ],
+        "3": [
+          0,
+          20
+        ]
+      },
+      "wins": 20,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.25,
+      "racer_ceiling": 0.25,
+      "a": "greedy",
+      "b": "greedy",
+      "secs": 2.9
+    },
+    "greedy::minimax_d2": {
+      "seats": {
+        "0": [
+          5,
+          20
+        ],
+        "1": [
+          1,
+          20
+        ],
+        "2": [
+          4,
+          20
+        ],
+        "3": [
+          2,
+          20
+        ]
+      },
+      "wins": 12,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.15,
+      "racer_ceiling": 0.25,
+      "a": "greedy",
+      "b": "minimax_d2",
+      "secs": 188.2
+    },
+    "greedy::n4_9x9_v10": {
+      "seats": {
+        "0": [
+          10,
+          20
+        ],
+        "1": [
+          14,
+          20
+        ],
+        "2": [
+          17,
+          20
+        ],
+        "3": [
+          17,
+          20
+        ]
+      },
+      "wins": 58,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.725,
+      "racer_ceiling": 0.25,
+      "a": "greedy",
+      "b": "n4_9x9_v10",
+      "secs": 2966.6
+    },
+    "greedy::n4_9x9_v11": {
+      "seats": {
+        "0": [
+          16,
+          20
+        ],
+        "1": [
+          15,
+          20
+        ],
+        "2": [
+          19,
+          20
+        ],
+        "3": [
+          13,
+          20
+        ]
+      },
+      "wins": 63,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.7875,
+      "racer_ceiling": 0.25,
+      "a": "greedy",
+      "b": "n4_9x9_v11",
+      "secs": 3178.6
+    },
+    "greedy::n4_9x9_v12": {
+      "seats": {
+        "0": [
+          12,
+          20
+        ],
+        "1": [
+          17,
+          20
+        ],
+        "2": [
+          15,
+          20
+        ],
+        "3": [
+          17,
+          20
+        ]
+      },
+      "wins": 61,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.7625,
+      "racer_ceiling": 0.25,
+      "a": "greedy",
+      "b": "n4_9x9_v12",
+      "secs": 3920.3
+    },
+    "greedy::n4_9x9_v13": {
+      "seats": {
+        "0": [
+          13,
+          20
+        ],
+        "1": [
+          18,
+          20
+        ],
+        "2": [
+          20,
+          20
+        ],
+        "3": [
+          20,
+          20
+        ]
+      },
+      "wins": 71,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.8875,
+      "racer_ceiling": 0.25,
+      "a": "greedy",
+      "b": "n4_9x9_v13",
+      "secs": 12666.6
+    },
+    "greedy::n4_9x9_v9": {
+      "seats": {
+        "0": [
+          18,
+          20
+        ],
+        "1": [
+          19,
+          20
+        ],
+        "2": [
+          20,
+          20
+        ],
+        "3": [
+          20,
+          20
+        ]
+      },
+      "wins": 77,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.9625,
+      "racer_ceiling": 0.25,
+      "a": "greedy",
+      "b": "n4_9x9_v9",
+      "secs": 24958.7
+    },
+    "greedy::pretrain_n4_9x9": {
+      "seats": {
+        "0": [
+          10,
+          20
+        ],
+        "1": [
+          15,
+          20
+        ],
+        "2": [
+          17,
+          20
+        ],
+        "3": [
+          10,
+          20
+        ]
+      },
+      "wins": 52,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.65,
+      "racer_ceiling": 0.25,
+      "a": "greedy",
+      "b": "pretrain_n4_9x9",
+      "secs": 7719.9
+    },
+    "minimax_d2::greedy": {
+      "seats": {
+        "0": [
+          4,
+          20
+        ],
+        "1": [
+          0,
+          20
+        ],
+        "2": [
+          0,
+          20
+        ],
+        "3": [
+          0,
+          20
+        ]
+      },
+      "wins": 4,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.05,
+      "racer_ceiling": 0.25,
+      "a": "minimax_d2",
+      "b": "greedy",
+      "secs": 184.7
+    },
+    "minimax_d2::minimax_d2": {
+      "seats": {
+        "0": [
+          3,
+          20
+        ],
+        "1": [
+          3,
+          20
+        ],
+        "2": [
+          7,
+          20
+        ],
+        "3": [
+          3,
+          20
+        ]
+      },
+      "wins": 16,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.2,
+      "racer_ceiling": 0.25,
+      "a": "minimax_d2",
+      "b": "minimax_d2",
+      "secs": 926.2
+    },
+    "minimax_d2::n4_9x9_v10": {
+      "seats": {
+        "0": [
+          11,
+          20
+        ],
+        "1": [
+          15,
+          20
+        ],
+        "2": [
+          18,
+          20
+        ],
+        "3": [
+          17,
+          20
+        ]
+      },
+      "wins": 61,
+      "decided": 66,
+      "games": 80,
+      "rate": 0.9242,
+      "racer_ceiling": 0.25,
+      "a": "minimax_d2",
+      "b": "n4_9x9_v10",
+      "secs": 18147.8
+    },
+    "minimax_d2::n4_9x9_v11": {
+      "seats": {
+        "0": [
+          11,
+          20
+        ],
+        "1": [
+          15,
+          20
+        ],
+        "2": [
+          18,
+          20
+        ],
+        "3": [
+          19,
+          20
+        ]
+      },
+      "wins": 63,
+      "decided": 65,
+      "games": 80,
+      "rate": 0.9692,
+      "racer_ceiling": 0.25,
+      "a": "minimax_d2",
+      "b": "n4_9x9_v11",
+      "secs": 5074.8
+    },
+    "minimax_d2::n4_9x9_v12": {
+      "seats": {
+        "0": [
+          11,
+          20
+        ],
+        "1": [
+          15,
+          20
+        ],
+        "2": [
+          19,
+          20
+        ],
+        "3": [
+          16,
+          20
+        ]
+      },
+      "wins": 61,
+      "decided": 64,
+      "games": 80,
+      "rate": 0.9531,
+      "racer_ceiling": 0.25,
+      "a": "minimax_d2",
+      "b": "n4_9x9_v12",
+      "secs": 7168.5
+    },
+    "minimax_d2::n4_9x9_v13": {
+      "seats": {
+        "0": [
+          13,
+          20
+        ],
+        "1": [
+          16,
+          20
+        ],
+        "2": [
+          14,
+          20
+        ],
+        "3": [
+          17,
+          20
+        ]
+      },
+      "wins": 60,
+      "decided": 68,
+      "games": 80,
+      "rate": 0.8824,
+      "racer_ceiling": 0.25,
+      "a": "minimax_d2",
+      "b": "n4_9x9_v13",
+      "secs": 6209.8
+    },
+    "minimax_d2::n4_9x9_v9": {
+      "seats": {
+        "0": [
+          14,
+          20
+        ],
+        "1": [
+          15,
+          20
+        ],
+        "2": [
+          20,
+          20
+        ],
+        "3": [
+          17,
+          20
+        ]
+      },
+      "wins": 66,
+      "decided": 70,
+      "games": 80,
+      "rate": 0.9429,
+      "racer_ceiling": 0.25,
+      "a": "minimax_d2",
+      "b": "n4_9x9_v9",
+      "secs": 5506.8
+    },
+    "minimax_d2::pretrain_n4_9x9": {
+      "seats": {
+        "0": [
+          14,
+          20
+        ],
+        "1": [
+          14,
+          20
+        ],
+        "2": [
+          18,
+          20
+        ],
+        "3": [
+          13,
+          20
+        ]
+      },
+      "wins": 59,
+      "decided": 68,
+      "games": 80,
+      "rate": 0.8676,
+      "racer_ceiling": 0.25,
+      "a": "minimax_d2",
+      "b": "pretrain_n4_9x9",
+      "secs": 4327.9
+    },
+    "n4_9x9_v10::greedy": {
+      "seats": {
+        "0": [
+          5,
+          20
+        ],
+        "1": [
+          0,
+          20
+        ],
+        "2": [
+          0,
+          20
+        ],
+        "3": [
+          0,
+          20
+        ]
+      },
+      "wins": 5,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.0625,
+      "racer_ceiling": 0.25,
+      "a": "n4_9x9_v10",
+      "b": "greedy",
+      "secs": 406.0
+    },
+    "n4_9x9_v10::minimax_d2": {
+      "seats": {
+        "0": [
+          0,
+          20
+        ],
+        "1": [
+          0,
+          20
+        ],
+        "2": [
+          0,
+          20
+        ],
+        "3": [
+          0,
+          20
+        ]
+      },
+      "wins": 0,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.0,
+      "racer_ceiling": 0.25,
+      "a": "n4_9x9_v10",
+      "b": "minimax_d2",
+      "secs": 1188.2
+    },
+    "n4_9x9_v10::n4_9x9_v10": {
+      "seats": {
+        "0": [
+          1,
+          20
+        ],
+        "1": [
+          0,
+          20
+        ],
+        "2": [
+          2,
+          20
+        ],
+        "3": [
+          4,
+          20
+        ]
+      },
+      "wins": 7,
+      "decided": 25,
+      "games": 80,
+      "rate": 0.28,
+      "racer_ceiling": 0.25,
+      "a": "n4_9x9_v10",
+      "b": "n4_9x9_v10",
+      "secs": 16159.9
+    },
+    "n4_9x9_v10::n4_9x9_v11": {
+      "seats": {
+        "0": [
+          3,
+          20
+        ],
+        "1": [
+          1,
+          20
+        ],
+        "2": [
+          7,
+          20
+        ],
+        "3": [
+          3,
+          20
+        ]
+      },
+      "wins": 14,
+      "decided": 25,
+      "games": 80,
+      "rate": 0.56,
+      "racer_ceiling": 0.25,
+      "a": "n4_9x9_v10",
+      "b": "n4_9x9_v11",
+      "secs": 44362.6
+    },
+    "n4_9x9_v10::n4_9x9_v12": {
+      "seats": {
+        "0": [
+          1,
+          20
+        ],
+        "1": [
+          1,
+          20
+        ],
+        "2": [
+          3,
+          20
+        ],
+        "3": [
+          2,
+          20
+        ]
+      },
+      "wins": 7,
+      "decided": 35,
+      "games": 80,
+      "rate": 0.2,
+      "racer_ceiling": 0.25,
+      "a": "n4_9x9_v10",
+      "b": "n4_9x9_v12",
+      "secs": 13343.8
+    }
+  },
+  "self_tables": {
+    "greedy": {
+      "seats": {
+        "0": [
+          20,
+          20
+        ],
+        "1": [
+          0,
+          20
+        ],
+        "2": [
+          0,
+          20
+        ],
+        "3": [
+          0,
+          20
+        ]
+      },
+      "wins": 20,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.25,
+      "racer_ceiling": 0.25,
+      "a": "greedy",
+      "b": "greedy",
+      "secs": 2.9
+    },
+    "minimax_d2": {
+      "seats": {
+        "0": [
+          3,
+          20
+        ],
+        "1": [
+          3,
+          20
+        ],
+        "2": [
+          7,
+          20
+        ],
+        "3": [
+          3,
+          20
+        ]
+      },
+      "wins": 16,
+      "decided": 80,
+      "games": 80,
+      "rate": 0.2,
+      "racer_ceiling": 0.25,
+      "a": "minimax_d2",
+      "b": "minimax_d2",
+      "secs": 926.2
+    },
+    "n4_9x9_v10": {
+      "seats": {
+        "0": [
+          1,
+          20
+        ],
+        "1": [
+          0,
+          20
+        ],
+        "2": [
+          2,
+          20
+        ],
+        "3": [
+          4,
+          20
+        ]
+      },
+      "wins": 7,
+      "decided": 25,
+      "games": 80,
+      "rate": 0.28,
+      "racer_ceiling": 0.25,
+      "a": "n4_9x9_v10",
+      "b": "n4_9x9_v10",
+      "secs": 16159.9
+    }
+  },
+  "ratings": [
+    {
+      "name": "minimax_d2",
+      "rating": 1056.7,
+      "strength": 3.125246,
+      "games": 720,
+      "decided": 641,
+      "note": null
+    },
+    {
+      "name": "greedy",
+      "rating": 1000.0,
+      "strength": 2.255151,
+      "games": 720,
+      "decided": 720,
+      "note": null
+    },
+    {
+      "name": "pretrain_n4_9x9",
+      "rating": 837.2,
+      "strength": 0.883255,
+      "games": 160,
+      "decided": 148,
+      "note": null
+    },
+    {
+      "name": "n4_9x9_v12",
+      "rating": 769.1,
+      "strength": 0.596965,
+      "games": 240,
+      "decided": 179,
+      "note": null
+    },
+    {
+      "name": "n4_9x9_v13",
+      "rating": 678.2,
+      "strength": 0.35377,
+      "games": 160,
+      "decided": 148,
+      "note": null
+    },
+    {
+      "name": "n4_9x9_v11",
+      "rating": 675.1,
+      "strength": 0.347435,
+      "games": 240,
+      "decided": 170,
+      "note": null
+    },
+    {
+      "name": "n4_9x9_v10",
+      "rating": 646.1,
+      "strength": 0.293969,
+      "games": 480,
+      "decided": 366,
+      "note": null
+    },
+    {
+      "name": "n4_9x9_v9",
+      "rating": 522.3,
+      "strength": 0.144209,
+      "games": 160,
+      "decided": 150,
+      "note": null
+    }
+  ]
+}

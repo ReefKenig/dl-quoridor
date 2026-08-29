@@ -34,6 +34,9 @@ function getGridActionFromPixels(clientX, clientY) {
     }
   }
 
+  // Pixels are read in view space; the server only knows board space.
+  if (action) action = actionFromView(action);
+
   // Server-side validation filter
   if (action && gameState.valid_moves) {
     const isLegal = gameState.valid_moves.some(

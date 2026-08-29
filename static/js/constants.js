@@ -15,6 +15,6 @@ function getThinkingMessage() {
 }
 
 function getPlayerLabel(index) {
-  if (index === 0) return "Player 1 (You)";
-  return `Player ${index + 1} (AI)`;
+  const who = index === userSeat ? "You" : "AI";
+  return `Player ${index + 1} (${who})`;
 }

@@ -3,14 +3,117 @@
 let moveController = null;
 let currentGameId = null;
 
+function createInitialGameState() {
+  const mid = Math.floor(currentGridSize / 2);
+  const walls = currentGridSize === 5
+    ? (numPlayers === 2 ? 3 : 4)
+    : (numPlayers === 2 ? 10 : 5);
+  const players = [
+    { row: currentGridSize - 1, col: mid },
+    { row: 0, col: mid },
+  ];
+  if (numPlayers > 2) {
+    players.push(
+      { row: mid, col: 0 },
+      { row: mid, col: currentGridSize - 1 },
+    );
+  }
+  return {
+    players,
+    h_walls: [],
+    v_walls: [],
+    valid_moves: [],
+    walls_remaining: Array(numPlayers).fill(walls),
+    num_players: numPlayers,
+    current_player: 0,
+  };
+}
+
+async function readResponseData(response) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) {
+    throw new Error(data.error || `Request failed (${response.status})`);
+  }
+  return data;
+}
+
+// Shared body of startGame/restartGame: paint the placeholder board, ask the
+// server for a fresh game and play the AI opening up to the human's seat.
+async function launchGame(successText) {
+  setControlsBusy(false);
+  restartBtn.classList.add("btn-hidden");
+  isPlayerTurn = false; // Lock board while loading
+  gameState = createInitialGameState();
+  statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}. ${userSeat === 0 ? "Your turn." : "Waiting for your turn..."}`;
+  moveController = new AbortController();
+  const signal = moveController.signal;
+
+  drawWallsInfo();
+  resizeCanvas();
+  drawBoard();
+
+  try {
+    const response = await fetch(
+      `/api/${currentGridSize}x${currentGridSize}/reset`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          {
+            num_players: numPlayers,
+            difficulty: currentDifficulty,
+            game_id: currentGameId,
+            human_seat: userSeat
+          }
+        ),
+        signal,
+      }
+    );
+
+    if (signal.aborted) return;
+    const data = await readResponseData(response);
+    // readResponseData swallows an abort into {}, so re-check before writing.
+    if (signal.aborted) return;
+    currentGameId = data.game_id || currentGameId;
+    gameState = data;
+    userSeat = Number.isInteger(data.human_seat) ? data.human_seat : userSeat;
+
+    drawBoard();
+
+    // Play AI opening moves if human is not Seat 0
+    if (data.initial_ai_steps && data.initial_ai_steps.length > 0) {
+      await playAiSequence(data.initial_ai_steps, signal);
+    }
+    if (signal.aborted) return;
+
+    statusText.innerText = successText(userSeat);
+    isPlayerTurn = true; // Unlock board
+
+  } catch (error) {
+    if (error.name === "AbortError" || signal.aborted) return;
+    console.error("Failed to start game:", error);
+    isPlayerTurn = false;
+    statusText.innerText = "❌ Server connection lost.";
+    // Without this a failed reset leaves a locked board and no way to retry.
+    restartBtn.classList.remove("btn-hidden");
+  }
+}
+
 async function startGame() {
   if (moveController) {
     moveController.abort();
     moveController = null;
   }
+
   const newGridSize = parseInt(document.getElementById("board-size").value);
   numPlayers = parseInt(document.getElementById("num-players").value);
   currentDifficulty = document.getElementById("difficulty").value;
+
+  const seatSelect = document.getElementById("seat-select");
+  const rawSeat = seatSelect ? Number.parseInt(seatSelect.value, 10) : -1;
+  userSeat = Number.isInteger(rawSeat) && rawSeat >= 0
+    ? rawSeat % numPlayers
+    : Math.floor(Math.random() * numPlayers);
 
   if (newGridSize !== currentGridSize) {
     currentGridSize = newGridSize;
@@ -21,31 +124,10 @@ async function startGame() {
   gameScreen.classList.remove("hidden");
   updateDifficultySwitcher();
   resetWallsInfoCache();
-  gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
-  drawWallsInfo();
-  resizeCanvas();
 
-  try {
-    const response = await fetch(
-      `/api/${currentGridSize}x${currentGridSize}/reset`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty, game_id: currentGameId }),
-      },
-    );
-
-    const data = await response.json();
-    currentGameId = data.game_id || currentGameId;
-    isPlayerTurn = true;
-    gameState = data;
-
-    statusText.innerText = `🎮 ${numPlayers}-player game on ${currentGridSize}×${currentGridSize} - Your turn!`;
-    drawBoard();
-  } catch (error) {
-    console.log("Failed to start game:", error);
-    statusText.innerText = "❌ Server connection lost.";
-  }
+  await launchGame(
+    seat => `🎮 ${numPlayers}-player game. You are Player ${seat + 1}! Your turn.`
+  );
 }
 
 async function restartGame() {
@@ -53,34 +135,16 @@ async function restartGame() {
     moveController.abort();
     moveController = null;
   }
-  restartBtn.classList.add("btn-hidden");
   resetWallsInfoCache();
-  isPlayerTurn = false;
-  gameState = { players: [], h_walls: [], v_walls: [], valid_moves: [], walls_remaining: [], num_players: numPlayers, current_player: 0 };
-  drawWallsInfo();
-  drawBoard();
 
-  try {
-    const response = await fetch(
-      `/api/${currentGridSize}x${currentGridSize}/reset`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_players: numPlayers, difficulty: currentDifficulty, game_id: currentGameId }),
-      },
-    );
-    const data = await response.json();
-
-    currentGameId = data.game_id || currentGameId;
-    isPlayerTurn = true;
-    gameState = data;
-
-    statusText.innerText = `🎮 New game! Your turn (Player 1).`;
-    drawBoard();
-  } catch (error) {
-    console.error("Failed to restart:", error);
-    statusText.innerText = "❌ Server connection lost.";
+  // Preserve the current human seat across a mid-game restart or difficulty
+  // switch. Re-reading the menu selector here re-randomizes random-seat games.
+  const seatSelect = document.getElementById("seat-select");
+  if (seatSelect && Number.isInteger(parseInt(seatSelect.value, 10)) && parseInt(seatSelect.value, 10) >= 0) {
+    userSeat = parseInt(seatSelect.value, 10) % numPlayers;
   }
+
+  await launchGame(seat => `🎮 New game! You are Player ${seat + 1}. Your turn.`);
 }
 
 function quitToMenu() {
@@ -88,6 +152,7 @@ function quitToMenu() {
     moveController.abort();
     moveController = null;
   }
+  setControlsBusy(false);
   gameScreen.classList.add("hidden");
   mainMenu.classList.remove("hidden");
   restartBtn.classList.add("btn-hidden");
@@ -115,45 +180,103 @@ function showToast(message, duration = 2500) {
   toast._timeout = setTimeout(() => toast.classList.remove("show"), duration);
 }
 
+// The menu difficulty select and the in-game switcher are locked while a move
+// is in flight; every exit from that wait has to unlock them again.
+function setControlsBusy(busy) {
+  document.querySelectorAll(".diff-opt").forEach(
+    b => b.style.pointerEvents = busy ? "none" : "auto"
+  );
+  const diffSelect = document.getElementById("difficulty");
+  if (diffSelect) diffSelect.disabled = busy;
+}
+
+function showGameOver(winner) {
+  if (winner === "human" || winner === userSeat) {
+    statusText.innerText = "🏆 You win! Well played!";
+  } else if (winner === null || winner === undefined) {
+    statusText.innerText = "🤝 It's a draw!";
+  } else {
+    statusText.innerText = numPlayers === 2
+      ? "😤 The AI beat you this time!"
+      : "😤 An AI beat you this time!";
+  }
+  isPlayerTurn = false;
+  restartBtn.classList.remove("btn-hidden");
+}
+
+// After a 409 nothing on this client will advance the AI - the server only
+// steps AI seats inside /move or /reset - so poll until the turn comes back.
+async function waitForHumanTurn(signal) {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (signal.aborted) return { status: "aborted" };
+    try {
+      const sync = await fetch(
+        `/api/${currentGridSize}x${currentGridSize}/state?game_id=${encodeURIComponent(currentGameId || "")}`,
+        { signal },
+      );
+      if (!sync.ok) continue;
+      const syncState = await sync.json();
+      if (signal.aborted) return { status: "aborted" };
+      gameState = syncState;
+      if (Number.isInteger(syncState.human_seat)) {
+        userSeat = syncState.human_seat;
+      }
+      drawBoard();
+      if (syncState.game_over) {
+        return { status: "over", winner: syncState.winner };
+      }
+      if (syncState.current_player === userSeat) return { status: "turn" };
+    } catch (error) {
+      // A dropped request mid-poll is transient; only a teardown ends the wait.
+      if (error.name === "AbortError" || signal.aborted) {
+        return { status: "aborted" };
+      }
+    }
+  }
+  return { status: "timeout" };
+}
+
 async function sendMoveToServer(type, targetRow, targetCol) {
   isPlayerTurn = false;
 
   // Optimistically show the player's move immediately
   if (type === "pawn" && gameState.players && gameState.players.length > 0) {
-    gameState.players[0] = { row: targetRow, col: targetCol };
+    gameState.players[userSeat] = { row: targetRow, col: targetCol };
   } else if (type === "h_wall") {
     if (!gameState.h_walls) gameState.h_walls = [];
     gameState.h_walls.push({ row: targetRow, col: targetCol });
-    if (gameState.walls_remaining && gameState.walls_remaining[0] > 0) {
-      gameState.walls_remaining[0]--;
+    if (gameState.walls_remaining && gameState.walls_remaining[userSeat] > 0) {
+      gameState.walls_remaining[userSeat]--;
     }
   } else if (type === "v_wall") {
     if (!gameState.v_walls) gameState.v_walls = [];
     gameState.v_walls.push({ row: targetRow, col: targetCol });
-    if (gameState.walls_remaining && gameState.walls_remaining[0] > 0) {
-      gameState.walls_remaining[0]--;
+    if (gameState.walls_remaining && gameState.walls_remaining[userSeat] > 0) {
+      gameState.walls_remaining[userSeat]--;
     }
   }
+
+  gameState.current_player = (gameState.current_player + 1) % numPlayers;
+
   drawBoard();
 
+  const thinkingText = numPlayers === 2
+    ? "🤖 Opponent is thinking..."
+    : "🤖 Opponents are thinking...";
+
   if (type === "pawn") {
-    statusText.innerText = numPlayers === 2
-      ? "P2 thinking..."
-      : "P2, P3, P4 thinking...";
+    statusText.innerText = thinkingText;
   } else {
     showToast("Wall placed", 1500);
-    statusText.innerText = numPlayers === 2
-      ? "P2 thinking..."
-      : "P2, P3, P4 thinking...";
+    statusText.innerText = thinkingText;
   }
 
   if (moveController) moveController.abort();
   moveController = new AbortController();
   const signal = moveController.signal;
 
-  document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "none");
-  const diffSelect = document.getElementById("difficulty");
-  if (diffSelect) diffSelect.disabled = true;
+  setControlsBusy(true);
 
   try {
     const response = await fetch(
@@ -175,52 +298,64 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
     if (data.error) {
       showToast("⚠️ " + data.error);
-      statusText.innerText = "🎯 Your turn (Player 1)";
-      isPlayerTurn = true;
 
-      document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
-      if (diffSelect) diffSelect.disabled = false;
+      setControlsBusy(false);
+
+      // A rejected move (400) leaves it our turn, but a 409 means the AI is
+      // still to play - unlocking there lets the human move an AI pawn.
+      let resumeTurn = response.status !== 409;
 
       // Re-sync state from server in case of drift
+      let finished = null;
       try {
-        const sync = await fetch(`/api/${currentGridSize}x${currentGridSize}/state?game_id=${encodeURIComponent(currentGameId || "")}`);
+        const sync = await fetch(`/api/${currentGridSize}x${currentGridSize}/state?game_id=${encodeURIComponent(currentGameId || "")}`, { signal });
         if (sync.ok) {
           const syncState = await sync.json();
+          if (signal.aborted) return;
           currentGameId = syncState.game_id || currentGameId;
           gameState = syncState;
+          if (Number.isInteger(syncState.human_seat)) {
+            userSeat = syncState.human_seat;
+          }
+          // The winning step advances the seat, so a finished game can report
+          // the human as current player - check game_over before the turn.
+          if (syncState.game_over) {
+            finished = { winner: syncState.winner };
+          } else if (Number.isInteger(syncState.current_player)) {
+            resumeTurn = syncState.current_player === userSeat;
+          }
           drawBoard();
         }
       } catch (_) {}
+      if (signal.aborted) return;
+
+      if (finished) {
+        showGameOver(finished.winner);
+        return;
+      }
+
+      if (!resumeTurn) {
+        statusText.innerText = "🤖 AI is thinking...";
+        const outcome = await waitForHumanTurn(signal);
+        if (signal.aborted || outcome.status === "aborted") return;
+        if (outcome.status === "over") {
+          showGameOver(outcome.winner);
+          return;
+        }
+        resumeTurn = outcome.status === "turn";
+      }
+
+      isPlayerTurn = resumeTurn;
+      statusText.innerText = resumeTurn
+        ? `🎯 Your turn (Player ${userSeat + 1})`
+        : "❌ Lost track of the game - please restart.";
+      if (!resumeTurn) restartBtn.classList.remove("btn-hidden");
       return;
     }
 
-    // Animate AI moves one by one
     if (data.ai_steps && data.ai_steps.length > 0) {
-      let prevWallCount = (gameState.h_walls ? gameState.h_walls.length : 0)
-        + (gameState.v_walls ? gameState.v_walls.length : 0);
-
-      for (let i = 0; i < data.ai_steps.length; i++) {
-        if (signal.aborted) return;
-        const step = data.ai_steps[i];
-        const playerNum = i + 2;
-        const newWallCount = (step.h_walls ? step.h_walls.length : 0)
-          + (step.v_walls ? step.v_walls.length : 0);
-        const placedWall = newWallCount > prevWallCount;
-        prevWallCount = newWallCount;
-
-        if (numPlayers > 2) {
-          statusText.innerText = placedWall
-            ? `P${playerNum} placed a wall`
-            : `P${playerNum} moved`;
-        }
-        await sleep(400);
-        if (signal.aborted) return;
-        gameState = step;
-        drawBoard();
-        if (i < data.ai_steps.length - 1) {
-          await sleep(300);
-        }
-      }
+      await playAiSequence(data.ai_steps, signal);
+      if (signal.aborted) return;
     }
 
     // Always use newState as the authoritative final state
@@ -232,35 +367,25 @@ async function sendMoveToServer(type, targetRow, targetCol) {
     }
 
     if (data.status === "game_over") {
-      const winner = data.winner;
-      if (winner === "human" || winner === 0) {
-        statusText.innerText = "🏆 You win! Well played!";
-      } else if (winner === null || winner === undefined) {
-        statusText.innerText = "🤝 It's a draw!";
-      } else {
-        const pNum = data.ai_steps ? data.ai_steps.length + 1 : 2;
-        statusText.innerText = `😤 Player ${pNum} (AI) beat you this time!`;
-      }
-      isPlayerTurn = false;
-      restartBtn.classList.remove("btn-hidden");
+      showGameOver(data.winner);
 
-      document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
-      if (diffSelect) diffSelect.disabled = false;
+      setControlsBusy(false);
       return;
     }
 
-    statusText.innerText = "🎯 Your turn (Player 1)";
+    statusText.innerText = `🎯 Your turn (Player ${userSeat + 1})`;
     isPlayerTurn = true;
 
-    document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
-    if (diffSelect) diffSelect.disabled = false;
+    setControlsBusy(false);
   } catch (error) {
-    if (error.name === "AbortError") return;
+    if (error.name === "AbortError" || signal.aborted) return;
     console.error("Error communicating with AI:", error);
     statusText.innerText = "❌ Server connection lost.";
+    isPlayerTurn = false;
+    // Otherwise a non-JSON error body leaves a locked board and no way out.
+    restartBtn.classList.remove("btn-hidden");
 
-    document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
-    if (diffSelect) diffSelect.disabled = false;
+    setControlsBusy(false);
   }
 }
 
@@ -279,4 +404,33 @@ function switchDifficulty(diff) {
   }
   updateDifficultySwitcher();
   restartGame();
+}
+
+async function playAiSequence(steps, signal = null) {
+  let prevWallCount = (gameState.h_walls ? gameState.h_walls.length : 0) + (gameState.v_walls ? gameState.v_walls.length : 0);
+
+  for (let i = 0; i < steps.length; i++) {
+    if (signal && signal.aborted) return;
+
+    const step = steps[i];
+    const pNum = Number.isInteger(step.moved_player)
+      ? step.moved_player + 1
+      : (step.current_player === 0 ? numPlayers : step.current_player);
+
+    const newWallCount = (step.h_walls ? step.h_walls.length : 0) + (step.v_walls ? step.v_walls.length : 0);
+    const placedWall = newWallCount > prevWallCount;
+    prevWallCount = newWallCount;
+
+    statusText.innerText = placedWall ? `P${pNum} placed a wall` : `P${pNum} moved`;
+
+    await sleep(400)
+    if (signal && signal.aborted) return;
+
+    gameState = step;
+    drawBoard();
+
+    if (i < steps.length - 1) {
+      await sleep(300);
+    }
+  }
 }

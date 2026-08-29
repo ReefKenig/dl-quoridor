@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import random
 from collections import OrderedDict
 
 import numpy as np
@@ -114,6 +115,7 @@ def _make_session_runtime(board_size=5, num_players=2, difficulty=DEFAULT_DIFFIC
         "mcts": mcts,
         "temperature": settings["temperature"],
         "state": env.reset(),
+        "human_seat": 0,
     }
 
 
@@ -162,6 +164,42 @@ def _sync_session_runtime(
     return runtime
 
 
+def _advance_ai_until_human(runtime, state, human_seat):
+    """Advance AI turns and return each resulting state with its mover."""
+    env = runtime["env"]
+    mcts = runtime["mcts"]
+    temperature = runtime["temperature"]
+    ai_steps = []
+
+    while env.get_current_player(state) != human_seat and not state.game_over:
+        mover = env.get_current_player(state)
+        action_probs = mcts.search(env, state, temperature=temperature)
+        if temperature < 0.1:
+            ai_action = int(np.argmax(action_probs))
+        else:
+            ai_action = int(np.random.choice(len(action_probs), p=action_probs))
+
+        state, _reward, done, _info = env.step(state, ai_action)
+        runtime["state"] = state
+        step_data = _extract_positions(env, state)
+        step_data["moved_player"] = mover
+        ai_steps.append(step_data)
+        if done:
+            break
+
+    return state, ai_steps
+
+
+def _winner_label(state, human_seat):
+    """Map the env's winning seat onto the client's human/ai/draw contract.
+
+    A turn-cap game ends with winner None, which the client renders as a draw.
+    """
+    if state.winner is None:
+        return None
+    return "human" if int(state.winner) == human_seat else "ai"
+
+
 # --- WEB ROUTES ---
 @app.route("/")
 def inedx():
@@ -177,7 +215,11 @@ def serve_static(path):
 @app.route("/api/<board_size>/reset", methods=["POST"])
 def reset_game(board_size):
     data = request.json or {}
-    num_players = data.get("num_players", 2)
+    requested_num_players = data.get("num_players", 2)
+    try:
+        num_players = 4 if int(requested_num_players) == 4 else 2
+    except (TypeError, ValueError):
+        num_players = 2
     difficulty = data.get("difficulty", DEFAULT_DIFFICULTY)
     game_id = (
         data.get("game_id")
@@ -185,16 +227,54 @@ def reset_game(board_size):
         or request.headers.get(GAME_ID_HEADER)
     )
 
+    # 1. Extract the requested seat; negative values request random assignment.
+    raw_seat = data.get("human_seat", 0)
+
     try:
         bs = int(str(board_size).lower().split("x")[0])
     except (ValueError, IndexError):
         bs = 5
 
+    # 2. Resolve random seat
+    try:
+        parsed_seat = int(raw_seat)
+    except (TypeError, ValueError):
+        parsed_seat = 0
+    if str(raw_seat).lower() == 'random' or parsed_seat < 0:
+        human_seat = random.randint(0, num_players - 1)
+    else:
+        human_seat = parsed_seat % num_players
+
+    # Sync the session to get fresh environment and MCTS instance
     runtime = _sync_session_runtime(
         board_size=bs, num_players=num_players, difficulty=difficulty, game_id=game_id
     )
-    response = _extract_positions(runtime["env"], runtime["state"])
+    runtime["human_seat"] = human_seat
+
+    env = runtime["env"]
+    mcts = runtime["mcts"]
+    state = runtime["state"]
+    initial_state = env.clone_state(state)
+    temperature = runtime["temperature"]
+
+    initial_ai_steps = []
+
+    # 3. Steer the AI until it reaches the human's seat
+    try:
+        _state, initial_ai_steps = _advance_ai_until_human(
+            runtime, state, human_seat
+        )
+    except Exception as error:
+        runtime["state"] = env.clone_state(initial_state)
+        runtime["human_seat"] = 0
+        return jsonify({"error": str(error)}), 500
+
+    # 4. Return the initial state alongside the AI's opening moves
+    response = _extract_positions(runtime["env"], initial_state)
     response["game_id"] = _resolve_session_id(game_id)
+    response["human_seat"] = human_seat
+    response["initial_ai_steps"] = initial_ai_steps
+
     return jsonify(response)
 
 
@@ -205,13 +285,18 @@ def get_state(board_size):
         or request.headers.get(GAME_ID_HEADER)
         or _get_request_game_id()
     )
-    runtime = _get_session_runtime(
-        board_size=5, num_players=2, difficulty=DEFAULT_DIFFICULTY, game_id=game_id
-    )
-    if runtime["state"] is None:
+    session_id = _resolve_session_id(game_id)
+    runtime = SESSION_GAMES.get(session_id)
+    if runtime is None or runtime["state"] is None:
         return jsonify({"error": "No active game"}), 404
+    runtime["last_seen"] = time.monotonic()
+    SESSION_GAMES.move_to_end(session_id)
     response = _extract_positions(runtime["env"], runtime["state"])
     response["game_id"] = _resolve_session_id(game_id)
+    response["human_seat"] = runtime.get("human_seat", 0)
+    response["winner"] = _winner_label(
+        runtime["state"], runtime.get("human_seat", 0)
+    )
     return jsonify(response)
 
 
@@ -231,10 +316,13 @@ def process_move(board_size):
     env = runtime["env"]
     mcts = runtime["mcts"]
     temperature = runtime["temperature"]
+    human_seat = runtime.get("human_seat", 0)
 
     try:
         if state is None:
             return jsonify({"error": "Game state not found"})
+        if env.get_current_player(state) != human_seat:
+            return jsonify({"error": "It is not your turn."}), 409
 
         data = request.json
         action_type = data.get("type", "pawn")
@@ -243,7 +331,7 @@ def process_move(board_size):
         human_action = None
 
         if action_type == "pawn":
-            curr_r, curr_c = state.positions[0]
+            curr_r, curr_c = state.positions[human_seat]
             dr = target["row"] - curr_r
             dc = target["col"] - curr_c
             human_action = MOVE_MAP.get((dr, dc))
@@ -267,36 +355,34 @@ def process_move(board_size):
             )
             return jsonify({"error": "Illegal move or wall placement blocked."}), 400
 
+        state_before_human = env.clone_state(state)
         state, reward, done, _ = env.step(state, human_action)
         runtime["state"] = state
         if done:
             response = {
                 "status": "game_over",
-                "winner": "human",
+                "winner": _winner_label(state, human_seat),
                 "newState": _extract_positions(env, state),
                 "game_id": _resolve_session_id(game_id),
             }
             return jsonify(response)
 
-        ai_steps = []
-        while env.get_current_player(state) != 0 and not state.game_over:
-            action_probs = mcts.search(env, state, temperature=temperature)
-            if temperature < 0.1:
-                ai_action = int(np.argmax(action_probs))
-            else:
-                ai_action = int(np.random.choice(len(action_probs), p=action_probs))
-            state, reward, done, info = env.step(state, ai_action)
-            runtime["state"] = state
-            ai_steps.append(_extract_positions(env, state))
-            if done:
-                response = {
-                    "status": "game_over",
-                    "newState": _extract_positions(env, state),
-                    "ai_steps": ai_steps,
-                    "winner": "ai",
-                    "game_id": _resolve_session_id(game_id),
-                }
-                return jsonify(response)
+        try:
+            state, ai_steps = _advance_ai_until_human(
+                runtime, state, human_seat
+            )
+        except Exception as error:
+            runtime["state"] = state_before_human
+            return jsonify({"error": str(error)}), 500
+        if state.game_over:
+            response = {
+                "status": "game_over",
+                "newState": _extract_positions(env, state),
+                "ai_steps": ai_steps,
+                "winner": _winner_label(state, human_seat),
+                "game_id": _resolve_session_id(game_id),
+            }
+            return jsonify(response)
 
         runtime["state"] = state
         response = {
@@ -350,6 +436,7 @@ def _extract_positions(env, state):
         "walls_remaining": list(state.walls_remaining),
         "num_players": len(positions),
         "current_player": env.get_current_player(state),
+        "game_over": bool(state.game_over),
     }
 
 

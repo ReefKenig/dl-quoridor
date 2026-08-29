@@ -21,11 +21,22 @@
           </select>
         </div>
 
+        <div class="form-group">
+          <label for="seat-select">Play as</label>
+          <select id="seat-select" class="form-control">
+            <option value="-1" selected>Random</option>
+            <option value="0">Player 1</option>
+            <option value="1">Player 2</option>
+            <option value="2">Player 3</option>
+            <option value="3">Player 4</option>
+          </select>
+        </div>
+
         <div>
           <label for="difficulty">Difficulty</label>
           <select id="difficulty">
             <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
+            <option value="medium" selected>Medium</option>
             <option value="hard">Hard</option>
           </select>
         </div>
@@ -34,7 +45,7 @@
           <label for="board-size">Board Size</label>
           <select id="board-size">
             <option value="5">5 × 5</option>
-            <option value="9">9 × 9</option>
+            <option value="9" selected>9 × 9</option>
           </select>
         </div>
       </div>
@@ -74,7 +85,7 @@
           <p><strong>On your turn</strong>, do one of the following:</p>
           <ul>
             <li><strong>Move your pawn</strong> one square (up, down, left, or right). You can jump over an adjacent opponent.</li>
-            <li><strong>Place a wall</strong> to block your opponents' path. Walls span two squares.</li>
+            <li><strong>Place a wall</strong> to block your opponents' paths. Walls span two squares.</li>
           </ul>
           <p><strong>Rules:</strong></p>
           <ul>
@@ -92,6 +103,7 @@
 
     <script src="js/constants.js"></script>
     <script src="index.js"></script>
+    <script src="js/view.js"></script>
     <script src="js/drawing.js"></script>
     <script src="js/input.js"></script>
     <script src="js/game.js"></script>

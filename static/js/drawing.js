@@ -17,34 +17,21 @@ function drawBoard() {
     }
   }
 
-  // Draw walls
+  // Draw walls, rotated into the human's view
   ctx.fillStyle = "#e94560";
-  if (gameState.h_walls) {
-    gameState.h_walls.forEach((wall) => {
-      ctx.fillRect(
-        wall.col * cellSize + 5,
-        (wall.row + 1) * cellSize - 4,
-        cellSize * 2 - 10,
-        8,
-      );
+  ["h_walls", "v_walls"].forEach((key) => {
+    const type = key === "h_walls" ? "h_wall" : "v_wall";
+    (gameState[key] || []).forEach((wall) => {
+      const view = wallToView(type, wall.row, wall.col);
+      drawWall(view.type, view.row, view.col);
     });
-  }
-
-  if (gameState.v_walls) {
-    gameState.v_walls.forEach((wall) => {
-      ctx.fillRect(
-        (wall.col + 1) * cellSize - 4,
-        wall.row * cellSize + 5,
-        8,
-        cellSize * 2 - 10,
-      );
-    });
-  }
+  });
 
   // Draw all player pawns
   if (gameState.players) {
     gameState.players.forEach((pos, i) => {
-      drawPawn(pos.row, pos.col, PLAYER_COLORS[i], i + 1);
+      const cell = cellToView(pos.row, pos.col);
+      drawPawn(cell.row, cell.col, PLAYER_COLORS[i], i + 1);
     });
   }
 
@@ -52,24 +39,12 @@ function drawBoard() {
   if (hoverState && isPlayerTurn) {
     ctx.globalAlpha = 0.4;
 
-    if (hoverState.type === "pawn") {
-      drawPawn(hoverState.row, hoverState.col, PLAYER_COLORS[0], null);
-    } else if (hoverState.type === "h_wall") {
+    const preview = actionToView(hoverState);
+    if (preview.type === "pawn") {
+      drawPawn(preview.row, preview.col, PLAYER_COLORS[userSeat], null);
+    } else {
       ctx.fillStyle = "#e94560";
-      ctx.fillRect(
-        hoverState.col * cellSize + 5,
-        (hoverState.row + 1) * cellSize - 4,
-        cellSize * 2 - 10,
-        8,
-      );
-    } else if (hoverState.type === "v_wall") {
-      ctx.fillStyle = "#e94560";
-      ctx.fillRect(
-        (hoverState.col + 1) * cellSize - 4,
-        hoverState.row * cellSize + 5,
-        8,
-        cellSize * 2 - 10,
-      );
+      drawWall(preview.type, preview.row, preview.col);
     }
 
     ctx.globalAlpha = 1.0;
@@ -77,6 +52,15 @@ function drawBoard() {
 
   // Draw walls-remaining info
   drawWallsInfo();
+}
+
+// Wall rects in view space: row/col are slot-grid indices, not cells.
+function drawWall(type, row, col) {
+  if (type === "h_wall") {
+    ctx.fillRect(col * cellSize + 5, (row + 1) * cellSize - 4, cellSize * 2 - 10, 8);
+  } else {
+    ctx.fillRect((col + 1) * cellSize - 4, row * cellSize + 5, 8, cellSize * 2 - 10);
+  }
 }
 
 function drawPawn(row, col, color, displayNumber) {
@@ -116,7 +100,7 @@ function drawWallsInfo() {
     : Array(np).fill(0);
   const cp = gameState.current_player || 0;
 
-  const infoKey = walls.join(",") + ":" + cp;
+  const infoKey = walls.join(",") + ":" + cp + ":" + userSeat;
   if (infoKey === lastWallsInfoKey) return;
   lastWallsInfoKey = infoKey;
 
@@ -124,7 +108,7 @@ function drawWallsInfo() {
   let html = "";
   for (let i = 0; i < np; i++) {
     const color = PLAYER_COLORS[i];
-    const label = i === 0 ? "You" : `P${i + 1}`;
+    const label = i === userSeat ? "You" : `P${i + 1}`;
     const count = walls[i];
     const bricks = [];
     for (let w = 0; w < maxWalls; w++) {

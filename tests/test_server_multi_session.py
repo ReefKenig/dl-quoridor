@@ -68,3 +68,90 @@ def test_idle_sessions_expire(monkeypatch):
 
     assert "stale" not in server_app.SESSION_GAMES
     assert "fresh" in server_app.SESSION_GAMES
+
+
+def test_state_does_not_create_an_evicted_session():
+    server_app.SESSION_GAMES.clear()
+
+    response = app.test_client().get(f"/api/{BOARD_2P}/state?game_id=evicted")
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "No active game"}
+
+
+def test_reset_normalizes_player_count_and_invalid_seat():
+    server_app.SESSION_GAMES.clear()
+    response = app.test_client().post(
+        f"/api/{BOARD_2P}/reset",
+        json={"num_players": 3, "human_seat": None, "game_id": "invalid"},
+    )
+
+    assert response.status_code == 200
+    state = response.get_json()
+    assert state["num_players"] == 2
+    assert state["human_seat"] == 0
+
+
+def test_reset_rollback_restores_session_state(monkeypatch):
+    server_app.SESSION_GAMES.clear()
+    advanced = []
+
+    # Mimic the real helper: mutate the runtime, then fail. A mock that only
+    # raises leaves nothing for the rollback to undo.
+    def boom(runtime, state, _human_seat):
+        env = runtime["env"]
+        moved, _reward, _done, _info = env.step(
+            state, int(env.get_valid_actions(state)[0])
+        )
+        runtime["state"] = moved
+        advanced.append(moved)
+        raise RuntimeError("AI exploded")
+
+    monkeypatch.setattr(server_app, "_advance_ai_until_human", boom)
+
+    # 4 players so the requested seat survives the % num_players clamp and the
+    # rollback to seat 0 is observable.
+    response = app.test_client().post(
+        f"/api/{BOARD_4P}/reset",
+        json={"num_players": 4, "human_seat": 2, "game_id": "reset-rollback"},
+    )
+
+    assert response.status_code == 500
+    assert advanced, "the failing helper never advanced the game"
+    runtime = server_app.SESSION_GAMES["reset-rollback"]
+    assert runtime["human_seat"] == 0
+    assert runtime["state"].current_player == 0
+    assert runtime["state"].positions != advanced[0].positions
+
+
+def test_move_rollback_restores_pre_move_state(monkeypatch):
+    server_app.SESSION_GAMES.clear()
+    client = app.test_client()
+
+    reset = client.post(
+        f"/api/{BOARD_2P}/reset",
+        json={"num_players": 2, "human_seat": 0, "game_id": "move-rollback"},
+    )
+    assert reset.status_code == 200
+
+    runtime = server_app.SESSION_GAMES["move-rollback"]
+    original_state = runtime["state"]
+
+    def boom(_runtime, _state, _human_seat):
+        raise RuntimeError("AI exploded")
+
+    monkeypatch.setattr(server_app, "_advance_ai_until_human", boom)
+
+    response = client.post(
+        f"/api/{BOARD_2P}/move",
+        json={
+            "game_id": "move-rollback",
+            "type": "pawn",
+            "target": {"row": 3, "col": 2},
+        },
+    )
+
+    assert response.status_code == 500
+    runtime = server_app.SESSION_GAMES["move-rollback"]
+    assert runtime["state"].current_player == original_state.current_player
+    assert runtime["state"].positions == original_state.positions

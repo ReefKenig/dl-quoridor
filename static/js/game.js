@@ -273,11 +273,13 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
     if (data.error) {
       showToast("⚠️ " + data.error);
-      statusText.innerText = `🎯 Your turn (Player ${userSeat + 1})`;
-      isPlayerTurn = true;
 
       document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
       if (diffSelect) diffSelect.disabled = false;
+
+      // A rejected move (400) leaves it our turn, but a 409 means the AI is
+      // still to play - unlocking there lets the human move an AI pawn.
+      let resumeTurn = response.status !== 409;
 
       // Re-sync state from server in case of drift
       try {
@@ -289,9 +291,17 @@ async function sendMoveToServer(type, targetRow, targetCol) {
           if (Number.isInteger(syncState.human_seat)) {
             userSeat = syncState.human_seat;
           }
+          if (Number.isInteger(syncState.current_player)) {
+            resumeTurn = syncState.current_player === userSeat;
+          }
           drawBoard();
         }
       } catch (_) {}
+
+      isPlayerTurn = resumeTurn;
+      statusText.innerText = resumeTurn
+        ? `🎯 Your turn (Player ${userSeat + 1})`
+        : "🤖 AI is thinking...";
       return;
     }
 

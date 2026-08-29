@@ -40,6 +40,7 @@ async function readResponseData(response) {
 // Shared body of startGame/restartGame: paint the placeholder board, ask the
 // server for a fresh game and play the AI opening up to the human's seat.
 async function launchGame(successText) {
+  restartBtn.classList.add("btn-hidden");
   isPlayerTurn = false; // Lock board while loading
   gameState = createInitialGameState();
   statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}. ${userSeat === 0 ? "Your turn." : "Waiting for your turn..."}`;
@@ -86,7 +87,7 @@ async function launchGame(successText) {
     isPlayerTurn = true; // Unlock board
 
   } catch (error) {
-    if (error.name === "AbortError") return;
+    if (error.name === "AbortError" || signal.aborted) return;
     console.error("Failed to start game:", error);
     isPlayerTurn = false;
     statusText.innerText = "❌ Server connection lost.";
@@ -131,7 +132,6 @@ async function restartGame() {
     moveController.abort();
     moveController = null;
   }
-  restartBtn.classList.add("btn-hidden");
   resetWallsInfoCache();
 
   // Preserve the current human seat across a mid-game restart or difficulty
@@ -365,7 +365,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
     document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
     if (diffSelect) diffSelect.disabled = false;
   } catch (error) {
-    if (error.name === "AbortError") return;
+    if (error.name === "AbortError" || signal.aborted) return;
     console.error("Error communicating with AI:", error);
     statusText.innerText = "❌ Server connection lost.";
     isPlayerTurn = false;

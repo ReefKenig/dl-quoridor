@@ -176,12 +176,24 @@ function showToast(message, duration = 2500) {
   toast._timeout = setTimeout(() => toast.classList.remove("show"), duration);
 }
 
+function showGameOver(winner) {
+  if (winner === "human" || winner === userSeat) {
+    statusText.innerText = "🏆 You win! Well played!";
+  } else if (winner === null || winner === undefined) {
+    statusText.innerText = "🤝 It's a draw!";
+  } else {
+    statusText.innerText = `😤 An AI beat you this time!`;
+  }
+  isPlayerTurn = false;
+  restartBtn.classList.remove("btn-hidden");
+}
+
 // After a 409 nothing on this client will advance the AI - the server only
 // steps AI seats inside /move or /reset - so poll until the turn comes back.
 async function waitForHumanTurn(signal) {
   for (let attempt = 0; attempt < 30; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 1000));
-    if (signal.aborted) return false;
+    if (signal.aborted) return { status: "aborted" };
     try {
       const sync = await fetch(
         `/api/${currentGridSize}x${currentGridSize}/state?game_id=${encodeURIComponent(currentGameId || "")}`,
@@ -189,18 +201,24 @@ async function waitForHumanTurn(signal) {
       );
       if (!sync.ok) continue;
       const syncState = await sync.json();
-      if (signal.aborted) return false;
+      if (signal.aborted) return { status: "aborted" };
       gameState = syncState;
       if (Number.isInteger(syncState.human_seat)) {
         userSeat = syncState.human_seat;
       }
       drawBoard();
-      if (syncState.current_player === userSeat) return true;
-    } catch (_) {
-      return false;
+      if (syncState.game_over) {
+        return { status: "over", winner: syncState.winner };
+      }
+      if (syncState.current_player === userSeat) return { status: "turn" };
+    } catch (error) {
+      // A dropped request mid-poll is transient; only a teardown ends the wait.
+      if (error.name === "AbortError" || signal.aborted) {
+        return { status: "aborted" };
+      }
     }
   }
-  return false;
+  return { status: "timeout" };
 }
 
 async function sendMoveToServer(type, targetRow, targetCol) {
@@ -293,8 +311,13 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
       if (!resumeTurn) {
         statusText.innerText = "🤖 AI is thinking...";
-        resumeTurn = await waitForHumanTurn(signal);
-        if (signal.aborted) return;
+        const outcome = await waitForHumanTurn(signal);
+        if (signal.aborted || outcome.status === "aborted") return;
+        if (outcome.status === "over") {
+          showGameOver(outcome.winner);
+          return;
+        }
+        resumeTurn = outcome.status === "turn";
       }
 
       isPlayerTurn = resumeTurn;
@@ -319,16 +342,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
     }
 
     if (data.status === "game_over") {
-      const winner = data.winner;
-      if (winner === "human" || winner === userSeat) {
-        statusText.innerText = "🏆 You win! Well played!";
-      } else if (winner === null || winner === undefined) {
-        statusText.innerText = "🤝 It's a draw!";
-      } else {
-        statusText.innerText = `😤 An AI beat you this time!`;
-      }
-      isPlayerTurn = false;
-      restartBtn.classList.remove("btn-hidden");
+      showGameOver(data.winner);
 
       document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
       if (diffSelect) diffSelect.disabled = false;

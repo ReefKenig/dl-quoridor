@@ -294,6 +294,9 @@ def get_state(board_size):
     response = _extract_positions(runtime["env"], runtime["state"])
     response["game_id"] = _resolve_session_id(game_id)
     response["human_seat"] = runtime.get("human_seat", 0)
+    response["winner"] = _winner_label(
+        runtime["state"], runtime.get("human_seat", 0)
+    )
     return jsonify(response)
 
 
@@ -433,6 +436,7 @@ def _extract_positions(env, state):
         "walls_remaining": list(state.walls_remaining),
         "num_players": len(positions),
         "current_player": env.get_current_player(state),
+        "game_over": bool(state.game_over),
     }
 
 

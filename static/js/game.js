@@ -196,7 +196,9 @@ function showGameOver(winner) {
   } else if (winner === null || winner === undefined) {
     statusText.innerText = "🤝 It's a draw!";
   } else {
-    statusText.innerText = `😤 An AI beat you this time!`;
+    statusText.innerText = numPlayers === 2
+      ? "😤 The AI beat you this time!"
+      : "😤 An AI beat you this time!";
   }
   isPlayerTurn = false;
   restartBtn.classList.remove("btn-hidden");
@@ -259,7 +261,9 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
   drawBoard();
 
-  const thinkingText = numPlayers === 2 ? "🤖 Opponent thinking..." : "🤖 Opponents thinking...";
+  const thinkingText = numPlayers === 2
+    ? "🤖 Opponent is thinking..."
+    : "🤖 Opponents are thinking...";
 
   if (type === "pawn") {
     statusText.innerText = thinkingText;

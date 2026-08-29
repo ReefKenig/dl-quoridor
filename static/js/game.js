@@ -40,6 +40,7 @@ async function readResponseData(response) {
 // Shared body of startGame/restartGame: paint the placeholder board, ask the
 // server for a fresh game and play the AI opening up to the human's seat.
 async function launchGame(successText) {
+  setControlsBusy(false);
   restartBtn.classList.add("btn-hidden");
   isPlayerTurn = false; // Lock board while loading
   gameState = createInitialGameState();
@@ -151,6 +152,7 @@ function quitToMenu() {
     moveController.abort();
     moveController = null;
   }
+  setControlsBusy(false);
   gameScreen.classList.add("hidden");
   mainMenu.classList.remove("hidden");
   restartBtn.classList.add("btn-hidden");
@@ -176,6 +178,16 @@ function showToast(message, duration = 2500) {
   toast.classList.add("show");
   clearTimeout(toast._timeout);
   toast._timeout = setTimeout(() => toast.classList.remove("show"), duration);
+}
+
+// The menu difficulty select and the in-game switcher are locked while a move
+// is in flight; every exit from that wait has to unlock them again.
+function setControlsBusy(busy) {
+  document.querySelectorAll(".diff-opt").forEach(
+    b => b.style.pointerEvents = busy ? "none" : "auto"
+  );
+  const diffSelect = document.getElementById("difficulty");
+  if (diffSelect) diffSelect.disabled = busy;
 }
 
 function showGameOver(winner) {
@@ -260,9 +272,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
   moveController = new AbortController();
   const signal = moveController.signal;
 
-  document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "none");
-  const diffSelect = document.getElementById("difficulty");
-  if (diffSelect) diffSelect.disabled = true;
+  setControlsBusy(true);
 
   try {
     const response = await fetch(
@@ -285,8 +295,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
     if (data.error) {
       showToast("⚠️ " + data.error);
 
-      document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
-      if (diffSelect) diffSelect.disabled = false;
+      setControlsBusy(false);
 
       // A rejected move (400) leaves it our turn, but a 409 means the AI is
       // still to play - unlocking there lets the human move an AI pawn.
@@ -356,16 +365,14 @@ async function sendMoveToServer(type, targetRow, targetCol) {
     if (data.status === "game_over") {
       showGameOver(data.winner);
 
-      document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
-      if (diffSelect) diffSelect.disabled = false;
+      setControlsBusy(false);
       return;
     }
 
     statusText.innerText = `🎯 Your turn (Player ${userSeat + 1})`;
     isPlayerTurn = true;
 
-    document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
-    if (diffSelect) diffSelect.disabled = false;
+    setControlsBusy(false);
   } catch (error) {
     if (error.name === "AbortError" || signal.aborted) return;
     console.error("Error communicating with AI:", error);
@@ -374,8 +381,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
     // Otherwise a non-JSON error body leaves a locked board and no way out.
     restartBtn.classList.remove("btn-hidden");
 
-    document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
-    if (diffSelect) diffSelect.disabled = false;
+    setControlsBusy(false);
   }
 }
 

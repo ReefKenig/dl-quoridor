@@ -247,10 +247,22 @@ def elo_ratings(names, cells, anchor="greedy", anchor_rating=1000.0):
 
 # --- persistence -----------------------------------------------------------
 
+def merge_entity_meta(current, prior):
+    """Current pool's entities first, then any earlier ones its cells still
+    reference. Entity metadata (spec, opening plies, wall mass) is what makes a
+    cell readable, so narrowing the pool must not drop it from the record."""
+    in_pool = {e["name"] for e in current}
+    return list(current) + [e for e in prior if e.get("name") not in in_pool]
+
+
 def write_output(out_path, cells, players, board, games_per_seat, sims, k,
-                 entities_meta, total_pairs):
+                 entities_meta, pairs):
     names = sorted({row["a"] for row in cells.values()} |
                    {row["b"] for row in cells.values()})
+    # `cells` can carry rows from a wider earlier pool (ONLY narrows the pool
+    # but resume keeps every row), so completeness counts only this pool's keys.
+    pool_keys = {key for key, _a, _b in pairs}
+    played = pool_keys & set(cells)
     meta = {
         "protocol": (f"round-robin: model entities play at K={k}, {sims} sims, "
                     "their own frozen tensor spec and opening plies (canonical "
@@ -266,8 +278,9 @@ def write_output(out_path, cells, players, board, games_per_seat, sims, k,
                        "A/B evidence (A's wins = candidate wins, B's wins = "
                        "decided - candidate wins): a field-strength "
                        "approximation, not true multiplayer Elo."),
-        "cells_played": len(cells), "total_pairs": total_pairs,
-        "complete": len(cells) >= total_pairs,
+        "cells_played": len(played), "total_pairs": len(pool_keys),
+        "complete": len(played) >= len(pool_keys),
+        "cells_recorded": len(cells),
     }
     payload = {"meta": meta, "entities": entities_meta, "cells": cells,
               "self_tables": self_tables(cells, players),
@@ -295,29 +308,34 @@ def main():
     table_env = eac.make_env(players, BOARD, spec=1)
 
     out_path = os.path.join(OUT_DIR, f"round_robin_n{players}.json")
-    cells = {}
+    cells, prior_entities = {}, []
     if os.path.exists(out_path):
         with open(out_path) as f:
-            cells = json.load(f).get("cells", {})
+            prior = json.load(f)
+        cells, prior_entities = prior.get("cells", {}), prior.get("entities", [])
         print(f"resuming: {len(cells)} cells already recorded in {out_path}")
 
     pairs = match_pairs(names, players)
-    entities_meta = [{"name": n, "kind": e.kind, **e.meta} for n, e in entities.items()]
+    entities_meta = merge_entity_meta(
+        [{"name": n, "kind": e.kind, **e.meta} for n, e in entities.items()],
+        prior_entities)
 
     def on_cell(key, row):
         seats = " ".join(f"s{s}:{w}/{g}" for s, (w, g) in row["seats"].items())
         print(f"{row['a']:20s} vs {row['b']:20s} {100*row['rate']:5.1f}%  "
               f"[{seats}]  ({row['decided']}/{row['games']} decided, {row['secs']}s)")
         write_output(out_path, cells, players, BOARD, GAMES_PER_SEAT, SIMS, K,
-                    entities_meta, len(pairs))
+                    entities_meta, pairs)
 
     def play_fn(a, b):
         return play_cell(entities, table_env, players, GAMES_PER_SEAT, max_moves, a, b)
 
     run_cells(pairs, cells, play_fn, on_cell)
     write_output(out_path, cells, players, BOARD, GAMES_PER_SEAT, SIMS, K,
-                entities_meta, len(pairs))
-    print(f"\nwrote {out_path} ({len(cells)}/{len(pairs)} cells)")
+                entities_meta, pairs)
+    done = len({key for key, _a, _b in pairs} & set(cells))
+    print(f"\nwrote {out_path} ({done}/{len(pairs)} cells in this pool, "
+          f"{len(cells)} recorded)")
     return 0
 
 

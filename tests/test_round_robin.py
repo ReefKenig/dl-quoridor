@@ -8,11 +8,14 @@ tests (test_checkpoint_discovery.py does the same). What must NOT happen here
 is discover_checkpoints() actually scanning runs/ or a checkpoint being loaded;
 none of these tests call build_entities/main.
 """
+import json
+
 import numpy as np
 
 from scripts.round_robin import (build_win_matrix, cell_key, elo_ratings,
-                                 fit_bradley_terry, match_pairs, run_cells,
-                                 self_tables)
+                                 fit_bradley_terry, match_pairs,
+                                 merge_entity_meta, run_cells, self_tables,
+                                 write_output)
 
 
 def _row(a, b, wins, decided, games=None):
@@ -138,3 +141,55 @@ def test_self_tables_only_populated_at_n4():
     }
     assert self_tables(cells, 4) == {"a": cells[cell_key("a", "a", 4)]}
     assert self_tables(cells, 2) == {}
+
+
+# --- persisted meta ---------------------------------------------------------
+
+def _write(tmp_path, cells, pool, entities_meta=()):
+    """write_output over a synthetic pool; returns the persisted payload."""
+    out = tmp_path / "rr.json"
+    write_output(str(out), cells, 2, 9, 20, 200, 16, list(entities_meta),
+                 match_pairs(pool, 2))
+    return json.loads(out.read_text())
+
+
+def test_completeness_counts_only_the_current_pool(tmp_path):
+    """A narrowed pool (ONLY) resumes every earlier cell, so counting all of
+    them against this pool's pair count reported 17/9 complete=True."""
+    cells = {cell_key(a, b, 2): _row(a, b, 1, 1)
+             for _k, a, b in match_pairs(["a", "b", "c"], 2)}
+
+    meta = _write(tmp_path, cells, ["a", "b"])["meta"]
+
+    assert meta["total_pairs"] == 1                # only a-vs-b is in the pool
+    assert meta["cells_played"] == 1               # not 3
+    assert meta["cells_recorded"] == 3             # the wider pool is still on disk
+    assert meta["complete"] is True
+
+
+def test_incomplete_pool_is_not_reported_complete(tmp_path):
+    cells = {cell_key("a", "b", 2): _row("a", "b", 1, 1)}
+
+    meta = _write(tmp_path, cells, ["a", "b", "c"])["meta"]
+
+    assert (meta["cells_played"], meta["total_pairs"]) == (1, 3)
+    assert meta["complete"] is False
+
+
+def test_merge_entity_meta_keeps_carried_over_provenance():
+    """A narrowed pool still holds the wider pool's cells; their entities keep
+    the spec/opening-ply record that makes those cells readable."""
+    current = [{"name": "a", "kind": "model", "spec": 2}]
+    prior = [{"name": "b", "kind": "model", "spec": 1}]
+
+    merged = merge_entity_meta(current, prior)
+
+    assert [e["name"] for e in merged] == ["a", "b"]   # current pool leads
+    assert merged[1]["spec"] == 1
+
+
+def test_merge_entity_meta_prefers_the_current_entry():
+    """A re-measured entity must not keep the stale record from disk."""
+    merged = merge_entity_meta([{"name": "a", "spec": 2}], [{"name": "a", "spec": 1}])
+
+    assert merged == [{"name": "a", "spec": 2}]

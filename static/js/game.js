@@ -247,9 +247,10 @@ async function sendMoveToServer(type, targetRow, targetCol) {
 
       // Re-sync state from server in case of drift
       try {
-        const sync = await fetch(`/api/${currentGridSize}x${currentGridSize}/state?game_id=${encodeURIComponent(currentGameId || "")}`);
+        const sync = await fetch(`/api/${currentGridSize}x${currentGridSize}/state?game_id=${encodeURIComponent(currentGameId || "")}`, { signal });
         if (sync.ok) {
           const syncState = await sync.json();
+          if (signal.aborted) return;
           currentGameId = syncState.game_id || currentGameId;
           gameState = syncState;
           if (Number.isInteger(syncState.human_seat)) {
@@ -261,6 +262,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
           drawBoard();
         }
       } catch (_) {}
+      if (signal.aborted) return;
 
       isPlayerTurn = resumeTurn;
       statusText.innerText = resumeTurn

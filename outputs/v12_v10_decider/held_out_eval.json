@@ -1,0 +1,121 @@
+{
+  "games_per_seat": 85,
+  "sims": 200,
+  "minimax_depth": 2,
+  "wall_candidates": [
+    16
+  ],
+  "complete": true,
+  "protocol": "evaluate_mp; opening_plies from each run's frozen config; each checkpoint on its own tensor spec",
+  "results": [
+    {
+      "ckpt": "runs/n4_9x9_v12/greedy_peak.pt",
+      "num_players": 4,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 16,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.236,
+      "secs": 2301.1,
+      "seats": {
+        "0": [
+          55,
+          85
+        ],
+        "1": [
+          0,
+          85
+        ],
+        "2": [
+          0,
+          85
+        ],
+        "3": [
+          0,
+          85
+        ]
+      },
+      "wins": 55,
+      "decided": 340,
+      "games": 340,
+      "rate": 0.1618,
+      "racer_ceiling": 0.25
+    },
+    {
+      "ckpt": "runs/n4_9x9_v10/greedy_peak.pt",
+      "num_players": 4,
+      "board": 9,
+      "spec": 2,
+      "trained_wall_candidates": 16,
+      "wall_candidates": 16,
+      "opponent": "greedy",
+      "opening_plies": 4,
+      "sims": 200,
+      "run_eval_simulations": 600,
+      "channels": 128,
+      "blocks": 8,
+      "opening_wall_mass": 0.5414,
+      "secs": 2519.1,
+      "seats": {
+        "0": [
+          37,
+          85
+        ],
+        "1": [
+          0,
+          85
+        ],
+        "2": [
+          0,
+          85
+        ],
+        "3": [
+          0,
+          85
+        ]
+      },
+      "wins": 37,
+      "decided": 340,
+      "games": 340,
+      "rate": 0.1088,
+      "racer_ceiling": 0.25
+    }
+  ],
+  "controls": [
+    {
+      "seats": {
+        "0": [
+          16,
+          85
+        ],
+        "1": [
+          8,
+          85
+        ],
+        "2": [
+          20,
+          85
+        ],
+        "3": [
+          2,
+          85
+        ]
+      },
+      "wins": 46,
+      "decided": 340,
+      "games": 340,
+      "rate": 0.1353,
+      "racer_ceiling": 0.25,
+      "matchup": "greedy_vs_minimax",
+      "num_players": 4,
+      "board": 9,
+      "minimax_depth": 2
+    }
+  ]
+}

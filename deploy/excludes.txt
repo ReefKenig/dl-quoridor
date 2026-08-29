@@ -7,10 +7,15 @@ venv*
 __pycache__
 *.pyc
 *.ipynb
+.ipynb_checkpoints
 notebooks
 outputs
 docs
 .git
+
+# Local editor / tooling droppings - gitignored, but rsync sees the working tree
+.DS_Store
+.pytest_cache
 
 # Heavy training artifacts inside run dirs (server only needs the shipped .pt)
 replay_buffer.npz

@@ -8,7 +8,7 @@
             "num_players": 2,
             "board_size": 5,
             "tensor_spec": 1,
-            "eval_win_rate": "97.9% \u00b1 1.9% vs random (fair share 50%)",
+            "eval_win_rate": "97.9% +- 1.9% vs random (fair share 50%)",
             "eval_games": 240,
             "notes": "Trained with max^n MCTS (= negamax at N=2), 30 iterations, augmentation + gamma=0.99. 40/40 vs the greedy racer at 200 sims (20 games/seat, tensor spec v1) and plays the seat asymmetry optimally: seat 1 wins in 3 turns with ZERO walls (a pure race - two racers meet head-on and the second jumps the first, gaining a tempo), seat 0 wins in 4 turns with exactly 1 wall, the minimum investment that beats the deficit. Strongest model in the repo. Its gamma=0.97 sibling (runs/n2_5x5_g097_v1) scores 20/40 - identical seat 1, but 0/20 in seat 0 where it over-walls (3/game): a steeper discount suppresses paying a tempo now to win later."
         },
@@ -19,9 +19,9 @@
             "num_players": 4,
             "board_size": 5,
             "tensor_spec": 1,
-            "eval_win_rate": "84.2% \u00b1 4.6% vs random (fair share 25%)",
+            "eval_win_rate": "84.2% +- 4.6% vs random (fair share 25%)",
             "eval_games": 240,
-            "notes": "Trained with max^n MCTS, 70 iterations, augmentation + \u03b3=0.99. Peak checkpoint iter 68."
+            "notes": "Trained with max^n MCTS, 70 iterations, augmentation + gamma=0.99. Peak checkpoint iter 68."
         },
         "2p_legacy": {
             "path": "runs/legacy_2p/best/model.pt",
@@ -58,7 +58,7 @@
             "tensor_spec": 1,
             "eval_win_rate": "~88-96% vs random (fair share 25%) BUT 0% vs a greedy pawn-rush",
             "eval_games": 40,
-            "notes": "Full-size 9x9, 5 walls/player. max^n MCTS, 600 sims, \u03b3=0.99. best.pt = accept-gated peak of n4_9x9_v5. NOT DEMO-READY: 0/40 vs the greedy racer on all 14 training evals. Same pathology as 2p_9x9. The vs-random number is saturated - do not quote it alone."
+            "notes": "Full-size 9x9, 5 walls/player. max^n MCTS, 600 sims, gamma=0.99. best.pt = accept-gated peak of n4_9x9_v5. NOT DEMO-READY: 0/40 vs the greedy racer on all 14 training evals. Same pathology as 2p_9x9. The vs-random number is saturated - do not quote it alone."
         },
         "2p_9x9_v9": {
             "path": "runs/n2_9x9_v9/greedy_peak.pt",

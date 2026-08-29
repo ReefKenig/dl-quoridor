@@ -65,20 +65,27 @@ document.addEventListener("DOMContentLoaded", () => {
   const seatSelect = document.getElementById('seat-select');
 
   if (playerCountSelect && seatSelect) {
+    // Kept in document order so they go back where they came from.
+    const fourPlayerSeats = Array.from(seatSelect.options).filter(
+      option => option.value === '2' || option.value === '3'
+    );
+
     const updateSeatOptions = () => {
       const is4p = playerCountSelect.value === '4';
-
-      // Hide/show seats 3 and 4
-      Array.from(seatSelect.options).forEach(option => {
-        if (option.value === '2' || option.value === '3') {
-          option.disabled = !is4p;
-        }
-      });
 
       // If switching to 2-player while holding seat 3 or 4, reset to Random
       if (!is4p && parseInt(seatSelect.value) > 1) {
         seatSelect.value = '-1';
       }
+
+      // Detach rather than hide: Safari ignores display:none on <option>.
+      fourPlayerSeats.forEach(option => {
+        if (is4p && !option.parentNode) {
+          seatSelect.appendChild(option);
+        } else if (!is4p && option.parentNode) {
+          option.remove();
+        }
+      });
     };
 
     playerCountSelect.addEventListener('change', updateSeatOptions);

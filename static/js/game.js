@@ -71,6 +71,8 @@ async function launchGame(successText) {
 
     if (signal.aborted) return;
     const data = await readResponseData(response);
+    // readResponseData swallows an abort into {}, so re-check before writing.
+    if (signal.aborted) return;
     currentGameId = data.game_id || currentGameId;
     gameState = data;
     userSeat = Number.isInteger(data.human_seat) ? data.human_seat : userSeat;

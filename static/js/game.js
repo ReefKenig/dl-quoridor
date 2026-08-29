@@ -90,6 +90,8 @@ async function launchGame(successText) {
     console.error("Failed to start game:", error);
     isPlayerTurn = false;
     statusText.innerText = "❌ Server connection lost.";
+    // Without this a failed reset leaves a locked board and no way to retry.
+    restartBtn.classList.remove("btn-hidden");
   }
 }
 

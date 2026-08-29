@@ -291,6 +291,7 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       let resumeTurn = response.status !== 409;
 
       // Re-sync state from server in case of drift
+      let finished = null;
       try {
         const sync = await fetch(`/api/${currentGridSize}x${currentGridSize}/state?game_id=${encodeURIComponent(currentGameId || "")}`, { signal });
         if (sync.ok) {
@@ -301,13 +302,22 @@ async function sendMoveToServer(type, targetRow, targetCol) {
           if (Number.isInteger(syncState.human_seat)) {
             userSeat = syncState.human_seat;
           }
-          if (Number.isInteger(syncState.current_player)) {
+          // The winning step advances the seat, so a finished game can report
+          // the human as current player - check game_over before the turn.
+          if (syncState.game_over) {
+            finished = { winner: syncState.winner };
+          } else if (Number.isInteger(syncState.current_player)) {
             resumeTurn = syncState.current_player === userSeat;
           }
           drawBoard();
         }
       } catch (_) {}
       if (signal.aborted) return;
+
+      if (finished) {
+        showGameOver(finished.winner);
+        return;
+      }
 
       if (!resumeTurn) {
         statusText.innerText = "🤖 AI is thinking...";
@@ -358,6 +368,9 @@ async function sendMoveToServer(type, targetRow, targetCol) {
     if (error.name === "AbortError") return;
     console.error("Error communicating with AI:", error);
     statusText.innerText = "❌ Server connection lost.";
+    isPlayerTurn = false;
+    // Otherwise a non-JSON error body leaves a locked board and no way out.
+    restartBtn.classList.remove("btn-hidden");
 
     document.querySelectorAll(".diff-opt").forEach(b => b.style.pointerEvents = "auto");
     if (diffSelect) diffSelect.disabled = false;

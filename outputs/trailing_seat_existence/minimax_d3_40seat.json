@@ -1,0 +1,28 @@
+{
+ "matchup": "minimax_d3_K16_vs_3_greedies",
+ "games_per_seat": 40,
+ "seats": {
+  "0": [
+   4,
+   40
+  ],
+  "1": [
+   0,
+   40
+  ],
+  "2": [
+   0,
+   40
+  ],
+  "3": [
+   0,
+   40
+  ]
+ },
+ "wins": 4,
+ "decided": 160,
+ "games": 160,
+ "rate": 0.025,
+ "secs": 1585.9,
+ "protocol": "evaluate_mp, base_seed 13, opening_plies default, max_moves 320; scripted agents only"
+}

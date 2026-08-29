@@ -73,9 +73,7 @@ def test_idle_sessions_expire(monkeypatch):
 def test_state_does_not_create_an_evicted_session():
     server_app.SESSION_GAMES.clear()
 
-    response = app.test_client().get(
-        f"/api/{BOARD_2P}/state?game_id=evicted"
-    )
+    response = app.test_client().get(f"/api/{BOARD_2P}/state?game_id=evicted")
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "No active game"}
@@ -92,3 +90,55 @@ def test_reset_normalizes_player_count_and_invalid_seat():
     state = response.get_json()
     assert state["num_players"] == 2
     assert state["human_seat"] == 0
+
+
+def test_reset_rollback_restores_session_state(monkeypatch):
+    server_app.SESSION_GAMES.clear()
+
+    def boom(_runtime, _state, _human_seat):
+        raise RuntimeError("AI exploded")
+
+    monkeypatch.setattr(server_app, "_advance_ai_until_human", boom)
+
+    response = app.test_client().post(
+        f"/api/{BOARD_2P}/reset",
+        json={"num_players": 2, "human_seat": 2, "game_id": "reset-rollback"},
+    )
+
+    assert response.status_code == 500
+    runtime = server_app.SESSION_GAMES["reset-rollback"]
+    assert runtime["human_seat"] == 0
+    assert runtime["state"].current_player == 0
+
+
+def test_move_rollback_restores_pre_move_state(monkeypatch):
+    server_app.SESSION_GAMES.clear()
+    client = app.test_client()
+
+    reset = client.post(
+        f"/api/{BOARD_2P}/reset",
+        json={"num_players": 2, "human_seat": 0, "game_id": "move-rollback"},
+    )
+    assert reset.status_code == 200
+
+    runtime = server_app.SESSION_GAMES["move-rollback"]
+    original_state = runtime["state"]
+
+    def boom(_runtime, _state, _human_seat):
+        raise RuntimeError("AI exploded")
+
+    monkeypatch.setattr(server_app, "_advance_ai_until_human", boom)
+
+    response = client.post(
+        f"/api/{BOARD_2P}/move",
+        json={
+            "game_id": "move-rollback",
+            "type": "pawn",
+            "target": {"row": 3, "col": 2},
+        },
+    )
+
+    assert response.status_code == 500
+    runtime = server_app.SESSION_GAMES["move-rollback"]
+    assert runtime["state"].current_player == original_state.current_player
+    assert runtime["state"].positions == original_state.positions

@@ -244,7 +244,7 @@ def reset_game(board_size):
     env = runtime["env"]
     mcts = runtime["mcts"]
     state = runtime["state"]
-    initial_state = state
+    initial_state = env.clone_state(state)
     temperature = runtime["temperature"]
 
     initial_ai_steps = []
@@ -256,6 +256,7 @@ def reset_game(board_size):
         )
     except Exception as error:
         runtime["state"] = env.clone_state(initial_state)
+        runtime["human_seat"] = 0
         return jsonify({"error": str(error)}), 500
 
     # 4. Return the initial state alongside the AI's opening moves
@@ -341,6 +342,7 @@ def process_move(board_size):
             )
             return jsonify({"error": "Illegal move or wall placement blocked."}), 400
 
+        state_before_human = env.clone_state(state)
         state, reward, done, _ = env.step(state, human_action)
         runtime["state"] = state
         if done:
@@ -352,13 +354,12 @@ def process_move(board_size):
             }
             return jsonify(response)
 
-        state_after_human = state
         try:
             state, ai_steps = _advance_ai_until_human(
                 runtime, state, human_seat
             )
         except Exception as error:
-            runtime["state"] = state_after_human
+            runtime["state"] = state_before_human
             return jsonify({"error": str(error)}), 500
         if state.game_over:
             response = {

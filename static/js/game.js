@@ -124,11 +124,12 @@ async function restartGame() {
   restartBtn.classList.add("btn-hidden");
   resetWallsInfoCache();
 
+  // Preserve the current human seat across a mid-game restart or difficulty
+  // switch. Re-reading the menu selector here re-randomizes random-seat games.
   const seatSelect = document.getElementById("seat-select");
-  const rawSeat = seatSelect ? Number.parseInt(seatSelect.value, 10) : -1;
-  userSeat = Number.isInteger(rawSeat) && rawSeat >= 0
-    ? rawSeat % numPlayers
-    : Math.floor(Math.random() * numPlayers);
+  if (seatSelect && Number.isInteger(parseInt(seatSelect.value, 10)) && parseInt(seatSelect.value, 10) >= 0) {
+    userSeat = parseInt(seatSelect.value, 10) % numPlayers;
+  }
 
   isPlayerTurn = false;
   gameState = createInitialGameState();

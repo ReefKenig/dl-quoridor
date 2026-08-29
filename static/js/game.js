@@ -176,6 +176,33 @@ function showToast(message, duration = 2500) {
   toast._timeout = setTimeout(() => toast.classList.remove("show"), duration);
 }
 
+// After a 409 nothing on this client will advance the AI - the server only
+// steps AI seats inside /move or /reset - so poll until the turn comes back.
+async function waitForHumanTurn(signal) {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (signal.aborted) return false;
+    try {
+      const sync = await fetch(
+        `/api/${currentGridSize}x${currentGridSize}/state?game_id=${encodeURIComponent(currentGameId || "")}`,
+        { signal },
+      );
+      if (!sync.ok) continue;
+      const syncState = await sync.json();
+      if (signal.aborted) return false;
+      gameState = syncState;
+      if (Number.isInteger(syncState.human_seat)) {
+        userSeat = syncState.human_seat;
+      }
+      drawBoard();
+      if (syncState.current_player === userSeat) return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  return false;
+}
+
 async function sendMoveToServer(type, targetRow, targetCol) {
   isPlayerTurn = false;
 
@@ -264,10 +291,17 @@ async function sendMoveToServer(type, targetRow, targetCol) {
       } catch (_) {}
       if (signal.aborted) return;
 
+      if (!resumeTurn) {
+        statusText.innerText = "🤖 AI is thinking...";
+        resumeTurn = await waitForHumanTurn(signal);
+        if (signal.aborted) return;
+      }
+
       isPlayerTurn = resumeTurn;
       statusText.innerText = resumeTurn
         ? `🎯 Your turn (Player ${userSeat + 1})`
-        : "🤖 AI is thinking...";
+        : "❌ Lost track of the game - please restart.";
+      if (!resumeTurn) restartBtn.classList.remove("btn-hidden");
       return;
     }
 

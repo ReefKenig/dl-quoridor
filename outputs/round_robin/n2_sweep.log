@@ -1,0 +1,42 @@
+SKIP runs/pretrain_n4_9x9_factored (no checkpoint among greedy_peak.pt, ship.pt, best.pt, latest.pt, pretrain.pt)
+  note: n2_9x9_v10 was scored at 600 sims in training; round-robin fixes 200 for comparability
+  note: n2_9x9_v9 was scored at 600 sims in training; round-robin fixes 200 for comparability
+  note: n2_9x9_v8 was scored at 600 sims in training; round-robin fixes 200 for comparability
+  note: n2_9x9_anchored was scored at 100 sims in training; round-robin fixes 200 for comparability
+  note: probe_n2_ramp was scored at 100 sims in training; round-robin fixes 200 for comparability
+pool: 11 entities -> greedy, minimax_d2, n2_9x9_anchored, n2_9x9_v10, n2_9x9_v3, n2_9x9_v4, n2_9x9_v6, n2_9x9_v7, n2_9x9_v8, n2_9x9_v9, probe_n2_ramp
+resuming: 15 cells already recorded in outputs/round_robin/round_robin_n2.json
+minimax_d2           vs n2_9x9_v7            100.0%  [s0:14/20 s1:15/20]  (29/40 decided, 1257.8s)
+minimax_d2           vs n2_9x9_v8            100.0%  [s0:18/20 s1:16/20]  (34/40 decided, 1077.7s)
+minimax_d2           vs n2_9x9_v9             96.7%  [s0:13/20 s1:16/20]  (30/40 decided, 1221.2s)
+minimax_d2           vs probe_n2_ramp        100.0%  [s0:17/20 s1:18/20]  (35/40 decided, 907.5s)
+n2_9x9_anchored      vs n2_9x9_v10             4.3%  [s0:0/20 s1:1/20]  (23/40 decided, 4320.7s)
+n2_9x9_anchored      vs n2_9x9_v3              9.5%  [s0:0/20 s1:2/20]  (21/40 decided, 4016.3s)
+n2_9x9_anchored      vs n2_9x9_v4              0.0%  [s0:0/20 s1:0/20]  (33/40 decided, 16297.1s)
+n2_9x9_anchored      vs n2_9x9_v6            100.0%  [s0:1/20 s1:1/20]  (2/40 decided, 25822.1s)
+n2_9x9_anchored      vs n2_9x9_v7              0.0%  [s0:0/20 s1:0/20]  (20/40 decided, 16680.2s)
+n2_9x9_anchored      vs n2_9x9_v8              0.0%  [s0:0/20 s1:0/20]  (19/40 decided, 2600.7s)
+n2_9x9_anchored      vs n2_9x9_v9              0.0%  [s0:0/20 s1:0/20]  (21/40 decided, 2481.3s)
+n2_9x9_anchored      vs probe_n2_ramp         13.0%  [s0:0/20 s1:3/20]  (23/40 decided, 2251.9s)
+n2_9x9_v10           vs n2_9x9_v3             30.0%  [s0:2/20 s1:1/20]  (10/40 decided, 3628.4s)
+n2_9x9_v10           vs n2_9x9_v4              9.1%  [s0:1/20 s1:0/20]  (11/40 decided, 4013.2s)
+n2_9x9_v10           vs n2_9x9_v6            100.0%  [s0:9/20 s1:17/20]  (26/40 decided, 2876.1s)
+n2_9x9_v10           vs n2_9x9_v7             25.0%  [s0:0/20 s1:1/20]  (4/40 decided, 4591.1s)
+n2_9x9_v10           vs n2_9x9_v8             33.3%  [s0:1/20 s1:0/20]  (3/40 decided, 4547.2s)
+n2_9x9_v10           vs n2_9x9_v9             60.0%  [s0:3/20 s1:0/20]  (5/40 decided, 3678.0s)
+n2_9x9_v10           vs probe_n2_ramp         75.0%  [s0:5/20 s1:4/20]  (12/40 decided, 3012.7s)
+n2_9x9_v3            vs n2_9x9_v4             12.5%  [s0:1/20 s1:2/20]  (24/40 decided, 2230.2s)
+n2_9x9_v3            vs n2_9x9_v6            100.0%  [s0:11/20 s1:15/20]  (26/40 decided, 2217.6s)
+n2_9x9_v3            vs n2_9x9_v7             16.7%  [s0:2/20 s1:0/20]  (12/40 decided, 4070.4s)
+n2_9x9_v3            vs n2_9x9_v8             12.5%  [s0:0/20 s1:1/20]  (8/40 decided, 4170.0s)
+n2_9x9_v3            vs n2_9x9_v9             37.5%  [s0:2/20 s1:1/20]  (8/40 decided, 4377.8s)
+n2_9x9_v3            vs probe_n2_ramp         23.1%  [s0:3/20 s1:0/20]  (13/40 decided, 3683.1s)
+n2_9x9_v4            vs n2_9x9_v6            100.0%  [s0:11/20 s1:14/20]  (25/40 decided, 31621.6s)
+n2_9x9_v4            vs n2_9x9_v7            100.0%  [s0:1/20 s1:6/20]  (7/40 decided, 3546.7s)
+n2_9x9_v4            vs n2_9x9_v8            100.0%  [s0:3/20 s1:4/20]  (7/40 decided, 3604.8s)
+n2_9x9_v4            vs n2_9x9_v9            100.0%  [s0:4/20 s1:4/20]  (8/40 decided, 3347.5s)
+n2_9x9_v4            vs probe_n2_ramp        100.0%  [s0:0/20 s1:13/20]  (13/40 decided, 3071.5s)
+n2_9x9_v6            vs n2_9x9_v7              5.9%  [s0:1/20 s1:0/20]  (17/40 decided, 3378.4s)
+n2_9x9_v6            vs n2_9x9_v8              0.0%  [s0:0/20 s1:0/20]  (16/40 decided, 3663.8s)
+n2_9x9_v6            vs n2_9x9_v9              0.0%  [s0:0/20 s1:0/20]  (24/40 decided, 3123.6s)
+n2_9x9_v6            vs probe_n2_ramp          0.0%  [s0:0/20 s1:0/20]  (26/40 decided, 2626.1s)

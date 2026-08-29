@@ -1,0 +1,28 @@
+SKIP runs/pretrain_n4_9x9_factored (no checkpoint among greedy_peak.pt, ship.pt, best.pt, latest.pt, pretrain.pt)
+  note: n4_9x9_v13 was scored at 600 sims in training; round-robin fixes 200 for comparability
+  note: n4_9x9_v12 was scored at 600 sims in training; round-robin fixes 200 for comparability
+  note: n4_9x9_v11 was scored at 600 sims in training; round-robin fixes 200 for comparability
+  note: n4_9x9_v10 was scored at 600 sims in training; round-robin fixes 200 for comparability
+  note: n4_9x9_v9 was scored at 600 sims in training; round-robin fixes 200 for comparability
+pool: 8 entities -> greedy, minimax_d2, n4_9x9_v10, n4_9x9_v11, n4_9x9_v12, n4_9x9_v13, n4_9x9_v9, pretrain_n4_9x9
+greedy               vs greedy                25.0%  [s0:20/20 s1:0/20 s2:0/20 s3:0/20]  (80/80 decided, 2.9s)
+greedy               vs minimax_d2            15.0%  [s0:5/20 s1:1/20 s2:4/20 s3:2/20]  (80/80 decided, 188.2s)
+greedy               vs n4_9x9_v10            72.5%  [s0:10/20 s1:14/20 s2:17/20 s3:17/20]  (80/80 decided, 2966.6s)
+greedy               vs n4_9x9_v11            78.8%  [s0:16/20 s1:15/20 s2:19/20 s3:13/20]  (80/80 decided, 3178.6s)
+greedy               vs n4_9x9_v12            76.2%  [s0:12/20 s1:17/20 s2:15/20 s3:17/20]  (80/80 decided, 3920.3s)
+greedy               vs n4_9x9_v13            88.8%  [s0:13/20 s1:18/20 s2:20/20 s3:20/20]  (80/80 decided, 12666.6s)
+greedy               vs n4_9x9_v9             96.2%  [s0:18/20 s1:19/20 s2:20/20 s3:20/20]  (80/80 decided, 24958.7s)
+greedy               vs pretrain_n4_9x9       65.0%  [s0:10/20 s1:15/20 s2:17/20 s3:10/20]  (80/80 decided, 7719.9s)
+minimax_d2           vs greedy                 5.0%  [s0:4/20 s1:0/20 s2:0/20 s3:0/20]  (80/80 decided, 184.7s)
+minimax_d2           vs minimax_d2            20.0%  [s0:3/20 s1:3/20 s2:7/20 s3:3/20]  (80/80 decided, 926.2s)
+minimax_d2           vs n4_9x9_v10            92.4%  [s0:11/20 s1:15/20 s2:18/20 s3:17/20]  (66/80 decided, 18147.8s)
+minimax_d2           vs n4_9x9_v11            96.9%  [s0:11/20 s1:15/20 s2:18/20 s3:19/20]  (65/80 decided, 5074.8s)
+minimax_d2           vs n4_9x9_v12            95.3%  [s0:11/20 s1:15/20 s2:19/20 s3:16/20]  (64/80 decided, 7168.5s)
+minimax_d2           vs n4_9x9_v13            88.2%  [s0:13/20 s1:16/20 s2:14/20 s3:17/20]  (68/80 decided, 6209.8s)
+minimax_d2           vs n4_9x9_v9             94.3%  [s0:14/20 s1:15/20 s2:20/20 s3:17/20]  (70/80 decided, 5506.8s)
+minimax_d2           vs pretrain_n4_9x9       86.8%  [s0:14/20 s1:14/20 s2:18/20 s3:13/20]  (68/80 decided, 4327.9s)
+n4_9x9_v10           vs greedy                 6.2%  [s0:5/20 s1:0/20 s2:0/20 s3:0/20]  (80/80 decided, 406.0s)
+n4_9x9_v10           vs minimax_d2             0.0%  [s0:0/20 s1:0/20 s2:0/20 s3:0/20]  (80/80 decided, 1188.2s)
+n4_9x9_v10           vs n4_9x9_v10            28.0%  [s0:1/20 s1:0/20 s2:2/20 s3:4/20]  (25/80 decided, 16159.9s)
+n4_9x9_v10           vs n4_9x9_v11            56.0%  [s0:3/20 s1:1/20 s2:7/20 s3:3/20]  (25/80 decided, 44362.6s)
+n4_9x9_v10           vs n4_9x9_v12            20.0%  [s0:1/20 s1:1/20 s2:3/20 s3:2/20]  (35/80 decided, 13343.8s)

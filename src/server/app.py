@@ -190,6 +190,16 @@ def _advance_ai_until_human(runtime, state, human_seat):
     return state, ai_steps
 
 
+def _winner_label(state, human_seat):
+    """Map the env's winning seat onto the client's human/ai/draw contract.
+
+    A turn-cap game ends with winner None, which the client renders as a draw.
+    """
+    if state.winner is None:
+        return None
+    return "human" if int(state.winner) == human_seat else "ai"
+
+
 # --- WEB ROUTES ---
 @app.route("/")
 def inedx():
@@ -348,7 +358,7 @@ def process_move(board_size):
         if done:
             response = {
                 "status": "game_over",
-                "winner": "human",
+                "winner": _winner_label(state, human_seat),
                 "newState": _extract_positions(env, state),
                 "game_id": _resolve_session_id(game_id),
             }
@@ -366,7 +376,7 @@ def process_move(board_size):
                 "status": "game_over",
                 "newState": _extract_positions(env, state),
                 "ai_steps": ai_steps,
-                "winner": "ai",
+                "winner": _winner_label(state, human_seat),
                 "game_id": _resolve_session_id(game_id),
             }
             return jsonify(response)

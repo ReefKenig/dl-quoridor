@@ -1042,12 +1042,16 @@ def training_loop_mp(env, model, make_model, cfg: TrainingConfigMP,
                 sp_mcts = _mcts(model, env, cfg)
                 wins = {}
                 n_new_samples = 0
+                # sample_diagnostics below reads sp_samples; only the other two
+                # branches assigned it, so sequential mode crashed post-training.
+                sp_samples = []
                 for g in range(cfg.games_per_iteration):
                     samples, w = play_one_game(env, sp_mcts, cfg.num_players,
                                                max_moves=cfg.max_game_moves,
                                                discount=cfg.discount,
                                                explore_moves=cfg.explore_moves)
                     buffer.add(samples)
+                    sp_samples.extend(samples)
                     n_new_samples += len(samples)
                     wins[w] = wins.get(w, 0) + 1
                     # Log every 5 games so long iterations don't look stuck.

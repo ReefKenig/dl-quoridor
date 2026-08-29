@@ -14,7 +14,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from src.env.constants import NUM_MOVE_ACTIONS
+
 logger = logging.getLogger(__name__)
+
+POLICY_HEADS = ("flat", "factored")
 
 # Blackwell / Ampere+: TF32 matmul+conv is a large speedup over strict fp32 with
 # negligible accuracy loss, and is batch-size agnostic. Enabled once at import,
@@ -47,11 +51,15 @@ class ResidualBlock(nn.Module):
 
 class QuoridorNetworkMP(nn.Module):
     def __init__(self, board_size=5, in_channels=11, num_channels=64,
-                 num_res_blocks=4, action_space_size=44, num_players=2):
+                 num_res_blocks=4, action_space_size=44, num_players=2,
+                 policy_head="flat"):
         super().__init__()
+        if policy_head not in POLICY_HEADS:
+            raise ValueError(f"policy_head must be one of {POLICY_HEADS}, got {policy_head!r}")
         self.board_size = board_size
         self.action_space_size = action_space_size
         self.num_players = num_players
+        self.policy_head = policy_head
 
         self.conv_input = nn.Conv2d(
             in_channels, num_channels, 3, padding=1, bias=False)
@@ -61,8 +69,23 @@ class QuoridorNetworkMP(nn.Module):
 
         self.policy_conv = nn.Conv2d(num_channels, 2, 1, bias=False)
         self.policy_bn = nn.BatchNorm2d(2)
-        self.policy_fc = nn.Linear(
-            2 * board_size * board_size, action_space_size)
+        policy_feat = 2 * board_size * board_size
+        if policy_head == "flat":
+            self.policy_fc = nn.Linear(policy_feat, action_space_size)
+        else:
+            if action_space_size < NUM_MOVE_ACTIONS + 1:
+                raise ValueError(
+                    f"factored head needs action_space_size >= "
+                    f"{NUM_MOVE_ACTIONS + 1} ({NUM_MOVE_ACTIONS} move actions "
+                    f"plus at least one wall action), got {action_space_size}")
+            # Move-vs-wall gate plus per-class placement logits, so the wall
+            # class (128 of 140 raw actions at 9x9) can't dominate by count.
+            # policy_type_head logits are ordered [move, wall]: index 0 gates
+            # the first NUM_MOVE_ACTIONS actions, index 1 gates the rest.
+            self.policy_type_head = nn.Linear(policy_feat, 2)
+            self.policy_move_head = nn.Linear(policy_feat, NUM_MOVE_ACTIONS)
+            self.policy_wall_head = nn.Linear(
+                policy_feat, action_space_size - NUM_MOVE_ACTIONS)
 
         self.value_conv = nn.Conv2d(num_channels, 1, 1, bias=False)
         self.value_bn = nn.BatchNorm2d(1)
@@ -70,13 +93,29 @@ class QuoridorNetworkMP(nn.Module):
         # CHANGED: scalar -> length num_players vector
         self.value_fc2 = nn.Linear(num_channels, num_players)
 
+    def _policy_log_probs(self, p):
+        """p: pooled policy-trunk features (B, 2*H*W). Returns log-probs over
+        the full action space, summing to 1 in probability either way.
+        Factored ordering: type index 0 => "move" (actions [0, NUM_MOVE_ACTIONS)),
+        index 1 => "wall" (the rest), concatenated in that order."""
+        if self.policy_head == "flat":
+            return F.log_softmax(self.policy_fc(p), dim=1)
+        # Numerically stable composition: log(P(type) * P(action|type)), never
+        # log(softmax(.)) directly.
+        log_type = F.log_softmax(self.policy_type_head(p), dim=1)  # (B, 2)
+        log_move = F.log_softmax(self.policy_move_head(p), dim=1)  # (B, 12)
+        log_wall = F.log_softmax(self.policy_wall_head(p), dim=1)  # (B, A-12)
+        log_move_full = log_type[:, 0:1] + log_move
+        log_wall_full = log_type[:, 1:2] + log_wall
+        return torch.cat([log_move_full, log_wall_full], dim=1)
+
     def forward(self, x):
         out = F.relu(self.bn_input(self.conv_input(x)))
         for block in self.res_blocks:
             out = block(out)
         p = F.relu(self.policy_bn(self.policy_conv(out)))
         p = p.reshape(p.size(0), -1)
-        policy = F.log_softmax(self.policy_fc(p), dim=1)
+        policy = self._policy_log_probs(p)
         v = F.relu(self.value_bn(self.value_conv(out)))
         v = v.reshape(v.size(0), -1)
         v = F.relu(self.value_fc1(v))
@@ -84,10 +123,21 @@ class QuoridorNetworkMP(nn.Module):
         return policy, value
 
 
+def head_type_from_state(state_dict) -> str:
+    """Infer "factored" vs "flat" from state-dict key names alone, for old
+    checkpoints and loaders that only have the state dict, not the config.
+    Matches on substring so wrapped keys ("module.policy_type_head.weight",
+    from DataParallel and friends) are recognised too."""
+    if any("policy_type_head" in k for k in state_dict):
+        return "factored"
+    return "flat"
+
+
 class QuoridorModelMP:
     def __init__(self, board_size=5, action_space_size=44, num_channels=64,
                  num_res_blocks=4, lr=1e-3, weight_decay=1e-4, device="auto",
-                 in_channels=None, num_players=2, value_loss_weight=1.0):
+                 in_channels=None, num_players=2, value_loss_weight=1.0,
+                 policy_head="flat"):
         # Default in_channels depends on number of players: channels = 3*N + 3
         if in_channels is None:
             in_channels = 3 * num_players + 3
@@ -95,10 +145,11 @@ class QuoridorModelMP:
                                    else (device if device != "auto" else "cpu"))
         self.num_players = num_players
         self.value_loss_weight = value_loss_weight
+        self.policy_head = policy_head
         self.network = QuoridorNetworkMP(
             board_size=board_size, in_channels=in_channels, num_channels=num_channels,
             num_res_blocks=num_res_blocks, action_space_size=action_space_size,
-            num_players=num_players,
+            num_players=num_players, policy_head=policy_head,
         ).to(self.device)
         self.optimizer = optim.Adam(
             self.network.parameters(), lr=lr, weight_decay=weight_decay)
@@ -187,10 +238,22 @@ class QuoridorModelMP:
     def save(self, path):
         torch.save({"network_state": self.network.state_dict(),
                     "optimizer_state": self.optimizer.state_dict(),
-                    "num_players": self.num_players}, path)
+                    "num_players": self.num_players,
+                    "policy_head": self.policy_head}, path)
 
-    def load(self, path):
+    def load(self, path, strict_head_check=True):
         ck = torch.load(path, map_location=self.device, weights_only=False)
+        if strict_head_check:
+            ckpt_head = ck.get("policy_head")
+            if ckpt_head is None:
+                # Old checkpoint, predates the "policy_head" key.
+                ckpt_head = head_type_from_state(ck["network_state"])
+            if ckpt_head != self.policy_head:
+                raise ValueError(
+                    f"checkpoint policy_head={ckpt_head!r} does not match "
+                    f"model policy_head={self.policy_head!r}")
+        # strict_head_check=False skips the check above; a real mismatch then
+        # fails naturally in load_state_dict. Used by inspection/conversion tools.
         self.network.load_state_dict(ck["network_state"])
         if "optimizer_state" in ck:
             self.optimizer.load_state_dict(ck["optimizer_state"])

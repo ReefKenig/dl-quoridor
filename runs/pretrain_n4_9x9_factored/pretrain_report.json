@@ -1,0 +1,36 @@
+{
+  "agreement": 0.9456,
+  "opening_wall_mass": 2.8e-05,
+  "games": 2000,
+  "samples": 99178,
+  "epochs": 4,
+  "players": 4,
+  "board": 9,
+  "spec_version": 2,
+  "channels": 128,
+  "blocks": 8,
+  "discount": 0.99,
+  "discount_unit": "ply",
+  "seed": 0,
+  "policy_head": "factored",
+  "raw_policy_vs_greedy": {
+    "0": [
+      20,
+      20
+    ],
+    "1": [
+      0,
+      20
+    ],
+    "2": [
+      0,
+      20
+    ],
+    "3": [
+      0,
+      20
+    ]
+  },
+  "raw_policy_rate_decided": 0.25,
+  "raw_policy_decided": 80
+}

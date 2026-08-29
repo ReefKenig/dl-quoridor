@@ -37,34 +37,11 @@ async function readResponseData(response) {
   return data;
 }
 
-async function startGame() {
-  if (moveController) {
-    moveController.abort();
-    moveController = null;
-  }
-
-  const newGridSize = parseInt(document.getElementById("board-size").value);
-  numPlayers = parseInt(document.getElementById("num-players").value);
-  currentDifficulty = document.getElementById("difficulty").value;
-
-  const seatSelect = document.getElementById("seat-select");
-  const rawSeat = seatSelect ? Number.parseInt(seatSelect.value, 10) : -1;
-  userSeat = Number.isInteger(rawSeat) && rawSeat >= 0
-    ? rawSeat % numPlayers
-    : Math.floor(Math.random() * numPlayers);
-
-  if (newGridSize !== currentGridSize) {
-    currentGridSize = newGridSize;
-    lastCanvasSize = 0;
-  }
-
-  mainMenu.classList.add("hidden");
-  gameScreen.classList.remove("hidden");
-  updateDifficultySwitcher();
-  resetWallsInfoCache();
-
-  gameState = createInitialGameState();
+// Shared body of startGame/restartGame: paint the placeholder board, ask the
+// server for a fresh game and play the AI opening up to the human's seat.
+async function launchGame(successText) {
   isPlayerTurn = false; // Lock board while loading
+  gameState = createInitialGameState();
   statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}. ${userSeat === 0 ? "Your turn." : "Waiting for your turn..."}`;
   moveController = new AbortController();
   const signal = moveController.signal;
@@ -105,15 +82,46 @@ async function startGame() {
     }
     if (signal.aborted) return;
 
-    statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}! Your turn.`;
+    statusText.innerText = successText(userSeat);
     isPlayerTurn = true; // Unlock board
 
   } catch (error) {
     if (error.name === "AbortError") return;
-    console.log("Failed to start game:", error);
+    console.error("Failed to start game:", error);
     isPlayerTurn = false;
     statusText.innerText = "❌ Server connection lost.";
   }
+}
+
+async function startGame() {
+  if (moveController) {
+    moveController.abort();
+    moveController = null;
+  }
+
+  const newGridSize = parseInt(document.getElementById("board-size").value);
+  numPlayers = parseInt(document.getElementById("num-players").value);
+  currentDifficulty = document.getElementById("difficulty").value;
+
+  const seatSelect = document.getElementById("seat-select");
+  const rawSeat = seatSelect ? Number.parseInt(seatSelect.value, 10) : -1;
+  userSeat = Number.isInteger(rawSeat) && rawSeat >= 0
+    ? rawSeat % numPlayers
+    : Math.floor(Math.random() * numPlayers);
+
+  if (newGridSize !== currentGridSize) {
+    currentGridSize = newGridSize;
+    lastCanvasSize = 0;
+  }
+
+  mainMenu.classList.add("hidden");
+  gameScreen.classList.remove("hidden");
+  updateDifficultySwitcher();
+  resetWallsInfoCache();
+
+  await launchGame(
+    seat => `🎮 ${numPlayers}-player game. You are Player ${seat + 1}! Your turn.`
+  );
 }
 
 async function restartGame() {
@@ -131,53 +139,7 @@ async function restartGame() {
     userSeat = parseInt(seatSelect.value, 10) % numPlayers;
   }
 
-  isPlayerTurn = false;
-  gameState = createInitialGameState();
-  statusText.innerText = `🎮 ${numPlayers}-player game. You are Player ${userSeat + 1}. ${userSeat === 0 ? "Your turn." : "Waiting for your turn..."}`;
-  moveController = new AbortController();
-  const signal = moveController.signal;
-
-  drawWallsInfo();
-  drawBoard();
-
-  try {
-    const response = await fetch(
-      `/api/${currentGridSize}x${currentGridSize}/reset`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          {
-            num_players: numPlayers,
-            difficulty: currentDifficulty,
-            game_id: currentGameId,
-            human_seat: userSeat
-          }),
-        signal,
-      }
-    );
-
-    if (signal.aborted) return;
-    const data = await readResponseData(response);
-    currentGameId = data.game_id || currentGameId;
-    gameState = data;
-    userSeat = Number.isInteger(data.human_seat) ? data.human_seat : userSeat;
-
-    drawBoard();
-
-    if (data.initial_ai_steps && data.initial_ai_steps.length > 0) {
-      await playAiSequence(data.initial_ai_steps, signal);
-    }
-    if (signal.aborted) return;
-    statusText.innerText = `🎮 New game! You are Player ${userSeat + 1}. Your turn.`;
-    isPlayerTurn = true;
-
-  } catch (error) {
-    if (error.name === "AbortError") return;
-    console.error("Failed to restart:", error);
-    isPlayerTurn = false;
-    statusText.innerText = "❌ Server connection lost.";
-  }
+  await launchGame(seat => `🎮 New game! You are Player ${seat + 1}. Your turn.`);
 }
 
 function quitToMenu() {
